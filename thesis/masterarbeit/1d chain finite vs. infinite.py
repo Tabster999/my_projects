@@ -23,6 +23,15 @@ steps = 301
 energy_array = np.linspace(e_min,e_max,steps)
 
 phase_transition = np.sqrt(delta**2+mu**2)
+
+plt.rcParams['font.size'] = 14
+plt.rcParams['axes.titlesize'] = 18
+plt.rcParams['axes.labelsize'] = 16
+plt.rcParams['xtick.labelsize'] = 12
+plt.rcParams['ytick.labelsize'] = 12
+plt.rcParams['legend.fontsize'] = 10
+plt.rcParams['figure.titlesize'] = 20
+
 #%% computation of the greens functions
 hamiltonian = myf.tb_hamiltonian_1d(sites, t, mu, h, alpha, delta)
 gr = myf.get_G_energy(energy_array,hamiltonian, eta=eta, ra='r')
@@ -79,7 +88,7 @@ plt.xlabel(r'$\frac{\epsilon}{\Delta}$')
 plt.ylabel(r'LDOS up-$e^-$')
 plt.text(0.05, 0.95, textstr, fontsize=10, transform=plt.gca().transAxes,
 verticalalignment='top', horizontalalignment='left', bbox=props)
-plt.title(f'edge (N={sites})')
+plt.title(f'LDOS for N={sites} sites')
 #plt.savefig(r'C:\Users\Kyeez\OneDrive\Desktop\Uni\Master\Masterarbeit\plots\comparison inf and fin 1D (testing)\LDOS egde e_u comparison 2.png')
 plt.show()
 #%% plot ldos bulk comparison
@@ -92,7 +101,7 @@ plt.text(0.05, 0.95, textstr, fontsize=10, transform=plt.gca().transAxes,
 verticalalignment='top', horizontalalignment='left', bbox=props)
 plt.xlabel(r'$\frac{\epsilon}{\Delta}$')
 plt.ylabel(r'LDOS up-$e^-$')
-plt.title(f'bulk (N={sites}, bulk site={bulk_index})')
+plt.title(f'bulk (N={sites}, bulk site={bulk_index/4})')
 #plt.savefig(r'C:\Users\Kyeez\OneDrive\Desktop\Uni\Master\Masterarbeit\plots\comparison inf and fin 1D (testing)\LDOS bulk e_u comparison 2.png')
 plt.show()
 #%% comparison plots with myf.quick_plot (same as the two above)
@@ -106,10 +115,10 @@ title_surf = r'$G_{r,surf}(E)$'
 y_lims = [0,5]
 
 title_bulk = f" $ G_{{r,bulk}}$"
-# myf.quick_plot(energy_array/delta, [ldos_E_surf, ldos_inf_surf], colors=colors, title=title_surf, ylim=y_lims,
-#                ylabel=ylabel, xlabel=xlabel, labels=['finite', 'infinite'], legend=True, ylim=[-5,5])
-# myf.quick_plot(energy_array/delta, [ldos_E_bulk, ldos_inf_bulk], colors=colors, title=title_bulk, ylim=y_lims,
-#                ylabel=ylabel, xlabel=xlabel, legend=1, labels=['finite', 'infinite'])
+myf.quick_plot(energy_array/delta, [ldos_E_surf, ldos_inf_surf], colors=colors, title=title_surf, ylim=y_lims,
+                ylabel=ylabel, xlabel=xlabel, labels=['finite', 'infinite'], legend=True)
+myf.quick_plot(energy_array/delta, [ldos_E_bulk, ldos_inf_bulk], colors=colors, title=title_bulk, ylim=y_lims,
+                ylabel=ylabel, xlabel=xlabel, legend=1, labels=['finite', 'infinite'])
 #%% plot evals over magnetic field 
 eval = []
 h_array = np.linspace(.05,.3,151)
@@ -138,9 +147,9 @@ for i in range(4):
 plt.figure(figsize=(10,7), dpi=150)
 plt.plot(energy_array/delta,dos_E_surf, 'r.', label='finite')
 plt.plot(energy_array/delta, dos_E_surf_inf, c='blue', label='infinite')
-plt.title(f'edge  (N={sites})')
+plt.title(f'Surface DOS for all spin DOFs (N={sites})')
 plt.xlabel(r'$\frac{\epsilon}{\Delta}$')
-plt.ylabel(r'DOS for all spin DOFs')
+plt.ylabel(r'DOS')
 plt.legend(loc=0)
 plt.text(0.05, 0.95, textstr, fontsize=10, transform=plt.gca().transAxes, verticalalignment='top', horizontalalignment='left', bbox=props)
 #plt.savefig(r'C:\Users\Kyeez\OneDrive\Desktop\Uni\Master\Masterarbeit\plots\comparison inf and fin 1D (testing)\DOS egde all dof comparison.png')
@@ -154,9 +163,9 @@ plt.plot(dos_x[125,:], c='blue')
 plt.ylim(-.01,5)
 plt.xlabel(r'site (index i)')
 plt.ylabel(r'DOS')
+plt.title(f'DOS over position  (N={sites})')
 plt.text(0.05, 0.95, textstr, fontsize=10, transform=plt.gca().transAxes,
 verticalalignment='top', horizontalalignment='left', bbox=props)
-plt.title(f'DOS over position  (N={sites})')
 #plt.savefig(r'C:\Users\Kyeez\OneDrive\Desktop\Uni\Master\Masterarbeit\plots\comparison inf and fin 1D (testing)\DOS egde over position.png')
 plt.show()
 #%% computing and plotting the pairing amplitudes for inf and finite models

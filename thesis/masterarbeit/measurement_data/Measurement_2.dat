@@ -1,6 +1,0 @@
-#Sample	Not specified
-RF-Frequency	Timestamp	Photon Counter1 CH A	Photon Counter1 CH B	Photon Counter1 Ratio
-Hz	s since 1904-01-01 12amUTC	counts	counts	a.u.
-2.80e+09	3840943459	1834668	1834827	0.979
-2.81e+09	3840943460	1827679	1833034	0.977
-2.82e+09	3840943461	1820906	1824555	0.978

@@ -1,6 +1,11 @@
 #%%
-import os 
-os.chdir(r'C:\Main\my_projects\masterarbeit')
+import sys
+import os
+from pathlib import Path
+project_root = Path(__file__).resolve().parents[3]
+project_root_str = str(project_root)
+if project_root_str not in sys.path:
+    sys.path.insert(0, project_root_str)
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy as sp
@@ -19,7 +24,7 @@ with:
 the index i is a superindex for (x,y)
 '''
 
-sites = 101
+sites = 71
 t = 1.0
 mu = 0.025 * t
 alpha = .6 * t
@@ -29,21 +34,21 @@ h = 0.2 * t
 phase_transition = np.sqrt(delta**2+mu**2)
 
 
-e_steps = 51
+e_steps = 81
 e_min = - delta
 e_max = -e_min
 energy_array = np.linspace(e_min, e_max, e_steps)
 
 
 h_steps = 81
-h_min = .05
-h_max = .3
+h_min = .00
+h_max = .25
 h_array = np.linspace(h_min, h_max, h_steps)
 
 
-ky_steps = 81
-ky_min = -np.pi
-ky_max = np.pi
+ky_steps = 50
+ky_min = -np.pi/4
+ky_max = np.pi/4
 ky_array = np.linspace(ky_min, ky_max, ky_steps)
 
 textstr = '\n'.join((
@@ -154,18 +159,15 @@ myf.quick_plot(x_values=h_array, y_list=eigenvalues_over_h_array, v_lines=phase_
                xlim=(h_min,h_max), title=f'Eigenvalues for $k_y =$ {k_0:.2f}. and varying h', figsize=(12,7),
                dpi=150, ylim=[-.1,.1],colors='b')
 
-#%% calulate and plot the difference of finite and infitnite phase_transition for a varying number of sites 
+#%% calulate and plot the difference of finite and infinite phase_transition for a varying number of sites 
 sites_array = np.arange(40, 251, 20)
 
 transition_differences = []
 actual_sites = []
 
-start_total_time = time.time()
 
 for sites in sites_array:
-    print(f"\nRunning simulation for {sites} sites...")
     
-    start_sites_time = time.time()
     eigenvalues_over_h = []
     
     for h_val in h_array:
@@ -174,8 +176,6 @@ for sites in sites_array:
         eigenvalues = np.linalg.eigvalsh(H_large)
         eigenvalues_over_h.append(np.sort(eigenvalues))
     
-    end_eigen_time = time.time()
-    print(f"  Eigenvalue calculation took {end_eigen_time - start_sites_time:.2f} seconds.")
 
     eigenvalues_over_h_array = np.transpose(np.array(eigenvalues_over_h))
     
@@ -191,20 +191,15 @@ for sites in sites_array:
         actual_sites.append(sites)
     else:
         print(f"  No transition found for sites = {sites}. Try adjusting h_array range.")
-    
-    end_sites_time = time.time() 
-    print(f"  Total time for {sites} sites: {end_sites_time - start_sites_time:.2f} seconds.")
-    
-end_total_time = time.time() 
-print(f"\nTotal simulation time: {end_total_time - start_total_time:.2f} seconds.")
-
+        
+#%% plot results of the above (Difference of phase transition inf vs. finite)
 # --- Plot the results ---
 plt.figure(figsize=(10, 6))
 plt.scatter(actual_sites, transition_differences, label='Numerical Result')
 plt.plot(actual_sites, transition_differences, linestyle='--')
 plt.xlabel('Number of Sites (N)')
-plt.ylabel('Difference in Transition Field (h_finite - h_infinite)')
-plt.title('Finite-Size Scaling of the Topological Phase Transition')
+plt.ylabel(r'$\Delta h = h_{c,finite} - h_{c,inf})$')
+plt.title('Difference of topological transition for finite and infitie model vs. number of sites')
 plt.grid(True)
 plt.legend()
 plt.show()
@@ -212,14 +207,10 @@ plt.show()
 
 
 eigenvalues_over_ky_h = np.zeros((len(h_array), len(ky_array), 4*sites), dtype=np.complex128)
-start_total_time = time.time()
 hopping_matrix = get_hopping(t, alpha)
 
 for i, h_val in enumerate(h_array):
-    if i//10 == 0:
-        
-        print(f"Progress: {i+1}/{len(h_array)}")
-    
+
     h0_matrices = get_h0_vectorized(t, mu, h_val, alpha, delta, ky_array)
     
     H_large_stack = get_tb_hamiltonian_vectorized(
@@ -230,16 +221,14 @@ for i, h_val in enumerate(h_array):
         evals = np.linalg.eigvalsh(H_large_stack[j])
         eigenvalues_over_ky_h[i, j, :] = np.sort(evals)
 
-end_total_time = time.time()
-print(f"\nTotal simulation time: {end_total_time - start_total_time:.2f} seconds.")
 
 #%% plots of eigenvalues over ky and h
 # Plot 1: E vs. h for a fixed ky
-fixed_ky_val = 0.0
+fixed_ky_val = .1
 fixed_ky_idx = np.abs(ky_array - fixed_ky_val).argmin()
 eigenvalues_fixed_ky = np.real(eigenvalues_over_ky_h[:, fixed_ky_idx, :])
 
-fixed_h_val = 0.2
+fixed_h_val = 0.07
 fixed_h_idx = np.abs(h_array - fixed_h_val).argmin()
 eigenvalues_fixed_h = np.real(eigenvalues_over_ky_h[fixed_h_idx, :, :])
 
@@ -254,7 +243,7 @@ for band in range(eigenvalues_fixed_ky.shape[1]):
     plt.plot(h_array, eigenvalues_fixed_ky[:, band], color='blue', alpha=0.5)
 plt.xlabel('Magnetic Field, h')
 plt.ylabel('Eigenenergy, E')
-plt.title(f'Eigenenergy vs. Magnetic Field (h) at $k_y$ = {fixed_ky_val:.2f}')
+plt.title(f'Eigenenergy vs. Magnetic Field (h) at $k_y$ = {fixed_ky_val:.2f} for N={sites}')
 plt.grid(True)
 plt.axvline(x=np.sqrt(0.1**2 + 0.025**2), color='black', linestyle='--', label='Theoretical Transition')
 plt.legend(loc=1)
@@ -267,7 +256,7 @@ for band in range(eigenvalues_fixed_h.shape[1]):
     plt.plot(ky_array, eigenvalues_fixed_h[:, band], color='blue', alpha=0.5)
 plt.xlabel('Momentum, $k_y$')
 plt.ylabel('Eigenenergy, E')
-plt.title(f'Eigenenergy vs. Momentum ($k_y$) at h = {fixed_h_val:.2f}')
+plt.title(f'Eigenenergy vs. Momentum ($k_y$) at h = {fixed_h_val:.2f} for N={sites}')
 plt.grid(True)
 plt.legend()
 plt.ylim((-.5,.5))
@@ -279,39 +268,52 @@ H, Ky = np.meshgrid(h_array, ky_array)
 vmax_energy = np.max(np.abs(majorana_band_pos))
 vmin_energy = -vmax_energy
 
+majorana_idx_lower = 2 * sites - 1
+majorana_idx_upper = 2 * sites
+
+E_lower = np.real(eigenvalues_over_ky_h[:, :, majorana_idx_lower])
+E_upper = np.real(eigenvalues_over_ky_h[:, :, majorana_idx_upper])
+
+gap_energy = E_upper - E_lower 
+
+H, Ky = np.meshgrid(h_array, ky_array)
+
 plt.figure(figsize=(10, 7))
-#plt.contour(H, Ky, majorana_band_pos.T, levels=50, cmap='bwr')
-plt.pcolormesh(H, Ky, majorana_band_pos.T, cmap='bwr', vmin=-.2,vmax=.2,shading='gouraud')
-plt.colorbar(label='Eigenenergy E')
-plt.xlabel('Magnetic Field, h')
-plt.ylabel('Momentum, $k_y$')
-#plt.savefig('eigenenergy_contour.png')
+
+# Plotting the lowest absolute energy (Gap/2) is often the cleanest view
+# We transpose (.T) E_upper to match the meshgrid (Ky rows, H cols)
+plt.contourf(H, Ky, gap_energy.T, cmap='coolwarm', levels=15) 
+
+plt.colorbar(label='Lowest Excitation Energy $E_0$')
+plt.xlabel(r'$h$')
+plt.ylabel(r'$k_y$')
+plt.title(f'Energy gap (lowest pos. EV - highest neg EV) for N={sites}')
+
+# Add the theoretical transition line
+plt.axvline(x=phase_transition, color='black', linestyle='--', label='Phase Transition')
+plt.legend()
+
 plt.show()
 
 #%% computation of G_r(h, E) using the Lehmann representation
 G_r_lehmann = []
-sites = 50
+sites = 60
 ky_val = 0
+my_t = get_hopping(t, alpha)
 
-total_start = time.time()
 for i, h_val in enumerate(h_array):
-    #print(f"Progress: {i+1}/{len(h_array)}")
-    step_start = time.time()
-    my_ham = myf.get_tb_hamiltonian(h0_matrix=get_h0(t, mu, h_val, alpha, delta, ky_val), hopping_matrix=get_hopping(t, alpha), sites=55)
+    my_h0 = get_h0(t, mu, h_val, alpha, delta, ky_val)
+    my_ham = myf.get_tb_hamiltonian(my_h0, hopping_matrix=my_t, sites=sites)
     evals, evecs = np.linalg.eigh(my_ham)
-    G_r = myf.calc_G_lehmann(evals=evals, evecs=evecs, energy_array=energy_array, eta=eta)
+    G_r = myf.calc_G_lehmann(evals=evals, evecs=evecs, energy_array=energy_array, eta=eta, ra='r')
     G_r_lehmann.append(G_r)
-    step_end = time.time()
-    #print(f'Step {i+1} took {step_end - step_start:.4f} s')
-total_end = time.time()
-#print(f'Total time {total_end - total_start:.4f} s = {(total_end - total_start)/60} min')
 
 G_r_lehmann_array = np.array(G_r_lehmann)
 #%%
 em,hm = np.meshgrid(energy_array,h_array)
 ldos_aux = -np.einsum('ijkk->ij',G_r_lehmann_array.imag)
-#%%
-plt.figure()
+
+plt.figure(figsize=(10,8), dpi=150)
 plt.contourf(hm,em,np.clip(ldos_aux,0,10),levels=300,cmap='hot')
 plt.xlabel('Z')
 plt.ylabel(r'$\epsilon$')
@@ -320,8 +322,8 @@ plt.show()
 
 
 #%% Plots of G_r(h ,E) calculated by Lehmann representation (either fix h or E)
-h_index = 80
-fixed_energy = 0.000
+h_index = 60
+fixed_energy = 0
 energy_index = np.argmin(np.abs(energy_array - fixed_energy))
 h_0 = h_array[h_index]
 E_0 = energy_array[energy_index]
@@ -347,35 +349,28 @@ plt.figure(figsize=(10,7), dpi=100)
 plt.plot(energy_array, total_ldos_lehmann_E, label='Lehmann', c='orange')
 plt.xlabel("Energy")
 plt.ylabel("LDOS")
-plt.title(f'LDOS when $k_y$ is a good QN. N={sites}, $h_0=${h_0} and $k_y=${ky_val}')
+plt.title(f'LDOS when $k_y$ is a good QN. N={sites}, $h_0=${h_0:.2f} and $k_y=${ky_val}')
 plt.legend(loc=4)
-plt.text(0.05, 0.95, textstr, fontsize=10, transform=plt.gca().transAxes,
+plt.text(0.01, 1.1, textstr, fontsize=10, transform=plt.gca().transAxes,
 verticalalignment='top', horizontalalignment='left', bbox=props)
 plt.show()
 #%% computation of G_r(h, E) by inverting
-sites = 61
+sites = 60
 ky_val = 0.0
 my_t = get_hopping(t, alpha)
 gr = []
 
-total_start = time.time()
 for i, h_val in enumerate(h_array):
-    #print(f"Progress: {i+1}/{len(h_array)}")
-    step_start = time.time()
     
     my_h0 = get_h0(t, mu, h_val, alpha, delta, ky_val)
     my_H = myf.get_tb_hamiltonian(my_h0, my_t, sites)
-    gr_entry = myf.get_G_energy(energy_array, my_H, eta=1e-6, ra='r')
+    gr_entry = myf.get_G_energy(energy_array, my_H, eta=eta, ra='r')
     gr.append(gr_entry)
 
-    step_end = time.time()
-    #print(f'Step {i+1} took {step_end - step_start:.4f} s')
-total_end = time.time()
-#print(f'Total time {total_end - total_start:.4f} s = {(total_end - total_start) // 60 } min {(total_end - total_start) % 60} s')
 G_r_array = np.array(gr)
 #%% Plots of G_r(h ,E) calculated by Inversion 
-fixed_h = 80
-h_index = np.argmin(np.abs(h_array - fixed_h))
+fixed_h = 0.19
+h_index = 60#np.argmin(np.abs(h_array - fixed_h))
 h_0 = h_array[h_index]
 
 fixed_energy = 0.00
@@ -406,7 +401,7 @@ plt.figure(figsize=(10,7), dpi=100)
 plt.plot(energy_array, total_ldos_E, label='Inversion', c='blue')
 plt.xlabel("Energy")
 plt.ylabel("LDOS")
-plt.title(f'LDOS $k_y$ good qn. N={sites}, $h_0=${h_0}, $k_y=${ky_val}')
+plt.title(f'LDOS $k_y$ good qn. N={sites}, $h_0=${h_0:.2f}, $k_y=${ky_val:.2f}')
 plt.legend(loc=1)
 plt.text(0.05, 0.95, textstr, fontsize=10, transform=plt.gca().transAxes,
 verticalalignment='top', horizontalalignment='left', bbox=props)
@@ -442,12 +437,12 @@ ldos_full = (-1/np.pi)*np.imag(np.einsum('ehisis->ehi', gr_resh))
 ldos_x = ldos_full[h_index, energy_index, :]
 plt.figure(figsize=(10,7), dpi=150)
 plt.plot(ldos_x, c='blue')
-plt.ylim(-.01,1)
+plt.ylim(-.01,6)
 plt.xlabel(r'site (index i)')
 plt.ylabel(r'DOS')
 plt.text(0.5, 0.95, textstr, fontsize=10, transform=plt.gca().transAxes,
 verticalalignment='top', horizontalalignment='left', bbox=props)
-plt.title(f'LDOS over position (ky good qn). N={sites}, h={h_array[h_index]}, E={energy_array[energy_index]}')
+plt.title(f'LDOS over position (ky good qn). N={sites}, h={h_array[h_index]:.2f}, E={energy_array[energy_index]}')
 plt.show()
 #%% Extracting the anomalous Green function (off diagonal elements) and plotting them 
 gr_edge = gr_resh[:,:,0,:,0,:]
@@ -458,13 +453,13 @@ plt.plot(h_array, ldos_fr, c='blue')
 #plt.ylim(-.01,5)
 plt.xlabel(r'h')
 plt.ylabel(r'Anomalous Green function')
-plt.axvline(x=phase_transition, linestyle='--')
+plt.axvline(x=phase_transition, linestyle='--', c='orange')
 plt.text(0.5, 0.95, textstr, fontsize=10, transform=plt.gca().transAxes,
 verticalalignment='top', horizontalalignment='left', bbox=props)
-plt.title(f'LDOS over position (ky good qn). N={sites}, h={h_array[h_index]}, E={energy_array[energy_index]}')
+plt.title(f'LDOS over position (ky good qn). N={sites}, h={h_array[h_index]:.2f}, E={energy_array[energy_index]}')
 plt.show()
 
-# %%
+# %% plot anomalous part of gf over h 
 gr_over_h = np.imag(gr_edge[:,energy_index, 1, 2])
 plt.figure(figsize=(10,7), dpi=150)
 plt.plot(h_array, gr_over_h, c='blue')
@@ -474,7 +469,7 @@ plt.ylabel(r'Anomalous Green function')
 plt.axvline(x=phase_transition, linestyle='--')
 plt.text(0.5, 0.95, textstr, fontsize=10, transform=plt.gca().transAxes,
 verticalalignment='top', horizontalalignment='left', bbox=props)
-plt.title(f'LDOS over position (ky good qn). N={sites}, h={h_array[h_index]}, E={energy_array[energy_index]}')
+plt.title(f'LDOS over position (ky good qn). N={sites}, h={h_array[h_index]:.2f}, E={energy_array[energy_index]}')
 plt.show()
 
 # %%
