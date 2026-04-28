@@ -9,7 +9,7 @@ from typing import Callable, List, Tuple, Union, Any, Optional, Dict
 from scipy.linalg import inv
 from scipy.linalg import block_diag
 
-def get_surface_gf(energy:float, eps:np.ndarray(4), t_matrix:np.ndarray(4), eta:float) -> np.ndarray(4,dtype=complex): # type: ignore
+def get_surface_gf(energy:float, eps:np.ndarray(4), t_matrix:np.ndarray(4), eta:float=1e-4) -> np.ndarray(4,dtype=complex): # type: ignore
     '''
     Sancho Lopéz algorithm to compute the surface and bulk greens functions for a semi-infinite system. Returns: Gs (surface Green-function) and Gb (retarded bulk Green-function) as complex np.ndarrays of dimensions 4x4.
     -energy: Onsite energy 
@@ -23,15 +23,15 @@ def get_surface_gf(energy:float, eps:np.ndarray(4), t_matrix:np.ndarray(4), eta:
     Epsilon_bulk = eps
 
     for i in range(500):
-        aux = np.linalg.inv((z - Epsilon_bulk))
+        aux = inv((z - Epsilon_bulk))
         Epsilon_surf = Epsilon_surf + alpha@aux@beta
         Epsilon_bulk = Epsilon_bulk + alpha@aux@beta + beta@aux@alpha
         alpha = alpha@aux@alpha
         beta = beta@aux@beta
-        if np.linalg.norm(alpha) < 1e-10 :
+        if max(np.linalg.norm(alpha), np.linalg.norm(beta)) < 1e-10:
             break
-    Gs = np.linalg.inv((z - Epsilon_surf))
-    Gb = np.linalg.inv((z - Epsilon_bulk))
+    Gs = inv((z - Epsilon_surf))
+    Gb = inv((z - Epsilon_bulk))
 
     return Gs,Gb
 
@@ -339,7 +339,7 @@ def get_G_k_energy(
 
     return Gf_stack
 
-def build_sns_junction(t, mu_sc, mu_m, alpha, h, delta, phi, sites_left, sites_right, sites_mid, dof):
+def build_sns_junction(t, mu_sc, mu_m, alpha, h, delta, phi, sites_left, sites_right, sites_mid, dof, symmetric=False):
 
     r"""
     This function is used to build the full Hamiltonian for a finite size SNS junction. This can not be used for RGF calculations!
@@ -375,14 +375,17 @@ def build_sns_junction(t, mu_sc, mu_m, alpha, h, delta, phi, sites_left, sites_r
     H_tot = np.zeros((N_tot, N_tot), dtype=np.complex128)
     V = t_matrix(t, alpha)
 
+    phi_L = -phi/2 if symmetric else 0 
+    phi_R = phi / 2 if symmetric else phi
+
     for i in range(sites_tot):
         idx = i*dof
         if i < sites_left: # left lead
-            H_site = onsite_matrix(t, mu_sc, h, delta*np.exp(-1j * phi/2))
+            H_site = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_L))
         elif i < sites_left + sites_mid: # middle region
             H_site = onsite_matrix(t, mu_m, h, 0)
         else: # right lead
-            H_site = onsite_matrix(t, mu_sc, h, delta*np.exp(1j*phi/2))
+            H_site = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_R))
     
         H_tot[idx:idx+dof, idx:idx+dof] = H_site
 
@@ -390,72 +393,77 @@ def build_sns_junction(t, mu_sc, mu_m, alpha, h, delta, phi, sites_left, sites_r
             aux_idx = (i+1) * dof
             H_tot[idx:idx+dof, aux_idx:aux_idx+dof] = V
             H_tot[aux_idx:aux_idx+dof, idx:idx+dof] = V.conj().T
+            
     return H_tot
 
+def build_sns_junction_sliced(t, mu_sc, mu_m, alpha, h, delta, phi, sites_left, sites_right, sites_mid, symmetric=False):
 
-def get_dos_region(G_full, block_size, start_site, end_site):
-    """
-    Extracts the density of states (LDOS) for a specific region of sites.
-    
+    r"""
+    This function is used to build the full Hamiltonian for a finite size SNS junction. This can not be used for RGF calculations!
+    Builds a 1d SNS-junction Hamiltonian using following matrices
+    -onsite: 
+        H_0 = [[2*t - mu-h, 0, delta, 0]
+        [0, 2*t - mu+h, 0, -delta]
+        [delta, 0, -2*t + mu-h,0]
+        [0, -delta, 0, -2*t + mu + h]]
+        
+    hopping: 
+        [[-t, alpha, 0, 0]
+        [-alpha, -t, 0, 0]
+        [0, 0, t, alpha]
+        [0, 0, -alpha, t]]
+
     Args:
-        G_full: np.ndarray, full Green's function
-        block_size: int, degrees of freedom per site
-        start_site: int, starting site index (0-indexed)
-        end_site: int, ending site index (inclusive)
+        t:float, hopping
+        mu:float, chemical potential
+        alpha:float, spin-orbit strenght
+        h:float, zeeman energy
+        delta:float, SC pairing 
+        phi:float, phase difference between the SC leads
+        sites_left:int, number of sites left lead
+        sites_right:int, number of sites right lead
+        sites_mid:int, number of sites middle lead
+        dof:int, degrees of freedom per site (here Nambu $\Psi^\dagger = (up, down, down^dagger, up^dagger)^T$
     
-    Returns:
-        float, the local density of states for the region
+    Returns: np.ndarray of dimensions d = dof * (sites_left + sites_right + site_mid).
     """
+    
+    phi_L = -phi/2 if symmetric else 0 
+    phi_R = phi / 2 if symmetric else phi
 
-    idx_start = start_site * block_size
-    idx_end = (end_site + 1) * block_size
-    G_region = G_full[idx_start:idx_end, idx_start:idx_end]
-    dos = (-1/np.pi) * np.imag(np.trace(G_region))
+    H_L = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_L))
+    H_R = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_R))
+    H_M = onsite_matrix(t, mu_m, h, 0)
 
-    return dos
-
-
-def self_energy(g, V, direction='left'):
-    """Calculates the self-energy contribution from a lead using the surface Green's function and the coupling matrix.
-    Args:
-        g: np.ndarray, surface Green's function of the lead
-        V: np.ndarray, coupling matrix between the lead and the central region
-        direction: str, 'left' or 'right' for the lead direction
-    Returns:
-        np.ndarray, the self-energy contribution from the lead
-    """
-    if direction == 'left':
-        Sigma = V.conj().T @ g @ V
-    elif direction == 'right':
-        Sigma = V @ g @ V.conj().T
-    else:        
-        raise ValueError("direction must be 'left' or 'right'")
-    return Sigma
-
-
-def build_middle_region(t, mu_m, alpha, h, sites_mid, dof):
-    h0 = onsite_matrix(t, mu_m, h, 0)
     V = t_matrix(t, alpha)
 
-    H = np.zeros((sites_mid * dof, sites_mid * dof), dtype=np.complex128)
+    H_slices = (
+        [H_L for _ in range(sites_left)] +  
+        [H_M for _ in range(sites_mid)] +
+        [H_R for _ in range(sites_right)]
+    )
 
-    for i in range(sites_mid):
-        H[i*dof:(i+1)*dof, i*dof:(i+1)*dof] = h0
+    return H_slices, V
 
-    for i in range(sites_mid - 1):
-        idx_i = i * dof
-        idx_j = (i + 1) * dof
+def build_middle_region(t, mu_m, alpha, h, sites_mid):
+    '''
+    Returns a list of onsite slice Hamilotians for the middle region of the SNS junction. This is used for the RGF.
+    '''
 
-        H[idx_i:idx_i+dof, idx_j:idx_j+dof] = V
-        H[idx_j:idx_j+dof, idx_i:idx_i+dof] = V.conj().T
+    H_N = onsite_matrix(t, mu_m, h, 0)
+    V = t_matrix(t, alpha)
+    
+    H_slices = []
+    for _ in range(sites_mid):
+        H_slices.append(H_N.copy())
+    
+    return H_slices, V
 
-    return H
-  
-
-def get_rgf_sns(middle_hamiltonian, V, g_L, g_R, energy, eta=1e-5, ra:str='r', return_full=False):
+def get_rgf_sns(H_slices, V, g_L, g_R, energy, eta=1e-4, ra:str='r', return_full=False):
     """
     RGF for SNS junction with infinite leads via recursive algorithm.
     The infinite leads are represented by surface Green's functions computed via Sancho-López.
+    This algorithm is based on the paper from Lewenkopf and Mucciolo 2013 "The recursive Green's function method for graphene" (https://journals.aps.org/prb/abstract/10.1103/PhysRevB.88.155426) and adapted to the SNS junction geometry.
     
     Algorithm:
     1. LEFT SWEEP: Propagate from left lead boundary forward
@@ -482,126 +490,128 @@ def get_rgf_sns(middle_hamiltonian, V, g_L, g_R, energy, eta=1e-5, ra:str='r', r
         GL: np.ndarray, local GFs from left sweep (sites x dof x dof)
         GR: np.ndarray, local GFs from right sweep (sites x dof x dof)
     """
-    dim = middle_hamiltonian.shape[0]
-    dof = V.shape[0]
-    N = dim // dof    
+
+    N = len(H_slices)
+    dof = H_slices[0].shape[0]
     I = np.eye(dof, dtype=np.complex128)
 
-    if ra == 'r':
-        z = energy + 1j*eta
-    elif ra == 'a':
-        z = energy - 1j*eta
-    else:
-        raise ValueError("ra must be 'r' or 'a' for retarded or advanced Green's function")
+    z = energy + 1j*eta if ra == 'r' else energy - 1j*eta
 
-    # 1.RIGHT-TO-LEFT SWEEP 
+    # 1.RIGHT sweep: GR[i] = (z - H[i] - V GR[i+1] V†)^{-1}    
     GR = np.zeros((N, dof, dof), dtype=np.complex128)
-    
-    Sigma_R0 = V @ g_R @ V.conj().T
-    h_last = middle_hamiltonian[(N-1)*dof:N*dof, (N-1)*dof:N*dof]
-    GR[N-1] = inv(z*I - h_last - Sigma_R0)
-    
-    for i in range(N-2, -1, -1):
-        h_i = middle_hamiltonian[i*dof:(i+1)*dof, i*dof:(i+1)*dof]
-        Sigma_R = V @ GR[i+1] @ V.conj().T
-        GR[i] = inv(z*I - h_i - Sigma_R)
 
-    # 2. RECONSTRUCT FULL GF
-    G_out = np.zeros((N*dof, N*dof), dtype=np.complex128)
+    Sigma_R0 = V @ g_R @ V.conj().T
+    GR[N-1] = inv(z*I - H_slices[N-1] - Sigma_R0)
+    for i in range(N-2, -1, -1):
+        GR[i] = inv(z*I - H_slices[i] - V @ GR[i+1] @ V.conj().T)
+
+    # 2.LEFT sweep: GL[i] = (z - H[i] - V† GL[i-1] V)^{-1}
+    GL = np.zeros((N, dof, dof), dtype=np.complex128)
 
     Sigma_L0 = V.conj().T @ g_L @ V
-    G_out[0:dof, 0:dof] = inv(inv(GR[0]) - Sigma_L0)
-
-    # Do Left -> Right sweep to fill diagonal blocks
+    GL[0] = inv(z*I - H_slices[0] - Sigma_L0)
     for i in range(1, N):
-        G_prev = G_out[(i-1)*dof:i*dof, (i-1)*dof:i*dof]
-        G_out[i*dof:(i+1)*dof, i*dof:(i+1)*dof] = GR[i] + GR[i] @ V.conj().T @ G_prev @ V @ GR[i]
+        GL[i] = inv(z*I - H_slices[i] - V.conj().T @ GL[i-1] @ V)
 
-    # Off-diagonal blocks can be reconstructed if return_full is True
-    if return_full:
-        for i in range(N):
-            # Fill upper triangle G[i, j] for j > i 
-            for j in range(i+1, N):
-                G_aux_1 = G_out[i*dof:(i+1)*dof, (j-1)*dof:j*dof]
-                G_out[i*dof:(i+1)*dof, j*dof:(j+1)*dof] = G_aux_1 @ V @ GR[j]
-            # Fill lower triangle G[j, i] for j > i
-            for j in range(i+1, N):
-                G_aux_2 = G_out[(j-1)*dof:j*dof, i*dof:(i+1)*dof]
-                G_out[j*dof:(j+1)*dof, i*dof:(i+1)*dof] = GR[j] @ V.conj().T @ G_aux_2
-    
-    return G_out
+    # 3. COMBINE: G[i,i] = (z - H[i] - Σ_L[i] - Σ_R[i])^{-1}
+    G_diag = np.zeros((N, dof, dof), dtype=np.complex128)
+    for i in range(N):
+        S_L = V.conj().T @ GL[i-1] @ V if i > 0 else V.conj().T @ g_L @ V
+        S_R = V @ GR[i+1] @ V.conj().T if i < N-1 else V @ g_R @ V.conj().T
+        G_diag[i] = inv(z*I - H_slices[i] - S_L - S_R)
+
+    if not return_full:
+        return G_diag
+
+    # 4. FULL MATRIX RECONSTRUCTION (return_full = True)
+    dim = N * dof 
+    G_full = np.zeros((dim, dim), dtype=np.complex128)
+
+
+    for i in range(N):
+        G_full[i*dof:(i+1)*dof, i*dof:(i+1)*dof] = G_diag[i]
+
+    # Upper triangle: G[n, n+1] = G[n,n] @ V @ GR[n+1]    
+    for i in range(N):
+        G_block = G_diag[i]
+        for j in range(i+1, N):
+            G_block = G_block @ V @ GR[j]
+            G_full[i*dof:(i+1)*dof, j*dof:(j+1)*dof] = G_block
+    # Lower triangle: G[n, n-1] = GL[n-1] @ V @ G[n,n]  G[n, n-2] = GL[n-2] @ V @ G[n, n-1]
+    for i in range(N):
+        G_block = G_diag[i]
+        for j in range(i-1, -1, -1):
+            G_block = GL[j] @ V @ G_block
+            G_full[i*dof:(i+1)*dof, j*dof:(j+1)*dof] = G_block
+
+    return G_full
     
 
-def get_rgf_finite_system(full_hamiltonian, V, energy, eta=1e-5, ra:str='r', return_full=False):
+def get_rgf_finite_system(H_slices, V, energy, eta=1e-4, ra:str='r', return_full=False):
     """
     Computes the RGF for a strictly finite system.
     
     Args:
-        full_hamiltonian: The Hamiltonian of the entire finite system (L + Mid + R).
+        H_slices: List of Hamiltonian slices for each site.
         V: The hopping matrix connecting the blocks.
         energy: Calculation energy.
         eta: Imaginary broadening.
         return_full: If True, returns the full N*dof x N*dof matrix.
+
+    Returns: 
+        G_out: The Green's function (either diagonal blocks or full matrix).
+        GL: Local GFs from left sweep (sites x dof x dof).
+        GR: Local GFs from right sweep (sites x dof x dof).
     """
-    dim = full_hamiltonian.shape[0]
-    dof = V.shape[0]
-    N = dim // dof  
+
+    N = len(H_slices)  
+    dof = H_slices[0].shape[0]
     I = np.eye(dof, dtype=np.complex128)
+
+    dim = N * dof
+
     z = energy + 1j*eta if ra == 'r' else energy - 1j*eta
 
     # 1. LEFT-TO-RIGHT SWEEP
     GL = np.zeros((N, dof, dof), dtype=np.complex128)
     
-    H00 = full_hamiltonian[0:dof, 0:dof]
-    GL[0] = inv(z*I - H00)
+    GL[0] = inv(z*I - H_slices[0])
 
     for i in range(1, N):
-        Hii = full_hamiltonian[i*dof:(i+1)*dof, i*dof:(i+1)*dof]
-        Sigma_L = V.conj().T @ GL[i-1] @ V
-        GL[i] = inv(z*I - Hii - Sigma_L)
+        GL[i] = inv(z*I - H_slices[i] - V.conj().T @ GL[i-1] @ V)
 
     # 2. RIGHT-TO-LEFT SWEEP
     GR = np.zeros((N, dof, dof), dtype=np.complex128)
     
-    HNN = full_hamiltonian[(N-1)*dof : N*dof, (N-1)*dof : N*dof]
-    GR[N-1] = inv(z*I - HNN)
+    GR[N-1] = inv(z*I - H_slices[N-1])
 
     for i in range(N-2, -1, -1):
-        Hii = full_hamiltonian[i*dof:(i+1)*dof, i*dof:(i+1)*dof]
-        Sigma_R = V @ GR[i+1] @ V.conj().T
-        GR[i] = inv(z*I - Hii - Sigma_R)
+        GR[i] = inv(z*I - H_slices[i] - V @ GR[i+1] @ V.conj().T)
 
     # 3. CONSTRUCT DIAGONAL BLOCKS
-    G_diag_blocks = np.zeros((N, dof, dof), dtype=np.complex128)
-    for i in range(N):
-        Hii = full_hamiltonian[i*dof:(i+1)*dof, i*dof:(i+1)*dof]
-        
-        if i == 0:
-            S_L = np.zeros((dof, dof))
-            S_R = V @ GR[i+1] @ V.conj().T
-        elif i == N-1:
-            S_L = V.conj().T @ GL[i-1] @ V
-            S_R = np.zeros((dof, dof))
-        else:
-            S_L = V.conj().T @ GL[i-1] @ V
-            S_R = V @ GR[i+1] @ V.conj().T
-            
-        G_diag_blocks[i] = inv(z*I - Hii - S_L - S_R)
+    G_diag = np.zeros((N, dof, dof), dtype=np.complex128)
     
+    for i in range(N):
+        S_L = V.conj().T @ GL[i-1] @ V if i > 0 else 0
+        S_R = V @ GR[i+1] @ V.conj().T if i < N-1 else 0
+
+        G_diag[i] = inv(z*I - H_slices[i] - S_L - S_R)
+
     if not return_full:
-        return G_diag_blocks, GL, GR
+        return G_diag, GL, GR
 
     # 4. FULL MATRIX RECONSTRUCTION
     G_full = np.zeros((dim, dim), dtype=np.complex128)
+    
     for i in range(N):
-        G_full[i*dof:(i+1)*dof, i*dof:(i+1)*dof] = G_diag_blocks[i]
+        G_full[i*dof:(i+1)*dof, i*dof:(i+1)*dof] = G_diag[i]
     
     # Off-diagonals using the Recursive identity: G_ij = G_ii * V * GR_jj (or similar)
     for i in range(N-1):
-        G_full[i*dof:(i+1)*dof, (i+1)*dof:(i+2)*dof] = G_diag_blocks[i] @ V @ GR[i+1]
-        G_full[(i+1)*dof:(i+2)*dof, i*dof:(i+1)*dof] = GR[i+1] @ V.conj().T @ G_diag_blocks[i]
+        G_full[i*dof:(i+1)*dof, (i+1)*dof:(i+2)*dof] = G_diag[i] @ V @ GR[i+1]
+        G_full[(i+1)*dof:(i+2)*dof, i*dof:(i+1)*dof] = GL[i] @ V.conj().T @ G_diag[i+1]
         
-    return G_full, GL, GR
+    return G_full
 
         
 

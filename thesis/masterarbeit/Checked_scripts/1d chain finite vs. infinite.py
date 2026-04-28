@@ -9,7 +9,7 @@ import my_functions as myf
 from  bachelorarbeit import my_functions_ba as bach
 import pandas as pd 
 #%% initialize parameters 
-sites = 150
+sites = 500
 t = 1.0
 mu = 0.025 * t
 alpha = 0.4 * t
@@ -19,7 +19,7 @@ h = 0.2 * t
 
 e_min = - .025 * delta
 e_max = -e_min
-steps = 301
+steps = 101
 energy_array = np.linspace(e_min,e_max,steps)
 
 phase_transition = np.sqrt(delta**2+mu**2)

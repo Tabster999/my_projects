@@ -9,11 +9,11 @@ import pandas as pd
 from io import StringIO
 
 plt.rcParams['font.size'] = 14
-plt.rcParams['axes.titlesize'] = 18
-plt.rcParams['axes.labelsize'] = 16
-plt.rcParams['xtick.labelsize'] = 12
-plt.rcParams['ytick.labelsize'] = 12
-plt.rcParams['legend.fontsize'] = 10
+plt.rcParams['axes.titlesize'] = 20
+plt.rcParams['axes.labelsize'] = 18
+plt.rcParams['xtick.labelsize'] = 18
+plt.rcParams['ytick.labelsize'] = 18
+plt.rcParams['legend.fontsize'] = 16
 plt.rcParams['figure.titlesize'] = 20
 
 def read_and_integrate(filepath, starttime, endtime):
