@@ -9,5 +9,11 @@
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
     "python-envs.pythonProjects": [],
-    "python.analysis.autoImportCompletions": true
+    "python.analysis.autoImportCompletions": true,
+    "files.exclude": {
+        "**/thesis/masterarbeit/__init__.py": true,
+        "**/thesis/my_functions.py": true,
+        "**/thesis/setup.py": true
+
+    }
 }
