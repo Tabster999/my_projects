@@ -9,7 +9,7 @@ from typing import Callable, List, Tuple, Union, Any, Optional, Dict
 from scipy.linalg import inv
 from scipy.linalg import block_diag
 
-def get_surface_gf(energy:float, eps:np.ndarray(4), t_matrix:np.ndarray(4), eta:float=1e-4) -> np.ndarray(4,dtype=complex): # type: ignore
+def get_surface_gf(energy:float, eps:np.ndarray(4), t_matrix:np.ndarray(4), eta:float=1e-3) -> np.ndarray(4,dtype=complex): # type: ignore
     '''
     Sancho Lopéz algorithm to compute the surface and bulk greens functions for a semi-infinite system. Returns: Gs (surface Green-function) and Gb (retarded bulk Green-function) as complex np.ndarrays of dimensions 4x4.
     -energy: Onsite energy 
@@ -22,14 +22,15 @@ def get_surface_gf(energy:float, eps:np.ndarray(4), t_matrix:np.ndarray(4), eta:
     Epsilon_surf = eps
     Epsilon_bulk = eps
 
-    for i in range(500):
+    for i in range(600):
         aux = inv((z - Epsilon_bulk))
         Epsilon_surf = Epsilon_surf + alpha@aux@beta
         Epsilon_bulk = Epsilon_bulk + alpha@aux@beta + beta@aux@alpha
         alpha = alpha@aux@alpha
         beta = beta@aux@beta
-        if max(np.linalg.norm(alpha), np.linalg.norm(beta)) < 1e-10:
+        if max(np.linalg.norm(alpha), np.linalg.norm(beta)) < 1e-14:
             break
+        
     Gs = inv((z - Epsilon_surf))
     Gb = inv((z - Epsilon_bulk))
 
@@ -93,7 +94,7 @@ def tb_hamiltonian_1d(sites:int, t:float, mu:float, h:float, alpha:float, delta:
     
     return H
 
-def calc_G(energy:float, hamiltonian:np.ndarray, eta:float = 1e-4,ra:str='r') -> np.ndarray:
+def calc_G(energy:float, hamiltonian:np.ndarray, eta:float = 1e-3,ra:str='r') -> np.ndarray:
     """
     Calculates the retarded/advanced (str:'r'/'a') Green-function G(E_0) for a given input hamiltonian and single energy E_0.
     
@@ -124,7 +125,7 @@ def calc_G(energy:float, hamiltonian:np.ndarray, eta:float = 1e-4,ra:str='r') ->
 def get_G_energy(
     energy_array:np.ndarray,
     hamiltonian:np.ndarray,
-    eta:float = 1e-4,
+    eta:float = 1e-3,
     ra:str = 'r')-> np.ndarray:
     """
     Calculates retarded or advanced Green functions G(E) over the specified energy range.
@@ -288,7 +289,7 @@ def get_G_k_energy(
     energy_array: np.ndarray,
     h0_matrix: np.ndarray,
     hopping_matrix: np.ndarray,
-    eta: float = 1e-4,
+    eta: float = 1e-3,
     ra: str = 'r'
 ) -> np.ndarray:
     """
@@ -459,7 +460,7 @@ def build_middle_region(t, mu_m, alpha, h, sites_mid):
     
     return H_slices, V
 
-def get_rgf_sns(H_slices, V, g_L, g_R, energy, eta=1e-4, ra:str='r', return_full=False):
+def get_rgf_sns(H_slices, V, g_L, g_R, energy, eta=1e-3, ra:str='r', return_full=False, return_dense=False):
     """
     RGF for SNS junction with infinite leads via recursive algorithm.
     The infinite leads are represented by surface Green's functions computed via Sancho-López.
@@ -484,6 +485,7 @@ def get_rgf_sns(H_slices, V, g_L, g_R, energy, eta=1e-4, ra:str='r', return_full
         eta: float, imaginary broadening parameter
         ra: str, 'r' for retarded or 'a' for advanced Green's function
         return_full: bool, if True returns full matrix; if False returns diagonal blocks only
+        return_dense: bool, if True it returns the complete NxN GF as the 5th output
     
     Returns:
         G_out: np.ndarray, Green's function (diagonal blocks or full matrix)
@@ -494,7 +496,6 @@ def get_rgf_sns(H_slices, V, g_L, g_R, energy, eta=1e-4, ra:str='r', return_full
     N = len(H_slices)
     dof = H_slices[0].shape[0]
     I = np.eye(dof, dtype=np.complex128)
-
     z = energy + 1j*eta if ra == 'r' else energy - 1j*eta
 
     # 1.RIGHT sweep: GR[i] = (z - H[i] - V GR[i+1] V†)^{-1}    
@@ -516,38 +517,54 @@ def get_rgf_sns(H_slices, V, g_L, g_R, energy, eta=1e-4, ra:str='r', return_full
     # 3. COMBINE: G[i,i] = (z - H[i] - Σ_L[i] - Σ_R[i])^{-1}
     G_diag = np.zeros((N, dof, dof), dtype=np.complex128)
     for i in range(N):
-        S_L = V.conj().T @ GL[i-1] @ V if i > 0 else V.conj().T @ g_L @ V
-        S_R = V @ GR[i+1] @ V.conj().T if i < N-1 else V @ g_R @ V.conj().T
+        if i == 0:
+            S_L = V.conj().T @ g_L @ V
+        else:
+            S_L = V.conj().T @ GL[i-1] @ V
+        
+        if i == N-1:
+            S_R = V @ g_R @ V.conj().T
+        else:
+            S_R = V @ GR[i+1] @ V.conj().T
+            
         G_diag[i] = inv(z*I - H_slices[i] - S_L - S_R)
 
     if not return_full:
-        return G_diag
+        return G_diag, GL, GR, None, None
 
-    # 4. FULL MATRIX RECONSTRUCTION (return_full = True)
-    dim = N * dof 
-    G_full = np.zeros((dim, dim), dtype=np.complex128)
+    # 4. FULL MATRIX (STABLE Dyson assembly)
+    dim = N * dof
+    G_blocks = np.zeros((N, N, dof, dof), dtype=np.complex128)
 
-
+    # diagonal
     for i in range(N):
-        G_full[i*dof:(i+1)*dof, i*dof:(i+1)*dof] = G_diag[i]
+        G_blocks[i, i] = G_diag[i]
 
-    # Upper triangle: G[n, n+1] = G[n,n] @ V @ GR[n+1]    
+    # Upper triangle (Forward propagation)
     for i in range(N):
-        G_block = G_diag[i]
         for j in range(i+1, N):
-            G_block = G_block @ V @ GR[j]
-            G_full[i*dof:(i+1)*dof, j*dof:(j+1)*dof] = G_block
-    # Lower triangle: G[n, n-1] = GL[n-1] @ V @ G[n,n]  G[n, n-2] = GL[n-2] @ V @ G[n, n-1]
-    for i in range(N):
-        G_block = G_diag[i]
-        for j in range(i-1, -1, -1):
-            G_block = GL[j] @ V @ G_block
-            G_full[i*dof:(i+1)*dof, j*dof:(j+1)*dof] = G_block
+            G_blocks[i, j] = G_blocks[i, j-1] @ V @ GR[j]
 
-    return G_full
+    # Lower triangle (Backward propagation)
+    # Don't use .conj().T unless you are sure about the symmetry!
+    for i in range(N):
+        for j in range(i-1, -1, -1):
+            G_blocks[i, j] = G_blocks[i, j+1] @ V.conj().T @ GL[j]
+
+    if not return_dense:
+        return G_diag, GL, GR, G_blocks, None
+
+    # 5. CONVERT TO DENSE NxN MATRIX
+    dim = N * dof
+    G_dense = np.zeros((dim, dim), dtype=np.complex128)
+    for i in range(N):
+        for j in range(N):
+            G_dense[i*dof:(i+1)*dof, j*dof:(j+1)*dof] = G_blocks[i, j]
+
+    return G_diag, GL, GR, G_blocks, G_dense
     
 
-def get_rgf_finite_system(H_slices, V, energy, eta=1e-4, ra:str='r', return_full=False):
+def get_rgf_finite_system(H_slices, V, energy, eta=1e-3, ra:str='r', return_full=False, return_dense=False):
     """
     Computes the RGF for a strictly finite system.
     
@@ -557,6 +574,8 @@ def get_rgf_finite_system(H_slices, V, energy, eta=1e-4, ra:str='r', return_full
         energy: Calculation energy.
         eta: Imaginary broadening.
         return_full: If True, returns the full N*dof x N*dof matrix.
+        return_dense: bool, if True it returns the complete NxN GF as the 5th output.
+
 
     Returns: 
         G_out: The Green's function (either diagonal blocks or full matrix).
@@ -567,14 +586,11 @@ def get_rgf_finite_system(H_slices, V, energy, eta=1e-4, ra:str='r', return_full
     N = len(H_slices)  
     dof = H_slices[0].shape[0]
     I = np.eye(dof, dtype=np.complex128)
-
     dim = N * dof
-
     z = energy + 1j*eta if ra == 'r' else energy - 1j*eta
 
     # 1. LEFT-TO-RIGHT SWEEP
     GL = np.zeros((N, dof, dof), dtype=np.complex128)
-    
     GL[0] = inv(z*I - H_slices[0])
 
     for i in range(1, N):
@@ -582,7 +598,6 @@ def get_rgf_finite_system(H_slices, V, energy, eta=1e-4, ra:str='r', return_full
 
     # 2. RIGHT-TO-LEFT SWEEP
     GR = np.zeros((N, dof, dof), dtype=np.complex128)
-    
     GR[N-1] = inv(z*I - H_slices[N-1])
 
     for i in range(N-2, -1, -1):
@@ -594,24 +609,40 @@ def get_rgf_finite_system(H_slices, V, energy, eta=1e-4, ra:str='r', return_full
     for i in range(N):
         S_L = V.conj().T @ GL[i-1] @ V if i > 0 else 0
         S_R = V @ GR[i+1] @ V.conj().T if i < N-1 else 0
-
         G_diag[i] = inv(z*I - H_slices[i] - S_L - S_R)
 
     if not return_full:
-        return G_diag, GL, GR
+        return G_diag, GL, GR, None, None
 
     # 4. FULL MATRIX RECONSTRUCTION
-    G_full = np.zeros((dim, dim), dtype=np.complex128)
+    G_blocks = np.zeros((N, N, dof, dof), dtype=np.complex128)
     
+    # diagonal
     for i in range(N):
-        G_full[i*dof:(i+1)*dof, i*dof:(i+1)*dof] = G_diag[i]
+        G_blocks[i, i] = G_diag[i]
     
-    # Off-diagonals using the Recursive identity: G_ij = G_ii * V * GR_jj (or similar)
-    for i in range(N-1):
-        G_full[i*dof:(i+1)*dof, (i+1)*dof:(i+2)*dof] = G_diag[i] @ V @ GR[i+1]
-        G_full[(i+1)*dof:(i+2)*dof, i*dof:(i+1)*dof] = GL[i] @ V.conj().T @ G_diag[i+1]
-        
-    return G_full
+    # Upper triangle (Forward propagation)
+    for i in range(N):
+        for j in range(i+1, N):
+            G_blocks[i, j] = G_blocks[i, j-1] @ V @ GR[j]
+
+    # Lower triangle (Backward propagation)
+    # Don't use .conj().T unless you are sure about the symmetry!
+    for i in range(N):
+        for j in range(i-1, -1, -1):
+            G_blocks[i, j] = G_blocks[i, j+1] @ V.conj().T @ GL[j]
+
+    if not return_dense:
+        return G_diag, GL, GR, G_blocks, None
+
+    # 5. CONVERT TO DENSE NxN MATRIX
+    dim = N * dof
+    G_dense = np.zeros((dim, dim), dtype=np.complex128)
+    for i in range(N):
+        for j in range(N):
+            G_dense[i*dof:(i+1)*dof, j*dof:(j+1)*dof] = G_blocks[i, j]
+
+    return G_diag, GL, GR, G_blocks, G_dense
 
         
 
