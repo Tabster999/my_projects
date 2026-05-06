@@ -244,7 +244,6 @@ plt.axvline(x=params.sites_l+1, label='Surface left', ls=':', c='blue', alpha=.5
 plt.axvline(x=params.sites_l+params.sites_m+1, label='Surface right', ls=':', c='blue', alpha=.5, lw=1)
 plt.ylabel(r'$|\Psi|^2$')
 plt.plot(range(len(spatial_density_rgf)), spatial_density_rgf, color='green', alpha=0.5)
-plt.ylim(0, 0.05)
 plt.legend(loc=9)
 plt.text(0.02, 0.95, params.get_textstr(), transform=plt.gca().transAxes, fontsize=10, verticalalignment='top', bbox=props)
 plt.show()
