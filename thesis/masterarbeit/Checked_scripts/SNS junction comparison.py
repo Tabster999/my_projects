@@ -1,32 +1,35 @@
 #%% 
 """Comparison of brute-force diagonalization and RGF method for calculating the energy spectrum and LDOS of a 1d SNS junction. This was mainly done to verify the RGF calculations, by comparing to the brute-force inversion results and Sancho Lopez results obtained in my Bachelor thesis."""
-import numpy as np 
+import numpy as np
+import sys, os
 import matplotlib.pyplot as plt 
 from scipy.linalg import inv
 from scipy.linalg import block_diag
 from math import pi, sin, cos, exp
-import my_functions as myf
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir  = os.path.abspath(os.path.join(current_dir, ".."))
+sys.path.append(parent_dir)
 
+import my_functions as myf
 #%% Parameters and configuration
 
 class SNSParams:
     def __init__(self):
         self.t = 1.0
-        self.mu_sc = 0.025 * self.t
-        self.mu_m = 0.1 * self.t
+        self.mu_sc = 0.0025 * self.t
+        self.mu_m = 0.01 * self.t
         self.alpha = 0.4 * self.t
         self.delta = 0.1 * self.t
-        self.eta = 1e-4 * self.delta
-        self.h = 0.2 * self.t
+        self.eta = 1e-3 
+        self.h = 0.1 * self.t
         self.phi_steps = 61
-        self.phi_array = np.linspace(0, 4*pi, self.phi_steps)
+        self.phi_array = np.linspace(0, 2*pi, self.phi_steps)
         self.dof = 4
-        self.sites_l = 50
-        self.sites_r = 50
-        self.sites_m = 25
+        self.sites_l = 80
+        self.sites_r = 80
+        self.sites_m = 20
         self.sites_tot = (self.sites_l + self.sites_r + self.sites_m)
         self.N_tot = self.dof * self.sites_tot
-        self.t_matrix = myf.t_matrix(self.t, self.alpha)
     def get_textstr(self):
         return '\n'.join((
             r'$\mu_m/t = {:.3f}$'.format(self.mu_m),
@@ -204,26 +207,26 @@ plt.legend()
 plt.grid(True, alpha=0.3)
 plt.show()
 #%% RGF: calculation of energy spectrum for different phase differences
+site_idx = params.sites_m // 2 
+energy_array = np.linspace(-params.t, params.t, 61)
 
-energy_array = np.linspace(-params.delta, params.delta, 61)
-
-ldos_matrix = np.zeros((len(params.phi_array), len(energy_array)))
+ldos_matrix = np.zeros((len(params.phi_array), len(energy_array)), dtype=np.complex128)
+idx_start = params.sites_l 
+idx_end = (params.sites_l + params.sites_m) 
 
 for i, phi in enumerate(params.phi_array):
-    H_sns = build_sns_junction(params.t, params.mu_m, params.mu_sc, params.alpha, params.h, params.delta, phi, params.sites_l, params.sites_r, params.sites_m, params.dof)
+    H_sns, _ = myf.build_sns_junction_sliced(params.t, params.mu_sc, params.mu_m, params.alpha, params.h, params.delta, phi, params.sites_l, params.sites_r, params.sites_m, symmetric=True)
     for j, energy in enumerate(energy_array):
-        G, _, _ = myf.get_rgf_finite_system(H_sns, params.t_matrix, energy, eta=params.eta, ra='r', return_full=True)
-        idx_start = params.sites_l * params.dof
-        idx_end = (params.sites_l + params.sites_m) * params.dof
-        G_middle = G[idx_start:idx_end, idx_start:idx_end]
-        ldos = -1/np.pi * np.imag(np.trace(G_middle))
-        ldos_matrix[i, j] = ldos
-
+        G, _, _ = myf.get_rgf_finite_system(H_sns, myf.t_matrix(params.t, params.alpha), energy, eta=params.eta, ra='r', return_full=False)
+        G_middle = G[site_idx]        
+        site_traces = np.trace(np.imag(G_middle))
+        ldos = (-1/np.pi) * site_traces
+        ldos_matrix[i, j] = np.real(ldos)
 #%% RGF: Plotting the LDOS as a function of phase difference and energy (colormap)
 
-ldos_clipped = np.clip(ldos_matrix, 0, 10)
+ldos_clipped = np.clip(ldos_matrix, 0, 100)
 plt.figure(figsize=(8, 6))
-plt.contourf(params.phi_array/(np.pi), energy_array, ldos_clipped.T, levels=100, cmap='cool')
+plt.contourf(params.phi_array/(np.pi), energy_array, ldos_matrix.T, levels=50, cmap='bwr')
 plt.colorbar(label='LDOS')
 plt.axhline(0, color='lightgray', linestyle='--', linewidth=.5)
 plt.xlabel(r'$\Delta \phi / \pi$')
@@ -234,7 +237,7 @@ plt.show()
 
 # %% RGF: Plotting the spatial density of the zero-energy state at phi = pi
 
-G_pi, _, _ = myf.get_rgf_finite_system(myf.build_sns_junction(params.t, params.mu_m, params.mu_sc, params.alpha, params.h, params.delta, np.pi, params.sites_l, params.sites_r, params.sites_m, params.dof), params.t_matrix, 0, eta=params.eta, ra='r', return_full=True)
+G_pi, _, _ = myf.get_rgf_finite_system(myf.build_sns_junction(params.t, params.mu_m, params.mu_sc, params.alpha, params.h, params.delta, np.pi, params.sites_l, params.sites_r, params.sites_m, params.dof), myf.t_matrix(params.t, params.alpha), 0, eta=params.eta, ra='r', return_full=True)
 psi_sd_rgf = (-1/np.pi) * np.diag(G_pi.imag).reshape(-1, params.dof)
 spatial_density_rgf = np.einsum('sd, sd -> s', psi_sd_rgf, psi_sd_rgf.conj()).real
 plt.figure(figsize=(8,6))
@@ -244,21 +247,22 @@ plt.axvline(x=params.sites_l+1, label='Surface left', ls=':', c='blue', alpha=.5
 plt.axvline(x=params.sites_l+params.sites_m+1, label='Surface right', ls=':', c='blue', alpha=.5, lw=1)
 plt.ylabel(r'$|\Psi|^2$')
 plt.plot(range(len(spatial_density_rgf)), spatial_density_rgf, color='green', alpha=0.5)
+plt.ylim(0, 0.05)
 plt.legend(loc=9)
 plt.text(0.02, 0.95, params.get_textstr(), transform=plt.gca().transAxes, fontsize=10, verticalalignment='top', bbox=props)
 plt.show()
 # %% RGF: LDOS of middle lead at phi = 2pi
-idx_start = params.sites_l * params.dof
-idx_end = (params.sites_l + params.sites_m) * params.dof
+idx_start = params.sites_l 
+idx_end = (params.sites_l + params.sites_m) 
 # Build Hamiltonian at specific phi
 phi_target = np.pi
-H_sns_target = myf.build_sns_junction(params.t, params.mu_m, params.mu_sc, params.alpha, params.h, params.delta, phi_target, params.sites_l, params.sites_r, params.sites_m, params.dof)
+H_sns_target, _ = myf.build_sns_junction_sliced(params.t, params.mu_m, params.mu_sc, params.alpha, params.h, params.delta, phi_target, params.sites_l, params.sites_r, params.sites_m)
 
 ldos_middle = []
 
 for j, energy in enumerate(energy_array):
-    G, _, _ = myf.get_rgf_finite_system(H_sns_target, params.t_matrix, energy, eta=params.eta, ra='r', return_full=True)
-    G_middle = G[idx_start:idx_end, idx_start:idx_end]
+    G, _, _ = myf.get_rgf_finite_system(H_sns_target, myf.t_matrix(params.t, params.alpha), energy, eta=params.eta, ra='r', return_full=False)
+    G_middle = G[site_idx]
     ldos = -1/np.pi * np.imag(np.trace(G_middle))
     ldos_middle.append(ldos)
 
