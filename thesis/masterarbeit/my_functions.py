@@ -644,7 +644,52 @@ def get_rgf_finite_system(H_slices, V, energy, eta=1e-3, ra:str='r', return_full
 
     return G_diag, GL, GR, G_blocks, G_dense
 
-        
+def phase_matrix(phi):
+    """
+    U(1) gauge rotation in Nambu basis (up,dn,dn†,up†).
+
+    Args: phi:float, SC phase differenece
+    
+    Returns: np.diag([1, 1, np.exp(1j*phi), np.exp(1j*phi)]).astype(np.complex128)
+    """
+    return np.diag([1, 1, np.exp(1j*phi), np.exp(1j*phi)]).astype(np.complex128)
+
+def get_surface_gfs_phased(E, onsite_sc, V, phi, eta=1e-3, symmetric=True):
+    """
+    Returns the Surface GFs of a left and right lead with SC phase difference phi applied as Nambu gauge rotation.
+    
+    Args:
+        E:float, Energy at which the surface gfs are calculated.
+        onsite_sc:np.ndarray, onsite 4x4 hamiltonian of the SC lead
+        V:np.ndarray, hopping matrix connecting the blocks.
+        eta:float, Imaginary broadening.
+        phi:float, Phase difference of the SC leads.
+        symmetric:bool, True = symmetric gauge, False = antisymmetric gauge
+    
+    Convention (matches build_sns_junction_sliced):
+      U(theta) @ H(Delta) @ U(theta)† = H(Delta * exp(-i*theta))
+    
+    Symmetric gauge:
+      Delta_L = Delta*exp(-i*phi/2)  →  UL = phase_matrix(+phi/2)
+      Delta_R = Delta*exp(+i*phi/2)  →  UR = phase_matrix(-phi/2)
+    
+    Asymmetric gauge:
+      Delta_L = Delta (real)          →  UL = identity
+      Delta_R = Delta*exp(+i*phi)     →  UR = phase_matrix(-phi)
+
+    
+    """
+    if symmetric:
+        UL = phase_matrix(-phi / 2.0)
+        UR = phase_matrix(+phi / 2.0)
+    else:
+        UL = np.eye(4, dtype=np.complex128)
+        UR = phase_matrix(-phi)
+
+    g_L, _ = get_surface_gf(E, onsite_sc, V.conj().T, eta=eta)
+    g_R, _ = get_surface_gf(E, onsite_sc, V, eta=eta)
+
+    return UL @ g_L @ UL.conj().T, UR @ g_R @ UR.conj().T      
 
 
 # %%
