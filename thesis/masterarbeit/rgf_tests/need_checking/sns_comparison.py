@@ -626,7 +626,7 @@ print("=== Block comparison: RGF vs direct ===")
 max_err = 0
 for i in range(N_t):
     for j in range(N_t):
-        G_rgf_ij  = G_blocks[i, j, :, :]
+        G_rgf_ij  = G_blocks[i, j, :, :] #type: ignore
         G_dir_ij  = G_dir[i*4:(i+1)*4, j*4:(j+1)*4]
         err = np.max(np.abs(G_rgf_ij - G_dir_ij))
         max_err = max(max_err, err)
