@@ -28,7 +28,8 @@ existing code does.  Adjust `sys.path` if needed.
 
 #%% ── Imports ──────────────────────────────────────────────────────────────────
 from cmath import phase
-import sys, os
+import sys
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -36,12 +37,12 @@ from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 from scipy.linalg import inv
 from joblib import Parallel, delayed
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir  = os.path.abspath(os.path.join(current_dir, ".."))
-pparent_dir = os.path.abspath(os.path.join(parent_dir, ".."))
-sys.path.append(pparent_dir)
 
-import my_functions as myf
+current_dir = Path(__file__).resolve().parent
+module_root = current_dir.parent
+sys.path.insert(0, str(module_root))
+
+import modules as myf
 
 # ── Colour palette (colour-blind friendly) ────────────────────────────────────
 C_INV  = "#2166ac"   # blue  – inversion
@@ -99,17 +100,17 @@ SYMMETRIC = True    # True  → ±φ/2 on left/right
 SL, SM, SR = 100, 80, 100        # sites: left SC | normal | right SC
 DOF        = 4
 Delta      = 0.1
-mu_sc      = 0.00025
+mu_sc      = 0.1
 mu_n       = 0.000
 t          = 1.0
 alpha      = 0.15
-B          = 0.30      
+B          = 0.0     
 eta        = 1e-3
 phi_fixed  = np.pi
 
-N_E   = 81                    # energy points
-N_PHI = 81                    # phase points
-energies = np.linspace(-.1, .1, N_E)
+N_E   = 41                    # energy points
+N_PHI = 41                    # phase points
+energies = np.linspace(-.051, .051, N_E)
 phases   = np.linspace(0, 2*np.pi, N_PHI)
 
 probe_sites = [1, SM // 2, SM - 2]

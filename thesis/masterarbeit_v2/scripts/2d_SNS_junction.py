@@ -1,11 +1,18 @@
 #%%
 """After verifying the RGf method works, by comparing it to the exact diagonalization, it is now used to calculate the GF for a 2d SNS junction and plot the LDOS as a function of energy and phase difference, as always."""
+import sys
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-import my_functions as myf
 import scipy.constants as const
 from scipy.linalg import inv, block_diag
 from math import pi, cos, sin, sqrt
+
+current_dir = Path(__file__).resolve().parent
+module_root = current_dir.parent
+sys.path.insert(0, str(module_root))
+
+import modules as myf
 #%% Create parameter class and set plotting style 
 
 class SNSJunction:

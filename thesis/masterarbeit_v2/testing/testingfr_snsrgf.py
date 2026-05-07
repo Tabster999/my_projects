@@ -1,17 +1,19 @@
 #%% ── Imports ──────────────────────────────────────────────────────────────────
 import sys, os
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 from joblib import Parallel, delayed
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir  = os.path.abspath(os.path.join(current_dir, ".."))
-sys.path.append(parent_dir)
 
-import my_functions as myf
+current_dir = Path(__file__).resolve().parent
+module_root = current_dir.parent
+sys.path.insert(0, str(module_root))
 
+
+import modules as myf
 """
 =============================================================================
 SURFACE GREEN'S FUNCTION CONVENTION AND PHASE CORRECTION
@@ -78,25 +80,6 @@ ALPHA  = 0.85
 
 #%% ── Helpers ───────────────────────────────────────────────────────────────────
 
-def phase_matrix(theta):
-    """
-    U(1) gauge rotation in Nambu basis (c↑, c↓, c↓†, c↑†).
-    
-    Shifts the pair potential phase by -theta:
-      U(theta) @ H(Delta) @ U(theta)† = H(Delta * exp(-i*theta))
-
-    To realise Delta*exp(+i*phi) on a lead, apply U(-phi).
-    
-    Symmetric gauge:  UL = U(+phi/2),  UR = U(-phi/2)
-    """
-    return np.diag([
-        1,
-        1,
-        np.exp(1j * theta),
-        np.exp(1j * theta),
-    ]).astype(np.complex128)
-
-
 def get_ldos(G_block):
     """LDOS from the local retarded GF block: -Im Tr G / pi."""
     return -np.imag(np.trace(G_block)) / np.pi
@@ -124,11 +107,11 @@ def get_surface_gfs(E, phi, symmetric=True, eta=1e-3):
     """
     onsite_sc = myf.onsite_matrix(t, mu_sc, B, Delta)
     if symmetric:
-        UL = phase_matrix(-phi / 2.0)
-        UR = phase_matrix(+phi / 2.0)
+        UL = myf.phase_matrix(-phi / 2.0)
+        UR = myf.phase_matrix(+phi / 2.0)
     else:
         UL = np.eye(4, dtype=np.complex128)
-        UR = phase_matrix(-phi)
+        UR = myf.phase_matrix(-phi)
 
     g_L, _ = myf.get_surface_gf(E, onsite_sc, V.conj().T, eta=eta)
     g_R, _ = myf.get_surface_gf(E, onsite_sc, V, eta=eta)
@@ -227,7 +210,7 @@ print(f"\n══ Gauge: {'symmetric ±phi/2' if SYMMETRIC else 'asymmetric, full
 # complex-Delta onsite.
 print("\n══ Gauge-rotation self-test ══")
 for phi_test in [0.0, np.pi/2, np.pi]:
-    U = phase_matrix(-phi_test)   # U(-phi) gives Delta*exp(+i*phi)
+    U = myf.phase_matrix(-phi_test)   # U(-phi) gives Delta*exp(+i*phi)
     onsite_rot = U @ onsite_sc @ U.conj().T
     onsite_ref = myf.onsite_matrix(t, mu_sc, B, Delta * np.exp(1j * phi_test))
     err = np.max(np.abs(onsite_rot - onsite_ref))
@@ -662,7 +645,7 @@ for E in energies[::len(energies)//5]:
     print(f"  E={E:+.3f}  max Im Σ eigenvalue = {max_im:.2e}  "
             f"{'✓' if max_im < 1e-8 else '✗'}")
 plt.show()
-# %%
+
 def eta_stability_test(E, phi, site):
     etas = [1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 1e-2] 
     vals_fin = []
@@ -745,4 +728,3 @@ stable = run_eta_diagnostic(
     site_idx=site_test,
     site_label="N-centre"
 )
-# %%

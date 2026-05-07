@@ -1,13 +1,14 @@
 #%%
+import sys
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-import os, sys
 from joblib import Parallel, delayed
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir  = os.path.abspath(os.path.join(current_dir, ".."))
-sys.path.append(parent_dir)
-import my_functions as myf
+current_dir = Path(__file__).resolve().parent
+module_root = current_dir.parent
+sys.path.insert(0, str(module_root))
+import modules as myf
 
 #%% set up parameters
 # PARAMETERS
