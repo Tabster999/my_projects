@@ -39,7 +39,8 @@ from scipy.linalg import inv
 from joblib import Parallel, delayed
 
 current_dir = Path(__file__).resolve().parent
-module_root = current_dir.parent
+parent_dir = current_dir.parent
+module_root = parent_dir.parent
 sys.path.insert(0, str(module_root))
 
 import modules as myf
@@ -97,19 +98,19 @@ def get_surface_gfs(E, phi, symmetric=True):
 SYMMETRIC = True    # True  → ±φ/2 on left/right
                     # False → full φ on right only
 
-SL, SM, SR = 100, 80, 100        # sites: left SC | normal | right SC
+SL, SM, SR = 100, 50, 100        # sites: left SC | normal | right SC
 DOF        = 4
 Delta      = 0.1
 mu_sc      = 0.1
 mu_n       = 0.000
 t          = 1.0
 alpha      = 0.15
-B          = 0.0     
+B          = 0.3     
 eta        = 1e-3
 phi_fixed  = np.pi
 
-N_E   = 41                    # energy points
-N_PHI = 41                    # phase points
+N_E   = 61                    # energy points
+N_PHI = 61                    # phase points
 energies = np.linspace(-.051, .051, N_E)
 phases   = np.linspace(0, 2*np.pi, N_PHI)
 
@@ -148,7 +149,7 @@ print(f"  In topological phase: {'YES ✓' if in_topo else 'NO  ✗'}")
 print(f"\n══ Gauge convention: {'symmetric ±φ/2' if SYMMETRIC else 'asymmetric, full φ on right'} ══")
 
 
-#%% energy sweep
+#%% ENERGY SWEEP  (φ = pi)
 # ═════════════════════════════════════════════════════════════════════════════
 # ENERGY SWEEP  (φ fixed)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -220,7 +221,7 @@ for p_idx, phi in enumerate(phases):
                 pair_p[s_idx, p_idx, m] = get_pairing(blk)
 
 
-#%% figures
+#%% FIGURES 
 # ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 1 – Energy sweep: LDOS comparison per probe site
 # ═════════════════════════════════════════════════════════════════════════════
@@ -354,7 +355,7 @@ fig5.tight_layout()
 #fig5.savefig("fig5_Gmatrix.png", dpi=150, bbox_inches="tight")
 print("  saved all figures")
 
-#%% SANITY CHECKS  (printed report)
+#%% SANITY CHECKS 
 # ═════════════════════════════════════════════════════════════════════════════
 SEP  = "═" * 55
 SEP2 = "─" * 55
@@ -497,7 +498,7 @@ plt.show()
 E_test = 0.0
 z_test = E_test + 1j * eta
 
-for sl_sr in [50, 100, 200, 400, 1000]:
+for sl_sr in [50, 100, 200, 700]:
     for sym in [True, False]:
         H_test, _ = myf.build_sns_junction_sliced(
             t, mu_sc, mu_n, alpha, B, Delta,
@@ -599,13 +600,13 @@ sym_err = np.max(np.abs(ldos_2d - ldos_2d[::-1, :]))
 print(f"Phase-symmetry error: {sym_err:.3e}")
 # %% quick check with small system 
 # quick check with small system
-SL_t, SM_t, SR_t = 3, 6, 3
-phi_t  = np.pi/2
-E_t    = 0.05
+SL_t, SM_t, SR_t = 30, 10, 30
+phi_t  = np.pi
+E_t    = 0.0
 eta_t  = 1e-3
 
 H_slices_t, _ = myf.build_sns_junction_sliced(
-    t, mu_sc, mu_n, alpha, B, Delta, phi_t, SL_t, SR_t, SM_t, symmetric=False)
+    t, mu_sc, mu_n, alpha, B, Delta, phi_t, SL_t, SR_t, SM_t, symmetric=True)
 
 N_t  = len(H_slices_t)
 dim  = N_t * 4
@@ -624,6 +625,10 @@ G_diag, GL, GR, G_blocks, _ = myf.get_rgf_finite_system(
     H_slices_t, V, E_t, eta=eta_t, return_full=True, return_dense=False)
 
 print("=== Block comparison: RGF vs direct ===")
+if G_blocks is not None:
+    print(f"  N_t={N_t}, dim={dim}, G_blocks.shape={G_blocks.shape}, G_dir.shape={G_dir.shape}")
+else:
+    print(f"  N_t={N_t}, dim={dim}, G_blocks=None, G_dir.shape={G_dir.shape}")
 max_err = 0
 for i in range(N_t):
     for j in range(N_t):
@@ -638,5 +643,35 @@ if max_err < 1e-10:
     print(f"  All blocks match — max err={max_err:.2e}")
 else:
     print(f"  Max error across all blocks: {max_err:.2e}")
+
+# Dense matrix comparison
+print("\n=== Dense matrix comparison: RGF vs direct ===")
+G_diag_dense, GL_dense, GR_dense, G_blocks_dense, G_dense = myf.get_rgf_finite_system(
+    H_slices_t, V, E_t, eta=eta_t, return_full=True, return_dense=True)
+
+if G_dense is not None:
+    max_abs_err = np.max(np.abs(G_dense - G_dir))
+    print(f"  Max absolute error: {max_abs_err:.2e}")
+
+    # Element-wise comparison with np.isclose
+    close_rtol = 1e-9
+    close_atol = 1e-11
+    is_close = np.isclose(G_dense, G_dir, rtol=close_rtol, atol=close_atol)
+    frac_close = np.sum(is_close) / is_close.size
+    print(f"  Fraction of elements close (rtol={close_rtol}, atol={close_atol}): {frac_close:.4f}")
+
+    if frac_close == 1.0:
+        print(f"  ✓ All matrix elements match within tolerance")
+    else:
+        mismatches = np.sum(~is_close)
+        print(f"  ✗ {mismatches} elements exceed tolerance")
+        # Find and report largest mismatches
+        err_matrix = np.abs(G_dense - G_dir)
+        top_errors_idx = np.argsort(err_matrix.flatten())[-5:][::-1]
+        for idx in top_errors_idx:
+            i, j = np.unravel_index(idx, err_matrix.shape)
+            print(f"    [{i},{j}]: |err|={err_matrix[i,j]:.2e}, dense={G_dense[i,j]:.4e}, direct={G_dir[i,j]:.4e}")
+else:
+    print("  ⚠ return_dense=True did not return a dense matrix")
 
 # %%

@@ -13,15 +13,18 @@ from typing import Tuple, Optional
 
 
 
-def phase_matrix(phi):
+def phase_matrix(phi, N_y=1):
     """
     U(1) gauge rotation in Nambu basis (up,dn,dn†,up†).
 
-    Args: phi:float, SC phase differenece
+    Args: phi:float, SC phase difference
+          N_y: int, number of sites in y-direction (for 2D systems, this will be the width of the junction)
     
     Returns: np.diag([1, 1, np.exp(1j*phi), np.exp(1j*phi)]).astype(np.complex128)
     """
-    return np.diag([1, 1, np.exp(1j*phi), np.exp(1j*phi)]).astype(np.complex128)
+
+    U_4 = np.diag([1, 1, np.exp(1j*phi), np.exp(1j*phi)]).astype(np.complex128)
+    return np.kron(np.eye(N_y, dtype=np.complex128), U_4)
 
 
 # ============================================================================
@@ -56,19 +59,9 @@ def get_z(energy: float, eta: float, ra: str = 'r', matsubara: Optional[complex]
 # OBSERVABLE EXTRACTION HELPERS
 # ============================================================================
 
-def get_ldos_from_gf(G_block: np.ndarray) -> float:
-    """
-    Extract Local Density of States (LDOS) from a Green's function block.
-    
-    LDOS(E) = -(1/π) * Im[Tr(G(E))]
-    
-    Args:
-        G_block (np.ndarray): Green's function block (typically 4×4)
-    
-    Returns:
-        float: LDOS at this energy
-    """
-    return -np.imag(np.trace(G_block)) / np.pi
+def get_ldos_site(G, y, dof=4):
+    idx = slice(y*dof, (y+1)*dof)
+    return -np.imag(np.trace(G[idx, idx])) / np.pi
 
 
 def get_pairing_amplitude(G_block: np.ndarray) -> float:
@@ -86,7 +79,7 @@ def get_pairing_amplitude(G_block: np.ndarray) -> float:
     return np.abs(G_block[0, 3])
 
 
-def get_pairing_phase(G_block: np.ndarray) -> float:
+def get_pairing_phase(G: np.ndarray, y, dof=4) -> float:
     """
     Extract phase of anomalous pairing amplitude.
     
@@ -97,7 +90,10 @@ def get_pairing_phase(G_block: np.ndarray) -> float:
         float: Phase angle of G[0,3] in radians
     """
     from cmath import phase
-    return phase(G_block[0, 3])
+    idx = slice(y*dof, (y+1)*dof)
+    Gyy = G[idx, idx]
+    F = Gyy[2:4, 0:2]
+    return np.abs(np.trace(F))
 
 
 # ============================================================================

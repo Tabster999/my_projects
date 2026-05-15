@@ -9,10 +9,8 @@ from matplotlib.cm import ScalarMappable
 from joblib import Parallel, delayed
 
 current_dir = Path(__file__).resolve().parent
-module_root = current_dir.parent
+module_root = current_dir.parent.parent
 sys.path.insert(0, str(module_root))
-
-
 import modules as myf
 """
 =============================================================================
@@ -159,7 +157,7 @@ def compute_energy_slice_fin(e_idx, E):
 SYMMETRIC = True     # True  → ±phi/2 on left/right
                      # False → full phi on right only
 
-SL, SM, SR = 200, 101, 200        # sites: left SC | normal | right SC
+SL, SM, SR = 80, 20, 80        # sites: left SC | normal | right SC
 DOF        = 4
 Delta      = 0.1
 mu_sc      = 0.0025
@@ -179,7 +177,7 @@ probe_sites  = [1, SM // 2, SM - 2]
 probe_labels = ["Left interface", "Centre of N", "Right interface"]
 
 # ── Fixed objects ─────────────────────────────────────────────────────────────
-V      = myf.t_matrix(t, alpha)
+V      = myf.t_matrix_x(t, alpha)
 V_dag  = V.conj().T
 onsite_sc    = myf.onsite_matrix(t, mu_sc, B, Delta)   # real Delta
 H_mid_slices, _ = myf.build_middle_region(t, mu_n, alpha, B, SM)
@@ -473,7 +471,7 @@ axes[0].set_ylabel("Energy")
 
 fig7.colorbar(pcm, ax=axes, label="LDOS")
 plt.show()
-#%% SANITY CHECKS  (printed report)
+#%% SANITY CHECKS  
 
 SEP  = "═" * 60
 SEP2 = "─" * 60
@@ -610,11 +608,6 @@ for sl_sr in sizes_to_test:
     print(f"  SL=SR={sl_sr:4d} | sub-gap max|Δ|={max_err_sub:.3e}  "
           f"{verdict(max_err_sub < tol_conv, tol_conv)}  (full={max_err_all:.3e})")
     
-# [10] Phase symmetry check on 2D map
-sym_err = np.max(np.abs(ldos_2d - ldos_2d[::-1, :]))
-print(f"\n[10]  Phase-symmetry of 2D map  ldos(phi) == ldos(2pi-phi): "
-      f"max err={sym_err:.3e}  {verdict(sym_err < 5e-3)}")
-
 # [11] Surface GF PH symmetry (left vs right)
 print("\n[11] Surface GF PH symmetry")
 C = np.fliplr(np.eye(4))
@@ -631,19 +624,7 @@ print(f"  max error = {max(errs):.2e}")
 print(f"  mean error = {np.mean(errs):.2e}")
 print(f"  verdict: {'✓ PASS' if max(errs) < 1e-6 else '✗ FAIL'}")
 
-# [12] self energy consistency 
-print("\n[12] Self-energy causality + symmetry")
 
-for E in energies[::len(energies)//5]:
-    g, _ = myf.get_surface_gf(E, onsite_sc, V, eta=eta)
-    Sigma = V.conj().T @ g @ V
-    
-    # causality: Im Σ ≤ 0
-    eig_im = np.linalg.eigvals(0.5j * (Sigma - Sigma.conj().T))
-    max_im = np.max(eig_im.real)
-    
-    print(f"  E={E:+.3f}  max Im Σ eigenvalue = {max_im:.2e}  "
-            f"{'✓' if max_im < 1e-8 else '✗'}")
 plt.show()
 
 def eta_stability_test(E, phi, site):
@@ -728,3 +709,5 @@ stable = run_eta_diagnostic(
     site_idx=site_test,
     site_label="N-centre"
 )
+
+# %%

@@ -10,27 +10,23 @@ import numpy as np
 from typing import List, Tuple
 
 
-def onsite_matrix(t: float, mu: float, h: float, delta: complex) -> np.ndarray:
-    '''    up, down, down^dagger, up^dagger
-    Returns the matrix [[2*t - mu-h, 0, delta, 0], [0, 2*t - mu+h, 0, -delta], [delta, 0, -2*t + mu-h,0], [0, -delta, 0, -2*t + mu + h]]
-    alpha: Rashba soc
-    h: Zeeman energy 
-    onsite: 2t - mu
-    delta: SC order parameter
-    t: hopping parameter
-    mu: chemical potential
-    '''    
-    matrix = np.array([
-        [2*t - mu - h,          0,              delta,              0],
-        [0,                     2*t - mu + h,   0,                  -delta],
-        [delta.conjugate(),     0,              -2*t + mu - h,      0],
-        [0,                    -delta.conjugate(), 0,              -2*t + mu + h]
+def onsite_matrix(t, mu, h, delta, twod=False):
+
+    z = 4*t - mu if twod else 2*t - mu
+
+    return np.array([
+        [ z - h,                  0,              delta,                 0],
+        [0,                       z + h,          0,                    -delta],
+
+        [delta.conjugate(),       0,             -z - h,                0],
+        [0,               -delta.conjugate(),     0,                   -z + h]
     ], dtype=np.complex128)
-    return matrix
 
 
-def t_matrix(t: float, alpha: float) -> np.ndarray:
+
+def t_matrix_x(t: float, alpha: float) -> np.ndarray:
     '''
+    Rashba hopping in y-direction (intra-slice).
     Returns the matrix [[-t, alpha, 0, 0],[-alpha, -t, 0, 0],[0, 0, t, alpha],[0, 0, -alpha, t]]
     t: hopping parameter
     alpha: rashba soc 
@@ -43,6 +39,20 @@ def t_matrix(t: float, alpha: float) -> np.ndarray:
     ], dtype=np.complex128)
     return matrix
 
+def t_matrix_y(t: float, alpha: float):
+    '''
+    Rashba hopping in x-direction (inter-slice).
+    Returns the matrix [[-t, -1j*alpha, 0, 0],[1j*alpha, -t, 0, 0],[0, 0, t, -1j*alpha],[0, 0, 1j*alpha, t]]
+    t: hopping parameter
+    alpha: rashba soc 
+    '''
+    matrix = np.array([
+        [-t,    1j*alpha,  0,      0],
+        [1j*alpha, -t,    0,      0],
+        [0,      0,     t,      1j*alpha],
+        [0,      0,    1j*alpha,  t]
+    ], dtype=np.complex128)
+    return matrix
 
 def get_tb_hamiltonian(h0_matrix: np.ndarray, hopping_matrix: np.ndarray, sites: int) -> np.ndarray:
     """Build a general tight-binding Hamiltonian from onsite and hopping blocks."""
@@ -104,10 +114,10 @@ def build_sns_junction(
     sites_tot = sites_left + sites_right + sites_mid
     N_tot = dof * sites_tot
     H_tot = np.zeros((N_tot, N_tot), dtype=np.complex128)
-    V = t_matrix(t, alpha)
+    V = t_matrix_x(t, alpha)
 
-    phi_L = -phi / 2 if symmetric else 0.0
-    phi_R = phi / 2 if symmetric else phi
+    phi_L = phi / 2 if symmetric else 0.0
+    phi_R = -phi / 2 if symmetric else -phi
 
     for i in range(sites_tot):
         idx = i * dof
@@ -142,7 +152,7 @@ def build_sns_junction_sliced(
     symmetric: bool = False
 ) -> Tuple[List[np.ndarray], np.ndarray]:
     r"""
-    This function is used to build the full Hamiltonian for a finite size SNS junction. This can not be used for RGF calculations!
+
     Builds a 1d SNS-junction Hamiltonian using following matrices
     -onsite: 
         H_0 = [[2*t - mu-h, 0, delta, 0]
@@ -150,7 +160,7 @@ def build_sns_junction_sliced(
         [delta, 0, -2*t + mu-h,0]
         [0, -delta, 0, -2*t + mu + h]]
         
-    hopping: 
+    hopping in y-direction: 
         [[-t, alpha, 0, 0]
         [-alpha, -t, 0, 0]
         [0, 0, t, alpha]
@@ -166,17 +176,16 @@ def build_sns_junction_sliced(
         sites_left:int, number of sites left lead
         sites_right:int, number of sites right lead
         sites_mid:int, number of sites middle lead
-        dof:int, degrees of freedom per site (here Nambu $\Psi^\dagger = (up, down, down^dagger, up^dagger)^T$
-    
+        symmetric:bool, chooses gauge    
     Returns: np.ndarray of dimensions d = dof * (sites_left + sites_right + site_mid).
     """
-    phi_L = -phi / 2 if symmetric else 0.0
-    phi_R = phi / 2 if symmetric else phi
+    phi_L = phi / 2 if symmetric else 0.0
+    phi_R = -phi / 2 if symmetric else -phi
 
     H_L = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_L))
     H_R = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_R))
     H_M = onsite_matrix(t, mu_m, h, 0)
-    V = t_matrix(t, alpha)
+    V = t_matrix_y(t, alpha)
 
     H_slices = [H_L for _ in range(sites_left)] + [H_M for _ in range(sites_mid)] + [H_R for _ in range(sites_right)]
     return H_slices, V
@@ -185,6 +194,9 @@ def build_sns_junction_sliced(
 def build_middle_region(t: float, mu_m: float, alpha: float, h: float, sites_mid: int) -> Tuple[List[np.ndarray], np.ndarray]:
     """Build the middle-region Hamiltonian slices for RGF approaches."""
     H_N = onsite_matrix(t, mu_m, h, 0)
-    V = t_matrix(t, alpha)
+    V = t_matrix_y(t, alpha)
     H_slices = [H_N.copy() for _ in range(sites_mid)]
     return H_slices, V
+
+
+

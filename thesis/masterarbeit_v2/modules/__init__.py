@@ -1,7 +1,7 @@
 from .helpers import (
     phase_matrix,
     get_z,
-    get_ldos_from_gf,
+    get_ldos_site,
     get_pairing_amplitude,
     get_pairing_phase,
     check_particle_hole_symmetry,
@@ -10,12 +10,13 @@ from .helpers import (
 )
 
 from .matrices import (
-    t_matrix,
+    t_matrix_x,
     onsite_matrix,
     get_tb_hamiltonian,
     build_sns_junction,
     build_sns_junction_sliced,
     build_middle_region,
+    t_matrix_y,
 )
 
 from .solvers import (
@@ -32,13 +33,14 @@ from .solvers import (
 __all__ = [
     "phase_matrix",
     "get_z",
-    "get_ldos_from_gf",
+    "get_ldos_site",
     "get_pairing_amplitude",
     "get_pairing_phase",
     "check_particle_hole_symmetry",
     "check_ldos_positivity",
     "get_colorbar_label",
-    "t_matrix",
+    "t_matrix_x",
+    "t_matrix_y",
     "onsite_matrix",
     "get_tb_hamiltonian",
     "build_sns_junction",

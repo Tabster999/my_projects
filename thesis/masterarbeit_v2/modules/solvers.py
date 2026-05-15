@@ -14,7 +14,8 @@ from .helpers import phase_matrix
 
 def get_surface_gf(energy: float, eps: np.ndarray, t_matrix: np.ndarray, eta: float = 1e-4) -> Tuple[np.ndarray, np.ndarray]:
     """Sancho-López retarded surface Green's function for a semi-infinite lead."""
-    z = (energy + 1j * eta) * np.eye(4, dtype=np.complex128)
+    dof = eps.shape[0]
+    z = (energy + 1j * eta) * np.eye(dof, dtype=np.complex128)
     alpha = t_matrix
     beta = np.transpose(np.conjugate(t_matrix))
     Epsilon_surf = eps
@@ -242,7 +243,7 @@ def get_rgf_sns(H_slices, V, g_L, g_R, energy, eta: float = 1e-4, ra: str = 'r',
     return G_diag, GL, GR, G_blocks, G_dense
 
 
-def get_rgf_finite_system(H_slices, V, energy, eta: float = 1e-3, ra: str = 'r', return_full: bool = False, return_dense: bool = False):
+def get_rgf_finite_system(H_slices, V, energy, eta: float = 1e-4, ra: str = 'r', return_full: bool = False, return_dense: bool = False):
     """
     Computes the RGF for a strictly finite system.
     
@@ -310,15 +311,15 @@ def get_rgf_finite_system(H_slices, V, energy, eta: float = 1e-3, ra: str = 'r',
     return G_diag, GL, GR, G_blocks, G_dense
 
 
-def get_surface_gfs_phased(E: float, onsite_sc: np.ndarray, V: np.ndarray, phi: float, eta: float = 1e-4, symmetric: bool = False):
+def get_surface_gfs_phased(E: float, H_slice: np.ndarray, V_x: np.ndarray, N_y: int, phi: float, symmetric: bool = False, eta: float = 1e-4):
     """
     Returns the Surface GFs of a left and right lead with SC phase difference phi applied as Nambu gauge rotation.
     
     Args:
         E:float, Energy at which the surface gfs are calculated.
-        onsite_sc:np.ndarray, onsite 4x4 hamiltonian of the SC lead
-        V:np.ndarray, hopping matrix connecting the blocks.
-        eta:float, Imaginary broadening.
+        H_slice:np.ndarray, Hamiltonian slice for the lead.
+        V_x:np.ndarray, Hopping matrix connecting the blocks.
+        N_y:int, Number of sites in the y-direction.
         phi:float, Phase difference of the SC leads.
         symmetric:bool, True = symmetric gauge, False = antisymmetric gauge
     
@@ -326,22 +327,43 @@ def get_surface_gfs_phased(E: float, onsite_sc: np.ndarray, V: np.ndarray, phi: 
       U(theta) @ H(Delta) @ U(theta)† = H(Delta * exp(-i*theta))
     
     Symmetric gauge:
-      Delta_L = Delta*exp(-i*phi/2)  →  UL = phase_matrix(+phi/2)
-      Delta_R = Delta*exp(+i*phi/2)  →  UR = phase_matrix(-phi/2)
+      Delta_L = Delta*exp(i*phi/2)  →  UL = phase_matrix(-phi/2)
+      Delta_R = Delta*exp(-i*phi/2)  →  UR = phase_matrix(+phi/2)
     
     Asymmetric gauge:
       Delta_L = Delta (real)          →  UL = identity
-      Delta_R = Delta*exp(+i*phi)     →  UR = phase_matrix(-phi)
+      Delta_R = Delta*exp(+i*phi)     →  UR = phase_matrix(phi)
 
     
     """
+    gL, _ = get_surface_gf(E, H_slice, V_x.conj().T, eta=eta)
+    gR, _ = get_surface_gf(E, H_slice, V_x, eta=eta)
+    
     if symmetric:
-        UL = phase_matrix(-phi / 2.0)
-        UR = phase_matrix(+phi / 2.0)
+        U_L = phase_matrix(phi/2, N_y=N_y)
+        U_R = phase_matrix(-phi/2, N_y=N_y)
     else:
-        UL = np.eye(4, dtype=np.complex128)
-        UR = phase_matrix(-phi)
+        U_L = np.eye(4 * N_y, dtype=np.complex128)
+        U_R = phase_matrix(-phi, N_y=N_y)
+    
+    g_L_phased = U_L @ gL @ U_L.conj().T
+    g_R_phased = U_R @ gR @ U_R.conj().T
+    
+    return g_L_phased, g_R_phased
 
-    g_L, _ = get_surface_gf(E, onsite_sc, V.conj().T, eta=eta)
-    g_R, _ = get_surface_gf(E, onsite_sc, V, eta=eta)
-    return UL @ g_L @ UL.conj().T, UR @ g_R @ UR.conj().T
+
+def get_surface_gfs_2d_phased(energy, H_slice, V_x, N_y, phi, symmetric=False, eta=1e-4):
+    """2D surface GF with phase rotation applied."""
+    gL_1d, _ = get_surface_gf(energy, H_slice, V_x.conj().T, eta=eta)
+    gR_1d, _ = get_surface_gf(energy, H_slice, V_x, eta=eta)
+    if symmetric:
+        U_L = phase_matrix(phi/2, N_y=N_y)
+        U_R = phase_matrix(-phi/2, N_y=N_y)
+    else:
+        U_L = np.eye(4 * N_y, dtype=np.complex128)
+        U_R = phase_matrix(-phi, N_y=N_y)
+    
+    g_L = U_L @ gL_1d @ U_L.conj().T
+    g_R = U_R @ gR_1d @ U_R.conj().T    
+    
+    return g_L, g_R
