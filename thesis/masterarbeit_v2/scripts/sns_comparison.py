@@ -118,7 +118,7 @@ probe_sites = [1, SM // 2, SM - 2]
 probe_labels = ["Left interface", "Centre of N", "Right interface"]
 
 # ── Fixed objects ───────────────────────────────────────────────────────
-V      = myf.t_matrix(t, alpha)
+V      = myf.t_matrix_y(t, alpha)
 V_dag  = V.conj().T
 onsite_sc   = myf.onsite_matrix(t, mu_sc, B, Delta)
 H_mid_slices, _ = myf.build_middle_region(t, mu_n, alpha, B, SM)

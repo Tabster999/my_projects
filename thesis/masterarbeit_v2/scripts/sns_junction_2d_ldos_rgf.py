@@ -8,8 +8,8 @@ x-direction : transport / recursive direction (slice index)
 y-direction : transverse direction inside each slice
 
 Therefore:
-  - build_sns_slice_2d()          uses t_matrix_y  (σ_x Rashba) for y-hops WITHIN a slice
-  - build_sns_junction_sliced_2d  uses t_matrix_x    (σ_y Rashba) for x-hops BETWEEN slices → V_x_2d
+  - build_sns_slice_2d()          uses t_matrix_y  (σ_x, k_y Rashba) for y-hops WITHIN a slice
+  - build_sns_junction_sliced_2d  uses t_matrix_x    (σ_y, k_x Rashba) for x-hops BETWEEN slices
 """
 
 #%% ── Imports ────────────────────────────────────────────────────────────────
@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
 
 current_dir = Path(__file__).resolve().parent
-module_root = current_dir.parent.parent
+module_root = current_dir.parent
 sys.path.insert(0, str(module_root))
 import modules
 
@@ -37,7 +37,7 @@ plt.rcParams['figure.titlesize'] = 20
 def build_sns_slice_2d(N_y, t, mu, h, alpha, delta):
     """
     Within-slice Hamiltonian: y-direction chain.
-    y-hops use t_matrix_y (σ_y Rashba).
+    y-hops use t_matrix_y (σ_y, k_y Rashba).
 
     Args:
         N_y   : number of sites in y-direction
@@ -78,7 +78,7 @@ def build_sns_junction_sliced_2d(N_y, t, mu_sc, mu_m, h, alpha, delta, phi,
 
     Returns:
         H_slices : list of (4·N_y × 4·N_y) slice Hamiltonians
-        V_x_2d   : (4·N_y × 4·N_y) inter-slice x-hopping matrix (σ_x Rashba)
+        V_x_2d   : (4·N_y × 4·N_y) inter-slice x-hopping matrix (σ_y, k_x Rashba)
     """
     phi_L = -phi / 2 if symmetric else 0.0
     phi_R = phi / 2 if symmetric else phi
@@ -117,22 +117,22 @@ def build_sns_normal_only(N_y, t, mu_m, h, alpha, SM):
 #%% ── Parameters ─────────────────────────────────────────────────────────────
 SYMMETRIC = False
 
-SL, SM, SR = 200, 100, 200
-N_y = 5
+SL, SM, SR = 70, 20, 70
+N_y = 10
 
-Delta  = .1
-mu_sc  = .01
-mu_n   = .07
-t      = 1.0
-alpha  = .15
-B      = .3
-eta    = 1e-4
+Delta = 0.1
+mu_sc = 0.0025
+mu_n = 0.01
+t = 1.0
+alpha = 0.4
+B = 0.3
+eta = 1e-3
 
 E0 = 0.0
 phi_fixed = np.pi
 
-N_E   = 151
-N_PHI = 151
+N_E   = 81
+N_PHI = 81
 
 energies = np.linspace(-0.2, 0.2, N_E)
 phases   = np.linspace(-1e-2, 2 * np.pi + 1e-2, N_PHI)
@@ -255,7 +255,6 @@ results = Parallel(n_jobs=-1)(
     for phi in phases
 )
 
-# Unpack results
 ldos_p = np.stack([r[0] for r in results], axis=2)  # (n_probe_x, n_probe_y, N_PHI, 2)
 pair_p = np.stack([r[1] for r in results], axis=2)
 #%% ── 2D (energy × phase) sweep ─────────────────────────────────────────────
