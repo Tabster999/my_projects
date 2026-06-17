@@ -27,9 +27,6 @@ def phase_matrix(phi, N_y=1):
     return np.kron(np.eye(N_y, dtype=np.complex128), U_4)
 
 
-# ============================================================================
-# GREEN'S FUNCTION HELPERS
-# ============================================================================
 
 def get_z(energy: float, eta: float, ra: str = 'r', matsubara: Optional[complex] = None) -> complex:
     """
@@ -55,9 +52,6 @@ def get_z(energy: float, eta: float, ra: str = 'r', matsubara: Optional[complex]
         raise ValueError("ra must be 'r' or 'a'")
 
 
-# ============================================================================
-# OBSERVABLE EXTRACTION HELPERS
-# ============================================================================
 
 def get_ldos_site(G, y, dof=4):
     idx = slice(y*dof, (y+1)*dof)
@@ -96,9 +90,6 @@ def get_pairing_phase(G: np.ndarray, y, dof=4) -> float:
     return np.abs(np.trace(F))
 
 
-# ============================================================================
-# DIAGNOSTIC CHECKS
-# ============================================================================
 
 def check_particle_hole_symmetry(G: np.ndarray, tolerance: float = 1e-10) -> bool:
     """
@@ -133,9 +124,6 @@ def check_ldos_positivity(G: np.ndarray, tolerance: float = -1e-10) -> bool:
     return bool(np.all(ldos >= tolerance))
 
 
-# ============================================================================
-# PLOTTING HELPERS
-# ============================================================================
 
 def get_colorbar_label(observable: str) -> str:
     """

@@ -106,10 +106,6 @@ def t_matrix_y(t: float, alpha: float) -> np.ndarray:
     ], dtype=np.complex128)
 
 
-# ============================================================================
-# 1D HAMILTONIAN BUILDERS
-# ============================================================================
-
 def get_tb_hamiltonian(h0_matrix: np.ndarray, hopping_matrix: np.ndarray, sites: int) -> np.ndarray:
     """
     Build a general tight-binding Hamiltonian from onsite and hopping blocks.
@@ -279,9 +275,6 @@ def build_middle_region(
     return [H_N.copy() for _ in range(sites_mid)], V
 
 
-# ============================================================================
-# 2D HAMILTONIAN BUILDERS
-# ============================================================================
 
 def build_sns_slice_2d(
     N_y: int,

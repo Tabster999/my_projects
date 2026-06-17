@@ -150,9 +150,7 @@ print(f"\n══ Gauge convention: {'symmetric ±φ/2' if SYMMETRIC else 'asymme
 
 
 #%% ENERGY SWEEP  (φ = pi)
-# ═════════════════════════════════════════════════════════════════════════════
-# ENERGY SWEEP  (φ fixed)
-# ═════════════════════════════════════════════════════════════════════════════
+
 print("\n══ Running energy sweep ══")
 
 # shape: (probe, energy, method)  methods: 0=inv 1=fin 2=inf
@@ -186,7 +184,6 @@ for e_idx, E in enumerate(energies):
             ldos_e[s_idx, e_idx, m] = get_ldos(blk)
             Gblk_e[s_idx, e_idx, m] = blk  # Needed for Figure 5
 # %% PHASE SWEEP  (E = 0)
-# PHASE SWEEP  (E = 0)
 print("══ Running phase sweep  ══")
 
 energy_fixed = 0 
@@ -222,9 +219,8 @@ for p_idx, phi in enumerate(phases):
 
 
 #%% FIGURES 
-# ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 1 – Energy sweep: LDOS comparison per probe site
-# ═════════════════════════════════════════════════════════════════════════════
+
 fig1, axes1 = plt.subplots(len(probe_sites), 1,
                             figsize=(8, 6),
                             sharex=True)
@@ -257,9 +253,7 @@ fig1.tight_layout()
 #fig1.savefig("fig1_energy_sweep.png", dpi=150, bbox_inches="tight")
 print("  saved fig1_energy_sweep.png")
 
-# ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 2 – Phase sweep: LDOS and pairing at E = 0
-# ═════════════════════════════════════════════════════════════════════════════
 fig2, axes2 = plt.subplots(len(probe_sites), 2,
                             figsize=(10, 8),
                             sharex=True)
@@ -289,9 +283,7 @@ fig2.tight_layout()
 #fig2.savefig("fig2_phase_sweep.png", dpi=150, bbox_inches="tight")
 print("  saved fig2_phase_sweep.png")
 
-# ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 3 – Method difference maps |LDOS_method - LDOS_inv|
-# ═════════════════════════════════════════════════════════════════════════════
 err_fin = np.abs(ldos_all_fin - ldos_map)
 err_inf = np.abs(ldos_all_inf - ldos_map)
 vmax = max(err_fin.max(), err_inf.max()) * 1.05
@@ -315,9 +307,7 @@ fig3.colorbar(ScalarMappable(norm=norm, cmap="hot_r"),
 #fig3.savefig("fig3_error_maps.png", dpi=150, bbox_inches="tight")
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 4 – Spatial LDOS map  (site × energy, inversion ground truth)
-# ═════════════════════════════════════════════════════════════════════════════
 fig4, ax4 = plt.subplots(figsize=(10, 8))
 im4 = ax4.imshow(ldos_map, aspect="auto", origin="lower", extent=[energies[0], energies[-1], 0, SM], cmap="inferno") # type: ignore
 ax4.axvline(-Delta, color="cyan",  lw=1,   ls="--", alpha=0.7, label="±Δ")
@@ -331,10 +321,8 @@ fig4.colorbar(im4, ax=ax4, label="LDOS  (arb.)")
 fig4.tight_layout()
 #fig4.savefig("fig4_spatial_ldos.png", dpi=150, bbox_inches="tight")
 
-# ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 5 – G matrix element magnitudes at one probe site, one energy
 #             (visual check that full 4×4 structure is correct)
-# ═════════════════════════════════════════════════════════════════════════════
 e0_idx = np.argmin(np.abs(energies))
 s_mid  = 1
 fig5, axes5 = plt.subplots(1, 3, figsize=(10, 8))
@@ -356,7 +344,6 @@ fig5.tight_layout()
 print("  saved all figures")
 
 #%% SANITY CHECKS 
-# ═════════════════════════════════════════════════════════════════════════════
 SEP  = "═" * 55
 SEP2 = "─" * 55
 

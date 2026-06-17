@@ -9,7 +9,7 @@ from matplotlib.cm import ScalarMappable
 from joblib import Parallel, delayed
 
 current_dir = Path(__file__).resolve().parent
-module_root = current_dir.parent.parent
+module_root = current_dir.parent
 sys.path.insert(0, str(module_root))
 import modules as myf
 """
@@ -154,22 +154,22 @@ def compute_energy_slice_fin(e_idx, E):
 
     return e_idx, row
 #%% ── Parameters ────────────────────────────────────────────────────────────────
-SYMMETRIC = True     # True  → ±phi/2 on left/right
+SYMMETRIC = False     # True  → ±phi/2 on left/right
                      # False → full phi on right only
 
-SL, SM, SR = 80, 20, 80        # sites: left SC | normal | right SC
+SL, SM, SR = 200, 50, 200        # sites: left SC | normal | right SC
 DOF        = 4
 Delta      = 0.1
-mu_sc      = 0.0025
-mu_n       = 0.01
+mu_sc      = 0.01
+mu_n       = 0.1
 t          = 1.0
 alpha      = 0.4
-B          = 0.3
-eta        = 1e-3
+B          = 0.5
+eta        = 1e-4
 phi_fixed  = np.pi
 
-N_E   = 151                     # energy points
-N_PHI = 151                     # phase points
+N_E   = 121                     # energy points
+N_PHI = 121                     # phase points
 energies = np.linspace(-.15, .15, N_E)
 phases   = np.linspace(0, 2*np.pi, N_PHI)
 
@@ -203,9 +203,7 @@ print(f"  B = {B:.3f},  sqrt(Delta^2+mu^2) = {topo_threshold:.4f}")
 print(f"  In topological phase: {'YES ✓' if in_topo else 'NO  ✗'}")
 print(f"\n══ Gauge: {'symmetric ±phi/2' if SYMMETRIC else 'asymmetric, full phi on right'} ══")
 
-# ── Quick phase-rotation sanity check ─────────────────────────────────────────
-# Verify that rotating a real-Delta onsite by U(phi/2) gives the correct
-# complex-Delta onsite.
+# ── Quick phase-rotation sanity check 
 print("\n══ Gauge-rotation self-test ══")
 for phi_test in [0.0, np.pi/2, np.pi]:
     U = myf.phase_matrix(-phi_test)   # U(-phi) gives Delta*exp(+i*phi)
@@ -215,9 +213,7 @@ for phi_test in [0.0, np.pi/2, np.pi]:
     print(f"  phi={phi_test/np.pi:.2f}pi: err={err:.2e}  {'✓' if err < 1e-12 else '✗'}")
 
 #%% energy sweep 
-# ═════════════════════════════════════════════════════════════════════════════
 # ENERGY SWEEP  (phi fixed = pi)
-# ═════════════════════════════════════════════════════════════════════════════
 print("\n══ Running energy sweep ══")
 
 # shape: (probe, energy, method)  methods: 0=finite RGF  1=Sancho-López
@@ -248,9 +244,7 @@ for e_idx, E in enumerate(energies):
         ldos_all_inf[s, e_idx] = get_ldos(G_inf[s])
 
 #%% phase sweep 
-# ═════════════════════════════════════════════════════════════════════════════
 # PHASE SWEEP  (E = 0)
-# ═════════════════════════════════════════════════════════════════════════════
 print("══ Running phase sweep ══")
 
 energy_fixed = 0.0
@@ -277,9 +271,7 @@ for p_idx, phi in enumerate(phases):
             pair_p[s_idx, p_idx, m] = get_pairing(blk)
 
 #%% figures 
-# ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 1 – Energy sweep: LDOS comparison per probe site
-# ═════════════════════════════════════════════════════════════════════════════
 method_styles = [
     dict(color=C_FIN, lw=1.5, ls="dashed",
          label=f"Finite RGF ({SL}+{SM}+{SR})", zorder=3, alpha=ALPHA),
@@ -309,9 +301,7 @@ for s_idx, (s, lbl) in enumerate(zip(probe_sites, probe_labels)):
 axes1[-1].set_xlabel("Energy  (E / t)", fontsize=12)
 fig1.tight_layout()
 
-# ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 2 – Phase sweep: LDOS and pairing at E = 0
-# ═════════════════════════════════════════════════════════════════════════════
 fig2, axes2 = plt.subplots(len(probe_sites), 2, figsize=(10, 8), sharex=True)
 fig2.suptitle(
     f"Phase sweep  (E = 0,  B = {B}, Δ = {Delta}, α = {alpha})",
@@ -335,9 +325,7 @@ axes2[-1, 0].set_xlabel("φ / π", fontsize=12)
 axes2[-1, 1].set_xlabel("φ / π", fontsize=12)
 fig2.tight_layout()
 
-# ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 3 – Method difference map |LDOS_inf - LDOS_fin|
-# ═════════════════════════════════════════════════════════════════════════════
 err_inf = np.abs(ldos_all_inf - ldos_all_fin)
 vmax = err_inf.max() * 1.05
 norm = Normalize(vmin=0, vmax=vmax)
@@ -357,9 +345,7 @@ ax3.legend(fontsize=9)
 fig3.colorbar(im, ax=ax3, label="|ΔLDOS|")
 fig3.tight_layout()
 
-# ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 4 – Spatial LDOS map (site × energy, finite RGF ground truth)
-# ═════════════════════════════════════════════════════════════════════════════
 fig4, axes4 = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
 fig4.suptitle(f"Spatial LDOS map  (φ=π, B={B})", fontsize=13, fontweight="bold")
 
@@ -378,9 +364,7 @@ for ax, data, title in zip(axes4,
     fig4.colorbar(im4, ax=ax, label="LDOS  (arb.)")
 fig4.tight_layout()
 
-# ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 5 – |G_ij| matrix structure at E≈0, phi=pi
-# ═════════════════════════════════════════════════════════════════════════════
 e0_idx = np.argmin(np.abs(energies))
 s_mid  = 1   # centre probe
 fig5, axes5 = plt.subplots(1, 2, figsize=(8, 4))
@@ -401,20 +385,16 @@ for m, (ax, ttl) in enumerate(zip(axes5, ["Finite RGF", "Sancho-López"])):
     fig5.colorbar(im5, ax=ax, shrink=0.75)
 fig5.tight_layout()
 #%% fig 6 and 7: 2D contour: LDOS vs Phase vs Energy
-# ═════════════════════════════════════════════════════════════════════════════
 # FIGURE 6 – 2D contour: LDOS vs Phase vs Energy  (Sancho-López)
-# ═════════════════════════════════════════════════════════════════════════════
 print("══ Running 2D Phase×Energy sweep (Sancho-López) ══")
 
 probe = probe_sites[0]
 
-# Run in parallel over all energies
 results = Parallel(n_jobs=-2)(
     delayed(compute_energy_slice)(e_idx, E)
     for e_idx, E in enumerate(energies)
 )
 
-# Assemble result
 ldos_2d = np.zeros((N_PHI, N_E))
 for e_idx, row in results:
     ldos_2d[:, e_idx] = row
@@ -423,7 +403,7 @@ fig6, ax6 = plt.subplots(figsize=(8, 6))
 pcm = ax6.pcolormesh(
     phases / np.pi,
     energies,
-    ldos_2d.T,      # transpose!
+    ldos_2d.T,      
     shading='auto',
     cmap='magma'
 )
@@ -433,7 +413,7 @@ cbar.set_label("LDOS")
 
 ax6.set_xlabel(r"$\phi / \pi$")
 ax6.set_ylabel("Energy")
-
+ax6.set_label(r'LDOS(E, $\phi$)')
 plt.tight_layout()
 plt.show()
 #%% Fig 7 ldos fin vs inf computation
@@ -461,14 +441,15 @@ for ax, data, title in zip(
         energies,
         data.T,
         shading='auto',
-        cmap='magma'
+        cmap='inferno',
+        vmin=0,
+        vmax=60
     )
 
     ax.set_title(title)
     ax.set_xlabel(r"$\phi / \pi$")
-    ax.axhline(0, color='white', linestyle='--', linewidth=1)
 axes[0].set_ylabel("Energy")
-
+fig7.suptitle(r'LDOS(E, $\phi$)')
 fig7.colorbar(pcm, ax=axes, label="LDOS")
 plt.show()
 #%% SANITY CHECKS  

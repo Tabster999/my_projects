@@ -786,48 +786,62 @@ def _build_surface_greens(Hs, Hb, Hn, V0, Vd, w, current_normal):
     return gSL, gSR, Vd_gSL_V0, Vd_glr_V0
 
 
-def _phi_sweep_ldos(gSL, gSR, Vd_gSL_V0, Vd_glr_V0, Hn, V0, Vd, w, current_normal,
+def _phi_sweep_ldos(gSR, Vd_gSL_V0, Vd_glr_V0, Hn, V0, Vd, w,
                     spatial=False, phi_single=None):
-    dim = Hn.shape[0]
-    current_ny = dim // 4
-    zI = (w + 1j*eta) * np.eye(dim, dtype=np.complex128)
-
+    """
+    Inner phi loop. Returns:
+      spatial=False, phi_single=None  : 1D array (nphi,)      total LDOS per phi
+      spatial=True,  phi_single=float : 2D array (normal, ny) site-resolved LDOS
+ 
+    phi_single skips the full phi sweep when only one value is needed (spatial case).
+    """
+    z  = w + 1j*eta
+    zI = z * _I4
+ 
     phi_arr = [phi_single] if (spatial and phi_single is not None) else phi_vals
-    result = np.zeros((current_normal, current_ny)) if spatial else np.zeros(len(phi_vals))
-
+ 
+    if spatial:
+        result = np.zeros((normal, ny))
+    else:
+        result = np.zeros(nphi)
+ 
     for iphi, phi in enumerate(phi_arr):
         gSRp = apply_phase(gSR, phi)
-
-        grl      = [None] * current_normal
+ 
+        # Right-to-left propagator chain — phi-dependent
+        grl      = [None] * normal
         grl[-1]  = inv(zI - Hn - V0 @ gSRp @ Vd)
-        for j in range(current_normal - 2, -1, -1):
+        for j in range(normal - 2, -1, -1):
             grl[j] = inv(zI - Hn - V0 @ grl[j+1] @ Vd)
-
+ 
+        # Right boundary self-energy for last site — precomputed once per phi
         V0_gSRp_Vd = V0 @ gSRp @ Vd
-
+ 
         if spatial:
-            for j in range(current_normal):
+            for j in range(normal):
                 SL = Vd_glr_V0[j-1] if j > 0       else Vd_gSL_V0
-                SR = V0 @ grl[j+1] @ Vd if j < current_normal-1 else V0_gSRp_Vd
+                SR = V0 @ grl[j+1] @ Vd if j < normal-1 else V0_gSRp_Vd
                 G  = inv(zI - Hn - SL - SR)
-                diag_G = np.diag(G).reshape(current_ny, 4)
+                # Vectorized diagonal trace over all ny sites at once
+                diag_G = np.diag(G).reshape(ny, 4)
                 result[j, :] += -np.imag(diag_G.sum(axis=1)) / np.pi
         else:
             LD = 0.0 + 0j
-            for j in range(current_normal):
+            for j in range(normal):
                 SL = Vd_glr_V0[j-1] if j > 0       else Vd_gSL_V0
-                SR = V0 @ grl[j+1] @ Vd if j < current_normal-1 else V0_gSRp_Vd
+                SR = V0 @ grl[j+1] @ Vd if j < normal-1 else V0_gSRp_Vd
                 G  = inv(zI - Hn - SL - SR)
                 LD += np.trace(G)
             result[iphi] = -np.imag(LD) / np.pi
-
+ 
     return result
+
 
 #%% Parallel Sweep Managers
 
 def _worker_w(w, Hs, Hb, Hn, V0, Vd, current_normal):
     gSL, gSR, Vd_gSL_V0, Vd_glr_V0 = _build_surface_greens(Hs, Hb, Hn, V0, Vd, w, current_normal)
-    return _phi_sweep_ldos(gSL, gSR, Vd_gSL_V0, Vd_glr_V0, Hn, V0, Vd, w, current_normal, spatial=False)
+    return _phi_sweep_ldos(gSR, Vd_gSL_V0, Vd_glr_V0, Hn, V0, Vd, w, spatial=False)
 
 
 def calculate_ldos_parallel(B_field, alpha_raw, beta_raw, energy_array=None, n_jobs=-1):
@@ -858,7 +872,7 @@ def _worker_B(B_field, alpha, beta, w, current_normal):
     Hn  = Hloc_N(Bz, Bxy, alpha, beta, ny)
     Hb  = Hloc_B(alpha, beta, ny)
     gSL, gSR, Vd_gSL_V0, Vd_glr_V0 = _build_surface_greens(Hs, Hb, Hn, V0, Vd, w, current_normal)
-    return _phi_sweep_ldos(gSL, gSR, Vd_gSL_V0, Vd_glr_V0, Hn, V0, Vd, w, current_normal, spatial=False)
+    return _phi_sweep_ldos(gSR, Vd_gSL_V0, Vd_glr_V0, Hn, V0, Vd, w, spatial=False)
 
 
 def calculate_ldos_phi_B_parallel(B_vals, alpha_raw, beta_raw, target_energy=0.0, n_jobs=-1):
@@ -884,8 +898,8 @@ def calculate_ldos_spatial(B_field, alpha_raw, beta_raw, phi, target_energy=0.0)
     Hb = Hloc_B(alpha, beta, ny)
 
     gSL, gSR, Vd_gSL_V0, Vd_glr_V0 = _build_surface_greens(Hs, Hb, Hn, V0, Vd, target_energy, normal)
-    return _phi_sweep_ldos(gSL, gSR, Vd_gSL_V0, Vd_glr_V0, Hn, V0, Vd,
-                           target_energy, normal, spatial=True, phi_single=phi)
+    return _phi_sweep_ldos(gSR, Vd_gSL_V0, Vd_glr_V0, Hn, V0, Vd,
+                           target_energy, spatial=True, phi_single=phi)
 
 #%% Diag, Band Structure & Profile Tools
 

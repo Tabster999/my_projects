@@ -340,11 +340,11 @@ def get_surface_gfs_phased(E: float, H_slice: np.ndarray, V_x: np.ndarray, N_y: 
     gR, _ = get_surface_gf(E, H_slice, V_x, eta=eta)
     
     if symmetric:
-        U_L = phase_matrix(phi/2, N_y=N_y)
-        U_R = phase_matrix(-phi/2, N_y=N_y)
+        U_L = phase_matrix(-phi/2, N_y=N_y)
+        U_R = phase_matrix(phi/2, N_y=N_y)
     else:
         U_L = np.eye(4 * N_y, dtype=np.complex128)
-        U_R = phase_matrix(-phi, N_y=N_y)
+        U_R = phase_matrix(phi, N_y=N_y)
     
     g_L_phased = U_L @ gL @ U_L.conj().T
     g_R_phased = U_R @ gR @ U_R.conj().T
@@ -357,11 +357,11 @@ def get_surface_gfs_2d_phased(energy, H_slice, V_x, N_y, phi, symmetric=False, e
     gL_1d, _ = get_surface_gf(energy, H_slice, V_x.conj().T, eta=eta)
     gR_1d, _ = get_surface_gf(energy, H_slice, V_x, eta=eta)
     if symmetric:
-        U_L = phase_matrix(phi/2, N_y=N_y)
-        U_R = phase_matrix(-phi/2, N_y=N_y)
+        U_L = phase_matrix(-phi/2, N_y=N_y)
+        U_R = phase_matrix(phi/2, N_y=N_y)
     else:
         U_L = np.eye(4 * N_y, dtype=np.complex128)
-        U_R = phase_matrix(-phi, N_y=N_y)
+        U_R = phase_matrix(phi, N_y=N_y)
     
     g_L = U_L @ gL_1d @ U_L.conj().T
     g_R = U_R @ gR_1d @ U_R.conj().T    

@@ -80,8 +80,8 @@ def build_sns_junction_sliced_2d(N_y, t, mu_sc, mu_m, h, alpha, delta, phi,
         H_slices : list of (4·N_y × 4·N_y) slice Hamiltonians
         V_x_2d   : (4·N_y × 4·N_y) inter-slice x-hopping matrix (σ_y, k_x Rashba)
     """
-    phi_L = -phi / 2 if symmetric else 0.0
-    phi_R = phi / 2 if symmetric else phi
+    phi_L = phi / 2 if symmetric else 0.0
+    phi_R = -phi / 2 if symmetric else -phi
 
     H_L = build_sns_slice_2d(N_y, t, mu_sc, h, alpha, delta * np.exp(1j * phi_L))
     H_R = build_sns_slice_2d(N_y, t, mu_sc, h, alpha, delta * np.exp(1j * phi_R))
@@ -117,16 +117,16 @@ def build_sns_normal_only(N_y, t, mu_m, h, alpha, SM):
 #%% ── Parameters ─────────────────────────────────────────────────────────────
 SYMMETRIC = False
 
-SL, SM, SR = 70, 20, 70
-N_y = 10
+SL, SM, SR = 100, 30, 100
+N_y = 20
 
 Delta = 0.1
 mu_sc = 0.0025
-mu_n = 0.01
+mu_n = 0.001
 t = 1.0
-alpha = 0.4
-B = 0.3
-eta = 1e-3
+alpha = 0.6
+B = 0.4
+eta = 1e-4
 
 E0 = 0.0
 phi_fixed = np.pi
@@ -134,12 +134,13 @@ phi_fixed = np.pi
 N_E   = 81
 N_PHI = 81
 
-energies = np.linspace(-0.2, 0.2, N_E)
-phases   = np.linspace(-1e-2, 2 * np.pi + 1e-2, N_PHI)
+energies = np.linspace(-0.1, 0.1, N_E)
+phases   = np.linspace(0, 2 * np.pi , N_PHI)
 
 probe_x = [0, SM // 2, SM - 1]
 probe_y = [0, N_y // 2, N_y - 1]
 
+x0 = 0
 #%% ── Building blocks ────────────────────────────────────────────────────────
 
 # Full SNS junction at phi_fixed    ;   len(H_slice_list) = SL + SM + SR
@@ -194,7 +195,7 @@ probe_y_set = set(probe_y)
 probe_x_idx = {x: i for i, x in enumerate(probe_x)}
 probe_y_idx = {y: i for i, y in enumerate(probe_y)}
 
-results = Parallel(n_jobs=-1)(
+results = Parallel(n_jobs=-2)(
     delayed(compute_energy_slice)(
         E, H_slices_list, V_x_2d, H_lead_slice,
         probe_x_set, probe_x_idx, probe_y_set, probe_y_idx
@@ -250,7 +251,7 @@ def compute_phi(phi, E0, H_lead_slice, V_x_2d, N_y, SL, SM, SR, eta, SYMMETRIC, 
     return ldos_out, pair_out
 
 
-results = Parallel(n_jobs=-1)(
+results = Parallel(n_jobs=-2)(
     delayed(compute_phi)(phi, E0, H_lead_slice, V_x_2d, N_y, SL, SM, SR, eta, SYMMETRIC, probe_x, probe_y)
     for phi in phases
 )
@@ -272,8 +273,8 @@ def compute_ldos_point(energy, phase, H_normal_slices, H_lead_slice, V_x_2d):
     )
 
     # Finite — stitch prebuilt SC slices + normal slices, no full rebuild
-    phi_L = -phase / 2 if SYMMETRIC else 0.0
-    phi_R = phase / 2 if SYMMETRIC else phase
+    phi_L = phase / 2 if SYMMETRIC else 0.0
+    phi_R = -phase / 2 if SYMMETRIC else -phase
     H_L = build_sns_slice_2d(N_y, t, mu_sc, B, alpha, Delta * np.exp(1j * phi_L))
     H_R = build_sns_slice_2d(N_y, t, mu_sc, B, alpha, Delta * np.exp(1j * phi_R))
     H_full = ([H_L.copy() for _ in range(SL)] + 
@@ -283,7 +284,7 @@ def compute_ldos_point(energy, phase, H_normal_slices, H_lead_slice, V_x_2d):
     G_fin, *_ = modules.get_rgf_finite_system(
         H_full, V_x_2d, energy, eta=eta, return_full=False
     )
-
+    
     blk_i = get_local_block(G_inf[probe_x[0]],      probe_y[0])
     blk_f = get_local_block(G_fin[SL + probe_x[0]], probe_y[0])
     return (
@@ -302,7 +303,7 @@ def compute_ldos_row(energy, phases, H_normal_slices, H_lead_slice, V_x_2d):
         row_fin[p_idx] = fin_val
     return row_inf, row_fin
 
-results = Parallel(n_jobs=-1)(
+results = Parallel(n_jobs=-2)(
     delayed(compute_ldos_row)(E, phases, H_normal_slices, H_lead_slice, V_x_2d)
     for E in energies
 )
