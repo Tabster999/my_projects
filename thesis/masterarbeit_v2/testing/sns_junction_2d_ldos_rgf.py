@@ -80,8 +80,8 @@ def build_sns_junction_sliced_2d(N_y, t, mu_sc, mu_m, h, alpha, delta, phi,
         H_slices : list of (4·N_y × 4·N_y) slice Hamiltonians
         V_x_2d   : (4·N_y × 4·N_y) inter-slice x-hopping matrix (σ_y, k_x Rashba)
     """
-    phi_L = phi / 2 if symmetric else 0.0
-    phi_R = -phi / 2 if symmetric else -phi
+    phi_L = -phi / 2 if symmetric else 0.0
+    phi_R = phi / 2 if symmetric else phi
 
     H_L = build_sns_slice_2d(N_y, t, mu_sc, h, alpha, delta * np.exp(1j * phi_L))
     H_R = build_sns_slice_2d(N_y, t, mu_sc, h, alpha, delta * np.exp(1j * phi_R))
@@ -117,28 +117,29 @@ def build_sns_normal_only(N_y, t, mu_m, h, alpha, SM):
 #%% ── Parameters ─────────────────────────────────────────────────────────────
 SYMMETRIC = False
 
-SL, SM, SR = 100, 30, 100
+SL, SM, SR = 200, 30, 200
 N_y = 20
 
 Delta = 0.1
-mu_sc = 0.0025
-mu_n = 0.001
+mu_sc = 0.7
+mu_n = 0.05
 t = 1.0
-alpha = 0.6
-B = 0.4
-eta = 1e-4
+alpha = .5
+B = 0.2
+eta = 1e-3
 
 E0 = 0.0
 phi_fixed = np.pi
 
-N_E   = 81
-N_PHI = 81
+N_E   = 51
+N_PHI = 51
 
-energies = np.linspace(-0.1, 0.1, N_E)
+range_e = -1.05*Delta
+energies = np.linspace(range_e, -range_e, N_E)
 phases   = np.linspace(0, 2 * np.pi , N_PHI)
 
-probe_x = [0, SM // 2, SM - 1]
-probe_y = [0, N_y // 2, N_y - 1]
+probe_x = [SM // 2, SM - 1]
+probe_y = [N_y // 2, N_y - 1]
 
 x0 = 0
 #%% ── Building blocks ────────────────────────────────────────────────────────
@@ -195,7 +196,7 @@ probe_y_set = set(probe_y)
 probe_x_idx = {x: i for i, x in enumerate(probe_x)}
 probe_y_idx = {y: i for i, y in enumerate(probe_y)}
 
-results = Parallel(n_jobs=-2)(
+results = Parallel(n_jobs=2)(
     delayed(compute_energy_slice)(
         E, H_slices_list, V_x_2d, H_lead_slice,
         probe_x_set, probe_x_idx, probe_y_set, probe_y_idx
@@ -251,7 +252,7 @@ def compute_phi(phi, E0, H_lead_slice, V_x_2d, N_y, SL, SM, SR, eta, SYMMETRIC, 
     return ldos_out, pair_out
 
 
-results = Parallel(n_jobs=-2)(
+results = Parallel(n_jobs=2)(
     delayed(compute_phi)(phi, E0, H_lead_slice, V_x_2d, N_y, SL, SM, SR, eta, SYMMETRIC, probe_x, probe_y)
     for phi in phases
 )
@@ -285,8 +286,8 @@ def compute_ldos_point(energy, phase, H_normal_slices, H_lead_slice, V_x_2d):
         H_full, V_x_2d, energy, eta=eta, return_full=False
     )
     
-    blk_i = get_local_block(G_inf[probe_x[0]],      probe_y[0])
-    blk_f = get_local_block(G_fin[SL + probe_x[0]], probe_y[0])
+    blk_i = get_local_block(G_inf[probe_x[0]],      probe_y[1])
+    blk_f = get_local_block(G_fin[SL + probe_x[0]], probe_y[1])
     return (
         -np.imag(np.trace(blk_i)) / np.pi,
         -np.imag(np.trace(blk_f)) / np.pi,
@@ -303,7 +304,7 @@ def compute_ldos_row(energy, phases, H_normal_slices, H_lead_slice, V_x_2d):
         row_fin[p_idx] = fin_val
     return row_inf, row_fin
 
-results = Parallel(n_jobs=-2)(
+results = Parallel(n_jobs=2)(
     delayed(compute_ldos_row)(E, phases, H_normal_slices, H_lead_slice, V_x_2d)
     for E in energies
 )
@@ -384,7 +385,7 @@ plt.suptitle("LDOS(y, E) — infinite leads — selected x-sites")
 
 # ── Figure 5: LDOS & Pairing vs Phase (probe sites) ──────────────────────
 fig, axes = plt.subplots(len(probe_x), len(probe_y) * 2,
-                         figsize=(10, 3 * len(probe_x)), sharex=True)
+                         figsize=(12, 3 * len(probe_x)), sharex=True)
 axes = np.atleast_2d(axes)
 for ix, x in enumerate(probe_x):
     for iy, y in enumerate(probe_y):
@@ -394,31 +395,30 @@ for ix, x in enumerate(probe_x):
         ax_l.plot(phases / np.pi, ldos_p[ix, iy, :, 1], '-',  label='infinite')
         ax_l.set_title(f"x={x}, y={y}")
         ax_l.set_ylabel("LDOS")
-        ax_l.grid()
         ax_p.plot(phases / np.pi, pair_p[ix, iy, :, 0], '--', label='finite')
         ax_p.plot(phases / np.pi, pair_p[ix, iy, :, 1], '-',  label='infinite')
         ax_p.set_ylabel("Pairing")
-        ax_p.grid()
         if ix == len(probe_x) - 1:
             ax_l.set_xlabel("φ/π")
             ax_p.set_xlabel("φ/π")
         if ix == 0 and iy == 0:
             ax_l.legend()
+            
+plt.tight_layout()
 plt.suptitle("LDOS & Pairing vs Phase  (E = 0)")
 
 
 # ── Figure 6: LDOS map (energy × phase) ──────────────────────────────────
 fig, ax = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
-im0 = ax[0].contourf(phases / np.pi, energies, ldos_2d_fin, levels=100, cmap='viridis')
+im0 = ax[0].pcolormesh(energies, phases / np.pi, ldos_2d_fin.T, shading='auto', cmap='inferno')
 ax[0].set_title("Finite system")
 ax[0].set_xlabel("φ/π")
 ax[0].set_ylabel("Energy")
-im1 = ax[1].contourf(phases / np.pi, energies, ldos_2d_inf, levels=100, cmap='viridis')
+im1 = ax[1].pcolormesh(energies, phases / np.pi, ldos_2d_inf.T, shading='auto', cmap='inferno')
 ax[1].set_title("Infinite leads")
 ax[1].set_xlabel("φ/π")
 plt.colorbar(im1, ax=ax.ravel().tolist(), label="LDOS")
-plt.suptitle(f"LDOS(E, φ) — probe x={probe_x[0]}, y={probe_y[0]}")
-
+plt.suptitle(f"LDOS(E, φ) — probe x={probe_x[0]}, y={probe_y[1]}")
 plt.show()
 print("Finished.")
 # %%

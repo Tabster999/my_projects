@@ -36,34 +36,6 @@ The LEFT lead's surface GF (g_L):
   - Couples to N region via: Sigma_L = V† @ g_L @ V
     (N site hops LEFT into lead via V†, returns via V)
 
-These two bare GFs are NOT the same object because V is not unitary in general
-(spin-orbit coupling makes V complex with non-trivial phase structure).
-Specifically, the anomalous component g[0,3] acquires an INTRINSIC phase from
-the accumulated hopping phases in the Sancho-López iteration:
-
-  angle(g_bare_R[0,3]) ~ +pi  (from V  iterations)
-  angle(g_bare_L[0,3]) ~  0   (from V† iterations)
-  intrinsic difference  = pi
-
-This pi offset is NOT a physical superconducting phase — it is a gauge artifact
-of the chain direction. If uncorrected, the N region sees an effective phase
-difference of pi even at phi=0, breaking the periodicity entirely.
-
-CORRECTION STRATEGY:
-Before applying the physical gauge rotation U(±phi/2), we rotate g_bare_R by
-U(-pi/4) to strip the intrinsic pi phase offset (since U(theta) shifts Delta
-by 2*theta, we need theta = -pi/4 to remove a pi phase from g_bare_R[0,3]):
-
-  U_fix = phase_matrix(-pi/4)
-  g_bare_R_fixed = U_fix @ g_bare_R @ U_fix†
-
-After this, both bare GFs have the same intrinsic anomalous phase (~0), and
-the physical rotation U(±phi/2) correctly produces:
-
-  angle(Sigma_R[0,3]) = +phi/2 * 2 = +phi/2  ... wait, no:
-  angle(Sigma_R[0,3]) = +phi    (since U(phi/2) shifts Delta by phi)
-  angle(Sigma_L[0,3]) = -phi
-  phase difference across junction = phi  ✓
 
 SUMMARY OF SELF-ENERGY CONTRACTIONS (must match get_rgf_sns internals):
   Sigma_R = V  @ g_R @ V†   (used at right boundary, i = N-1)
@@ -88,33 +60,32 @@ def get_pairing(G_block):
     return np.abs(G_block[0, 3])
 
 
-def get_surface_gfs(E, phi, symmetric=True, eta=1e-3):
+def get_surface_gfs(E, phi, onsite_sc, symmetric=False, eta=1e-3):
     """
     Surface GFs with SC phase applied as Nambu gauge rotation.
     
     Convention (matches build_sns_junction_sliced):
-      U(theta) @ H(Delta) @ U(theta)† = H(Delta * exp(-i*theta))
+      U(theta)† @ H(Delta) @ U(theta) = H(Delta * exp(i*theta))
     
     Symmetric gauge:
-      Delta_L = Delta*exp(-i*phi/2)  →  UL = phase_matrix(+phi/2)
-      Delta_R = Delta*exp(+i*phi/2)  →  UR = phase_matrix(-phi/2)
+      Delta_L = Delta*exp(-i*phi/2)  →  UL = phase_matrix(-phi/2)
+      Delta_R = Delta*exp(+i*phi/2)  →  UR = phase_matrix(+phi/2)
     
     Asymmetric gauge:
       Delta_L = Delta (real)          →  UL = identity
-      Delta_R = Delta*exp(+i*phi)     →  UR = phase_matrix(-phi)
+      Delta_R = Delta*exp(+i*phi)     →  UR = phase_matrix(phi)
     """
-    onsite_sc = myf.onsite_matrix(t, mu_sc, B, Delta)
     if symmetric:
         UL = myf.phase_matrix(-phi / 2.0)
-        UR = myf.phase_matrix(+phi / 2.0)
+        UR = myf.phase_matrix(phi / 2.0)
     else:
         UL = np.eye(4, dtype=np.complex128)
-        UR = myf.phase_matrix(-phi)
+        UR = myf.phase_matrix(phi)
 
     g_L, _ = myf.get_surface_gf(E, onsite_sc, V.conj().T, eta=eta)
     g_R, _ = myf.get_surface_gf(E, onsite_sc, V, eta=eta)
 
-    return UL @ g_L @ UL.conj().T, UR @ g_R @ UR.conj().T
+    return UL.conj().T @ g_L @ UL, UR.conj().T @ g_R @ UR
 
 def ph_check(name, M):
     ok = np.allclose(M, -C_ph @ M.conj() @ C_ph, atol=1e-12)
@@ -125,7 +96,7 @@ def compute_energy_slice(e_idx, E):
     row = np.zeros(N_PHI)
 
     for p_idx, phi in enumerate(phases):
-        g_L, g_R = get_surface_gfs(E, phi, SYMMETRIC, eta=eta)
+        g_L, g_R = get_surface_gfs(E, phi, onsite_sc, SYMMETRIC, eta=eta)
 
         G_inf, *_ = myf.get_rgf_sns(
             H_mid_slices, V, g_L, g_R, E, eta=eta, return_full=False
@@ -157,37 +128,37 @@ def compute_energy_slice_fin(e_idx, E):
 SYMMETRIC = False     # True  → ±phi/2 on left/right
                      # False → full phi on right only
 
-SL, SM, SR = 200, 50, 200        # sites: left SC | normal | right SC
+SL, SM, SR = 100, 40, 100        # sites: left SC | normal | right SC
 DOF        = 4
 Delta      = 0.1
-mu_sc      = 0.01
-mu_n       = 0.1
+mu_sc      = 0.1
+mu_n       = 0.025
 t          = 1.0
-alpha      = 0.4
-B          = 0.5
+alpha      = 0.6
+B          = 0.3
 eta        = 1e-4
 phi_fixed  = np.pi
 
 N_E   = 121                     # energy points
-N_PHI = 121                     # phase points
-energies = np.linspace(-.15, .15, N_E)
+N_PHI = 121                   # phase points
+energies = np.linspace(-1.05*Delta, 1.05*Delta, N_E)
 phases   = np.linspace(0, 2*np.pi, N_PHI)
 
-probe_sites  = [1, SM // 2, SM - 2]
+probe_sites  = [0, SM // 2, SM - 1]
 probe_labels = ["Left interface", "Centre of N", "Right interface"]
 
 # ── Fixed objects ─────────────────────────────────────────────────────────────
 V      = myf.t_matrix_x(t, alpha)
 V_dag  = V.conj().T
 onsite_sc    = myf.onsite_matrix(t, mu_sc, B, Delta)   # real Delta
-H_mid_slices, _ = myf.build_middle_region(t, mu_n, alpha, B, SM)
+H_mid_slices = [myf.onsite_matrix(t, mu_n, 0, 0.0) for _ in range(SM)]
 
 H_full_slices, _ = myf.build_sns_junction_sliced(
     t, mu_sc, mu_n, alpha, B, Delta, phi_fixed,
     SL, SR, SM, symmetric=SYMMETRIC)
 
 # ── Particle-hole symmetry check on Hamiltonians ──────────────────────────────
-C_ph = np.fliplr(np.eye(DOF))   # antidiag identity – PH conjugation matrix
+C_ph = np.array([[0,0,0,-1], [0,0,1,0], [0,1,0,0], [-1,0,0,0]])   # antidiag identity – PH conjugation matrix
 
 
 print("\n══ Hamiltonian PH checks ══")
@@ -206,8 +177,8 @@ print(f"\n══ Gauge: {'symmetric ±phi/2' if SYMMETRIC else 'asymmetric, full
 # ── Quick phase-rotation sanity check 
 print("\n══ Gauge-rotation self-test ══")
 for phi_test in [0.0, np.pi/2, np.pi]:
-    U = myf.phase_matrix(-phi_test)   # U(-phi) gives Delta*exp(+i*phi)
-    onsite_rot = U @ onsite_sc @ U.conj().T
+    U = myf.phase_matrix(phi_test)   # U(-phi) gives Delta*exp(+i*phi)
+    onsite_rot = U.conj().T @ onsite_sc @ U
     onsite_ref = myf.onsite_matrix(t, mu_sc, B, Delta * np.exp(1j * phi_test))
     err = np.max(np.abs(onsite_rot - onsite_ref))
     print(f"  phi={phi_test/np.pi:.2f}pi: err={err:.2e}  {'✓' if err < 1e-12 else '✗'}")
@@ -227,7 +198,7 @@ for e_idx, E in enumerate(energies):
     G_fin, *_ = myf.get_rgf_finite_system(
         H_full_slices, V, E, eta=eta, return_full=False)
 
-    g_L, g_R = get_surface_gfs(E, phi_fixed, SYMMETRIC, eta=eta)
+    g_L, g_R = get_surface_gfs(E, phi_fixed, onsite_sc, SYMMETRIC, eta=eta)
     G_inf, *_ = myf.get_rgf_sns(
         H_mid_slices, V, g_L, g_R, E, eta=eta, return_full=False)
 
@@ -259,7 +230,7 @@ for p_idx, phi in enumerate(phases):
     G_fin_p, *_ = myf.get_rgf_finite_system(
         H_full_p, V, energy_fixed, eta=eta, return_full=False)
 
-    g_L_p, g_R_p = get_surface_gfs(energy_fixed, phi, SYMMETRIC, eta=eta)
+    g_L_p, g_R_p = get_surface_gfs(energy_fixed, phi, onsite_sc, SYMMETRIC, eta=eta)
     G_inf_p, *_ = myf.get_rgf_sns(
         H_mid_slices, V, g_L_p, g_R_p, energy_fixed, eta=eta, return_full=False)
 
@@ -287,7 +258,7 @@ fig1.suptitle(
 for s_idx, (s, lbl) in enumerate(zip(probe_sites, probe_labels)):
     ax = axes1[s_idx]
     for m in range(2):
-        ax.plot(energies, ldos_e[s_idx, :, m], **method_styles[m])
+        ax.plot(energies / Delta, ldos_e[s_idx, :, m], **method_styles[m])
     ax.axvline(-Delta, color="gray", lw=0.8, ls="--", alpha=0.5)
     ax.axvline(+Delta, color="gray", lw=0.8, ls="--", alpha=0.5, label="±Δ")
     ax.axvline(0,      color="k",    lw=0.5, ls=":",  alpha=0.3)
@@ -295,10 +266,9 @@ for s_idx, (s, lbl) in enumerate(zip(probe_sites, probe_labels)):
     ax.set_title(lbl, fontsize=11, loc="left", pad=4)
     ax.legend(fontsize=9, loc="upper right", framealpha=0.9)
     ax.grid(True, alpha=0.15)
-    ax.set_xlim(energies[0], energies[-1])
     ax.set_ylim(bottom=0)
 
-axes1[-1].set_xlabel("Energy  (E / t)", fontsize=12)
+axes1[-1].set_xlabel(r"Energy  (E / $\Delta$)", fontsize=12)
 fig1.tight_layout()
 
 # FIGURE 2 – Phase sweep: LDOS and pairing at E = 0
@@ -339,9 +309,10 @@ im = ax3.imshow(err_inf, aspect="auto", origin="lower",
 ax3.axvline(-Delta, color="cyan",  lw=1,   ls="--", alpha=0.7, label="±Δ")
 ax3.axvline(+Delta, color="cyan",  lw=1,   ls="--", alpha=0.7)
 ax3.axvline(0,      color="white", lw=0.5, ls=":",  alpha=0.5)
-ax3.set_xlabel("Energy  (E / t)", fontsize=11)
+ax3.set_xlabel("Energy", fontsize=11)
 ax3.set_ylabel("Site index (N region)", fontsize=11)
 ax3.legend(fontsize=9)
+ax3.set_yticks([0, (SM // 2) / 2, SM // 2, SM])
 fig3.colorbar(im, ax=ax3, label="|ΔLDOS|")
 fig3.tight_layout()
 
@@ -357,7 +328,7 @@ for ax, data, title in zip(axes4,
     ax.axvline(-Delta, color="cyan",  lw=1,   ls="--", alpha=0.7, label="±Δ")
     ax.axvline(+Delta, color="cyan",  lw=1,   ls="--", alpha=0.7)
     ax.axvline(0,      color="white", lw=0.8, ls=":",  alpha=0.6, label="E=0")
-    ax.set_xlabel("Energy  (E / t)", fontsize=12)
+    ax.set_xlabel("Energy", fontsize=12)
     ax.set_ylabel("Site index (N region)", fontsize=12)
     ax.set_title(title, fontsize=12)
     ax.legend(fontsize=9, loc="upper right")
@@ -366,27 +337,37 @@ fig4.tight_layout()
 
 # FIGURE 5 – |G_ij| matrix structure at E≈0, phi=pi
 e0_idx = np.argmin(np.abs(energies))
-s_mid  = 1   # centre probe
-fig5, axes5 = plt.subplots(1, 2, figsize=(8, 4))
-fig5.suptitle(f"|G_ij| at E≈0, site={probe_labels[s_mid]}  (φ=π)",
+s_fig5  = 0   # 0 - site 1;     1 - centre probe (SM // 2);    2 - end of the probe (SM)
+fig5, axes5 = plt.subplots(1, 2, figsize=(9, 4.5))
+fig5.suptitle(f"|G_ij| at E≈0, site={probe_labels[s_fig5]}  (φ=π)",
               fontsize=12, fontweight="bold")
+
+nambu_labels = [r"$\uparrow$", r"$\downarrow$", r"$\downarrow^\dagger$", r"$-\uparrow^\dagger$"]
+
 for m, (ax, ttl) in enumerate(zip(axes5, ["Finite RGF", "Sancho-López"])):
-    mat = np.abs(Gblk_e[s_mid, e0_idx, m])
+    mat = np.abs(Gblk_e[s_fig5, e0_idx, m])
     im5 = ax.imshow(mat, cmap="viridis", vmin=0)
     ax.set_title(ttl, fontsize=11)
+    
+    # Set the basis labels on both axes
     ax.set_xticks(range(DOF))
-    ax.set_xticklabels([r"$↑$", r"↓", r"$↓^\dagger$", r"$↑^\dagger$"], fontsize=10)
+    ax.set_xticklabels(nambu_labels, fontsize=11)
     ax.set_yticks(range(DOF))
-    ax.set_yticklabels([r"↑", r"↓", r"$↓^\dagger$", r"$↑^\dagger$"], fontsize=10)
+    ax.set_yticklabels(nambu_labels, fontsize=11)
+    
+    # Overlay text values inside the matrix blocks
     for i in range(DOF):
         for j in range(DOF):
             ax.text(j, i, f"{mat[i,j]:.2f}", ha="center", va="center",
-                    fontsize=8, color="white" if mat[i,j] > mat.max()*0.5 else "black")
+                    fontsize=9, color="white" if mat[i,j] > mat.max()*0.5 else "black")
+                    
     fig5.colorbar(im5, ax=ax, shrink=0.75)
+
 fig5.tight_layout()
-#%% fig 6 and 7: 2D contour: LDOS vs Phase vs Energy
-# FIGURE 6 – 2D contour: LDOS vs Phase vs Energy  (Sancho-López)
-print("══ Running 2D Phase×Energy sweep (Sancho-López) ══")
+plt.show()
+#%% Fig 7 ldos fin vs inf computation
+print("══ Running 2D Phase×Energy sweep (Finite RGF) ══")
+# Parallel execution
 
 probe = probe_sites[0]
 
@@ -398,27 +379,7 @@ results = Parallel(n_jobs=-2)(
 ldos_2d = np.zeros((N_PHI, N_E))
 for e_idx, row in results:
     ldos_2d[:, e_idx] = row
-fig6, ax6 = plt.subplots(figsize=(8, 6))
 
-pcm = ax6.pcolormesh(
-    phases / np.pi,
-    energies,
-    ldos_2d.T,      
-    shading='auto',
-    cmap='magma'
-)
-
-cbar = fig6.colorbar(pcm, ax=ax6)
-cbar.set_label("LDOS")
-
-ax6.set_xlabel(r"$\phi / \pi$")
-ax6.set_ylabel("Energy")
-ax6.set_label(r'LDOS(E, $\phi$)')
-plt.tight_layout()
-plt.show()
-#%% Fig 7 ldos fin vs inf computation
-print("══ Running 2D Phase×Energy sweep (Finite RGF) ══")
-# Parallel execution
 results_fin = Parallel(n_jobs=-2)(
     delayed(compute_energy_slice_fin)(e_idx, E)
     for e_idx, E in enumerate(energies)
@@ -428,7 +389,6 @@ results_fin = Parallel(n_jobs=-2)(
 ldos_2d_fin = np.zeros((N_PHI, N_E))
 for e_idx, row in results_fin:
     ldos_2d_fin[:, e_idx] = row
-#%% show fig7
 fig7, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
 
 for ax, data, title in zip(
@@ -438,19 +398,134 @@ for ax, data, title in zip(
 ):
     pcm = ax.pcolormesh(
         phases / np.pi,
-        energies,
+        energies / Delta,
         data.T,
+        #np.clip(data.T, 0, 10),
         shading='auto',
-        cmap='inferno',
-        vmin=0,
-        vmax=60
+        #levels=50,
+        cmap='inferno'
     )
 
     ax.set_title(title)
     ax.set_xlabel(r"$\phi / \pi$")
-axes[0].set_ylabel("Energy")
+axes[0].set_ylabel(r"$ E / \Delta$")
 fig7.suptitle(r'LDOS(E, $\phi$)')
 fig7.colorbar(pcm, ax=axes, label="LDOS")
+plt.show()
+
+
+#%% Spatial Wavefunction at E=0 from Infinite Leads
+print("\n Extracting zero-energy wavefunction from infinite leads")
+
+E_zero = 0.0
+g_L, g_R = get_surface_gfs(E_zero, phi_fixed, onsite_sc, SYMMETRIC)
+
+G_inf, *_ = myf.get_rgf_sns(H_mid_slices, V, g_L, g_R, E_zero, eta=1e-4, return_full=False)
+
+psi = np.array([get_ldos(G_inf[s]) for s in range(SM)])
+rho = np.abs(np.sqrt(psi*np.conjugate(psi)))
+plt.figure(figsize=(10, 4))
+plt.plot(rho, 'o-', color=C_INF, markersize=4, label='Infinite Leads (RGF)')
+plt.ylabel(r'$|\psi(x)|$')
+plt.xlabel('Middle site index')
+plt.title(r'Spatial propability amplitude')
+plt.legend(loc=8)
+plt.grid(True, alpha=0.2)
+plt.tight_layout()
+plt.show()
+
+#%% Fig. 8 spatial density of eigenvectors 
+from scipy.linalg import eigh
+H_full_slices, V = myf.build_sns_junction_sliced(
+    t, mu_sc, mu_n, alpha, B, Delta, phi_fixed,
+    SL, SR, SM, symmetric=SYMMETRIC) # Get full SNS Hamiltonian
+
+H_full = np.zeros((DOF * (SL + SM + SR), DOF * (SL + SM + SR)), dtype=np.complex128)
+for i, H_i in enumerate(H_full_slices):
+    H_full[i*DOF:(i+1)*DOF, i*DOF:(i+1)*DOF] = H_i
+for i in range(len(H_full_slices) - 1):
+    H_full[i*DOF:(i+1)*DOF, (i+1)*DOF:(i+2)*DOF] = V
+    H_full[(i+1)*DOF:(i+2)*DOF, i*DOF:(i+1)*DOF] = V.conj().T
+
+evals, evecs = eigh(H_full)
+
+# Find E≈0
+e0_idx = np.argmin(np.abs(evals))
+print(f"Eigenvalue closest to E=0: {evals[e0_idx]:.6e}")
+
+# Extract spatial wavefunction (trace over Nambu DoF)
+psi = evecs[:, e0_idx]
+psi_spatial = np.zeros(SL + SM + SR)
+for site_idx in range(SL + SM + SR):
+    psi_spatial[site_idx] = np.linalg.norm(psi[site_idx*DOF:(site_idx+1)*DOF])
+
+plt.figure(figsize=(12, 4))
+plt.plot(psi_spatial[SL:SM+SL+1], '-', markersize=3)
+plt.ylabel(r'$|\psi(x)|$')
+plt.xlabel('Site index')
+plt.title(f'MZM wavefunction at E={evals[e0_idx]:.2e}')
+plt.legend()
+plt.show()
+#%% Evolution of lowest energy eval vs. magnetic field 
+#%% MZM splitting vs normal region length
+
+from scipy.linalg import eigh
+import matplotlib.pyplot as plt
+import numpy as np
+
+SM_values = [50, 100, 150, 200, 300, 400, 500]
+
+lowest_E = []
+
+for SM_test in SM_values:
+
+    # build finite SNS
+    H_slices, V_test = myf.build_sns_junction_sliced(
+        t, mu_sc, mu_n, alpha, B, Delta,
+        phi_fixed,
+        SL, SR, SM_test,
+        symmetric=SYMMETRIC
+    )
+
+    Ntot = len(H_slices)
+    H = np.zeros((DOF*Ntot, DOF*Ntot), dtype=np.complex128)
+
+    # onsite blocks
+    for i, Hi in enumerate(H_slices):
+        H[i*DOF:(i+1)*DOF,
+          i*DOF:(i+1)*DOF] = Hi
+
+    # hopping blocks
+    for i in range(Ntot-1):
+        H[i*DOF:(i+1)*DOF,
+          (i+1)*DOF:(i+2)*DOF] = V_test
+
+        H[(i+1)*DOF:(i+2)*DOF,
+          i*DOF:(i+1)*DOF] = V_test.conj().T
+
+    # only need eigenvalues near zero
+    evals = eigh(H, eigvals_only=True)
+
+    E0 = evals[np.argmin(np.abs(evals))]
+    lowest_E.append(abs(E0))
+
+    print(f"SM={SM_test:4d}   |E0|={abs(E0):.5e}")
+
+
+# plot
+plt.figure(figsize=(7,4))
+
+plt.plot(
+    SM_values,
+    lowest_E,
+    "o-"
+)
+
+plt.xlabel("Normal region length $S_M$")
+plt.ylabel(r"$|E_0|$")
+plt.title("Lowest BdG energy vs junction length")
+plt.grid(True)
+
 plt.show()
 #%% SANITY CHECKS  
 
@@ -563,7 +638,7 @@ print(f"\n[9] Finite-size convergence  (sub-gap |E|<Δ, centre probe vs Sancho-L
 print(f"    Note: above-gap errors are physical (finite vs continuous SC spectrum)")
 print(SEP2)
 tol_conv = 1e-1
-sizes_to_test = [50, 100, 150, 200, 800]
+sizes_to_test = [50, 100, 150, 300]
 
 for sl_sr in sizes_to_test:
     H_test_slices, _ = myf.build_sns_junction_sliced(
@@ -579,7 +654,7 @@ for sl_sr in sizes_to_test:
             H_test_slices, V, E, eta=eta, return_full=False)
         ldos_fin_test[e_idx] = get_ldos(G_fin_test[sl_sr + probe_sites[1]])
 
-        g_L, g_R = get_surface_gfs(E, phi_fixed, SYMMETRIC, eta=eta)
+        g_L, g_R = get_surface_gfs(E, phi_fixed, onsite_sc, SYMMETRIC, eta=eta)
         G_inf_test, *_ = myf.get_rgf_sns(
             H_mid_slices, V, g_L, g_R, E, eta=eta, return_full=False)
         ldos_inf_test[e_idx] = get_ldos(G_inf_test[probe_sites[1]])
@@ -588,107 +663,6 @@ for sl_sr in sizes_to_test:
     max_err_all = np.max(np.abs(ldos_fin_test - ldos_inf_test))
     print(f"  SL=SR={sl_sr:4d} | sub-gap max|Δ|={max_err_sub:.3e}  "
           f"{verdict(max_err_sub < tol_conv, tol_conv)}  (full={max_err_all:.3e})")
-    
-# [11] Surface GF PH symmetry (left vs right)
-print("\n[11] Surface GF PH symmetry")
-C = np.fliplr(np.eye(4))
 
-errs = []
-for E in energies:
-    g, _ = myf.get_surface_gf(E, onsite_sc, V, eta=eta)
-    g_m, _ = myf.get_surface_gf(-E, onsite_sc, V, eta=eta)
-    
-    err = np.max(np.abs(g + C @ g_m.conj() @ C))
-    errs.append(err)
-
-print(f"  max error = {max(errs):.2e}")
-print(f"  mean error = {np.mean(errs):.2e}")
-print(f"  verdict: {'✓ PASS' if max(errs) < 1e-6 else '✗ FAIL'}")
-
-
-plt.show()
-
-def eta_stability_test(E, phi, site):
-    etas = [1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 1e-2] 
-    vals_fin = []
-    vals_inf = [] 
-    for eta_test in etas:
-        G_fin, *_ = myf.get_rgf_finite_system( H_full_slices, V, E, eta=eta_test) 
-        gL, gR = get_surface_gfs(E, phi, SYMMETRIC, eta=eta_test) 
-        G_inf, *_ = myf.get_rgf_sns( H_mid_slices, V, gL, gR, E, eta=eta_test)
-        vals_fin.append(get_ldos(G_fin[SL + site]))
-        vals_inf.append(get_ldos(G_inf[site])) 
-    return etas, vals_fin, vals_inf
-
-def run_eta_diagnostic(E, phi, site_idx, site_label="probe"):
-    print("\n" + "═"*70)
-    print(" ETA STABILITY DIAGNOSTIC")
-    print("═"*70)
-    print(f"Energy  E = {E:.4f}")
-    print(f"Phase   φ = {phi/np.pi:.2f} π")
-    print(f"Site    = {site_label} (index {site_idx})")
-    print("─"*70)
-    
-    etas, vals_fin, vals_inf = eta_stability_test(E, phi, site_idx)
-
-    vals_fin = np.array(vals_fin)
-    vals_inf = np.array(vals_inf)
-
-    # ---- diagnostics ----
-    fin_var = np.max(vals_fin) - np.min(vals_fin)
-    inf_var = np.max(vals_inf) - np.min(vals_inf)
-
-    fin_rel = fin_var / (np.mean(vals_fin) + 1e-15)
-    inf_rel = inf_var / (np.mean(vals_inf) + 1e-15)
-
-    print(f"Finite system LDOS:")
-    print(f"  min = {vals_fin.min():.4e}, max = {vals_fin.max():.4e}")
-    print(f"  relative variation = {fin_rel:.2e}")
-
-    print(f"\nInfinite leads LDOS:")
-    print(f"  min = {vals_inf.min():.4e}, max = {vals_inf.max():.4e}")
-    print(f"  relative variation = {inf_rel:.2e}")
-
-    # stability verdict
-    tol = 5e-2
-    stable = (fin_rel < tol) and (inf_rel < tol)
-
-    print("\nVerdict:")
-    if stable:
-        print("  ✓ ETA-STABLE regime (results reliable)")
-    else:
-        print("  ✗ ETA-SENSITIVE regime (results not converged)")
-    print("═"*70)
-
-    # ---- plot ----
-    fig, ax = plt.subplots(figsize=(7, 4))
-
-    ax.plot(etas, vals_fin, "o-", label="Finite RGF", color="tab:red")
-    ax.plot(etas, vals_inf, "s-", label="Sancho–López", color="tab:green")
-
-    ax.set_xscale("log")
-    ax.set_xlabel("η")
-    ax.set_ylabel("LDOS")
-    ax.set_title(f"η stability test | E={E:.3f}, φ={phi/np.pi:.2f}π")
-
-    ax.grid(True, which="both", alpha=0.3)
-    ax.legend()
-
-    plt.tight_layout()
-    plt.show()
-
-    return stable
-
-# choose a physically interesting point
-E_test = 0.0
-phi_test = np.pi
-site_test = probe_sites[1]   # centre of N region
-
-stable = run_eta_diagnostic(
-    E=E_test,
-    phi=phi_test,
-    site_idx=site_test,
-    site_label="N-centre"
-)
 
 # %%

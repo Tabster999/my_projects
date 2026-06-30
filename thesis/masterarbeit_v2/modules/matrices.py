@@ -55,10 +55,10 @@ def onsite_matrix(t: float, mu: float, h: float, delta: complex, twod: bool = Fa
     z = 4 * t - mu if twod else 2 * t - mu
 
     return np.array([
-        [ z - h,               0,              delta,              0       ],
-        [ 0,                   z + h,          0,                 -delta   ],
-        [ delta.conjugate(),   0,             -z - h,             0       ],
-        [ 0,                  -delta.conjugate(), 0,              -z + h  ]
+        [ z + h,               0,              delta,              0       ],
+        [ 0,                   z - h,          0,                 delta   ],
+        [ delta.conjugate(),   0,             -z + h,             0       ],
+        [ 0,                  delta.conjugate(), 0,              -z - h  ]
     ], dtype=np.complex128)
 
 
@@ -77,8 +77,8 @@ def t_matrix_x(t: float, alpha: float) -> np.ndarray:
         (4, 4) complex hopping matrix
     """
     return np.array([
-        [-t,     alpha,  0,      0    ],
-        [-alpha, -t,     0,      0    ],
+        [-t,     -alpha,  0,      0    ],
+        [alpha, -t,     0,      0    ],
         [ 0,     0,      t,      alpha],
         [ 0,     0,     -alpha,  t    ]
     ], dtype=np.complex128)
@@ -100,9 +100,9 @@ def t_matrix_y(t: float, alpha: float) -> np.ndarray:
     """
     return np.array([
         [-t,        1j * alpha, 0,          0         ],
-        [1j * alpha, -t,        0,          0         ],
-        [ 0,         0,         t,          1j * alpha],
-        [ 0,         0,         1j * alpha, t         ]
+        [-1j * alpha, -t,        0,          0         ],
+        [ 0,         0,         t,          -1j * alpha],
+        [ 0,         0,        1j * alpha, t         ]
     ], dtype=np.complex128)
 
 
@@ -143,7 +143,7 @@ def build_sns_junction(
     sites_right: int,
     sites_mid: int,
     dof: int = 4,
-    symmetric: bool = False
+    symmetric: bool = False,
 ) -> np.ndarray:
     r"""
     Build the full dense 1D SNS-junction Hamiltonian.
@@ -239,7 +239,7 @@ def build_sns_junction_sliced(
     H_L = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_L))
     H_R = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_R))
     H_M = onsite_matrix(t, mu_m,  h, 0)
-    V   = t_matrix_y(t, alpha)
+    V   = t_matrix_x(t, alpha)
 
     H_slices = (
         [H_L for _ in range(sites_left)] +
@@ -271,7 +271,7 @@ def build_middle_region(
         V        : (4, 4) inter-site hopping matrix
     """
     H_N = onsite_matrix(t, mu_m, h, 0)
-    V   = t_matrix_y(t, alpha)
+    V   = t_matrix_x(t, alpha)
     return [H_N.copy() for _ in range(sites_mid)], V
 
 
@@ -306,7 +306,6 @@ def build_sns_slice_2d(
     V_y     = t_matrix_y(t, alpha)
     I_y     = np.eye(N_y, dtype=np.complex128)
     off_y   = np.eye(N_y, k=1, dtype=np.complex128)
-
     return (
         np.kron(I_y,      h_0)
       + np.kron(off_y,    V_y)

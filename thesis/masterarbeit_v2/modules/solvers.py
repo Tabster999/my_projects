@@ -7,7 +7,7 @@ original `my_functions.py`.
 """
 
 import numpy as np
-from scipy.linalg import inv
+from scipy.linalg import inv, norm
 from typing import Tuple, Optional
 from .helpers import phase_matrix
 
@@ -16,10 +16,14 @@ def get_surface_gf(energy: float, eps: np.ndarray, t_matrix: np.ndarray, eta: fl
     """Sancho-López retarded surface Green's function for a semi-infinite lead."""
     dof = eps.shape[0]
     z = (energy + 1j * eta) * np.eye(dof, dtype=np.complex128)
-    alpha = t_matrix
-    beta = np.transpose(np.conjugate(t_matrix))
-    Epsilon_surf = eps
-    Epsilon_bulk = eps
+    alpha_0 = t_matrix
+    beta_0 = np.transpose(np.conjugate(t_matrix))
+    g0 = inv(z - eps)
+
+    Epsilon_surf = eps + alpha_0 @ g0 @ beta_0
+    Epsilon_bulk = eps + alpha_0 @ g0 @ beta_0 + beta_0 @ g0 @ alpha_0
+    alpha        = alpha_0 @ g0 @ alpha_0
+    beta         = beta_0  @ g0 @ beta_0
 
     for i in range(600):
         aux = inv(z - Epsilon_bulk)
@@ -27,7 +31,7 @@ def get_surface_gf(energy: float, eps: np.ndarray, t_matrix: np.ndarray, eta: fl
         Epsilon_bulk = Epsilon_bulk + alpha @ aux @ beta + beta @ aux @ alpha
         alpha = alpha @ aux @ alpha
         beta = beta @ aux @ beta
-        if max(np.linalg.norm(alpha), np.linalg.norm(beta)) < 1e-14:
+        if norm(alpha, np.inf) < 1e-12 and norm(beta, np.inf) < 1e-12:
             break
 
     Gs = inv(z - Epsilon_surf)
@@ -192,29 +196,21 @@ def get_rgf_sns(H_slices, V, g_L, g_R, energy, eta: float = 1e-4, ra: str = 'r',
 
     # 1.RIGHT sweep: GR[i] = (z - H[i] - V GR[i+1] V†)^{-1}    
     GR = np.zeros((N, dof, dof), dtype=np.complex128)
-    Sigma_R0 = V @ g_R @ V.conj().T
-    GR[N-1] = inv(z * I - H_slices[N-1] - Sigma_R0)
+    GR[-1] = inv(z * I - H_slices[-1] - V @ g_R @ V.conj().T)
     for i in range(N-2, -1, -1):
         GR[i] = inv(z * I - H_slices[i] - V @ GR[i+1] @ V.conj().T)
     
     # 2.LEFT sweep: GL[i] = (z - H[i] - V† GL[i-1] V)^{-1}
     GL = np.zeros((N, dof, dof), dtype=np.complex128)
-    Sigma_L0 = V.conj().T @ g_L @ V
-    GL[0] = inv(z * I - H_slices[0] - Sigma_L0)
+    GL[0] = inv(z * I - H_slices[0] - V.conj().T @ g_L @ V)
     for i in range(1, N):
         GL[i] = inv(z * I - H_slices[i] - V.conj().T @ GL[i-1] @ V)
 
     # 3. COMBINE: G[i,i] = (z - H[i] - Σ_L[i] - Σ_R[i])^{-1}
     G_diag = np.zeros((N, dof, dof), dtype=np.complex128)
     for i in range(N):
-        if i == 0:
-            S_L = V.conj().T @ g_L @ V
-        else:
-            S_L = V.conj().T @ GL[i-1] @ V
-        if i == N-1:
-            S_R = V @ g_R @ V.conj().T
-        else:
-            S_R = V @ GR[i+1] @ V.conj().T
+        S_L = V.conj().T @ GL[i-1] @ V if i > 0 else V.conj().T @ g_L @ V 
+        S_R = V @ GR[i+1] @ V.conj().T if i < N - 1 else V @ g_R @ V.conj().T
         G_diag[i] = inv(z * I - H_slices[i] - S_L - S_R)
 
     if not return_full:
@@ -346,8 +342,8 @@ def get_surface_gfs_phased(E: float, H_slice: np.ndarray, V_x: np.ndarray, N_y: 
         U_L = np.eye(4 * N_y, dtype=np.complex128)
         U_R = phase_matrix(phi, N_y=N_y)
     
-    g_L_phased = U_L @ gL @ U_L.conj().T
-    g_R_phased = U_R @ gR @ U_R.conj().T
+    g_L_phased = U_L.conj().T @ gL @ U_L
+    g_R_phased = U_R.conj().T @ gR @ U_R
     
     return g_L_phased, g_R_phased
 
@@ -363,7 +359,7 @@ def get_surface_gfs_2d_phased(energy, H_slice, V_x, N_y, phi, symmetric=False, e
         U_L = np.eye(4 * N_y, dtype=np.complex128)
         U_R = phase_matrix(phi, N_y=N_y)
     
-    g_L = U_L @ gL_1d @ U_L.conj().T
-    g_R = U_R @ gR_1d @ U_R.conj().T    
+    g_L = U_L.conj().T @ gL_1d @ U_L
+    g_R = U_R.conj().T @ gR_1d @ U_R
     
     return g_L, g_R
