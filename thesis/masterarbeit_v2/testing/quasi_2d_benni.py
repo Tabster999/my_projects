@@ -38,7 +38,7 @@ B_field = 0.0
 mu      = 2.0 / tunits
 mu_n    = .1 #/ tunits 
 mu_barr = -0.0 / tunits
-theta_z   = np.pi / 2 / 0.15 * np.pi
+theta_z   = 0.35 * np.pi
 
 eta  = 0.025 * Delta
 nphi = 31
@@ -193,7 +193,7 @@ def sancho(H, alpha_0, beta_0, w, eta, Id):
 
     for _ in range(it):
         # g = la.solve(zI - eps, Id, assume_a='gen')
-        g = la.inv(zI - eps)
+        g = np.linalg.inv(zI - eps)
         ab = alpha @ g @ beta
         ba = beta @ g @ alpha
 
