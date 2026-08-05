@@ -1,82 +1,40 @@
 """
-modules/__init__.py
-===================
+modules - Small local library for SNS/Josephson-junction NEGF simulations
+==========================================================================
 
-Flat re-export of all public symbols so existing call-sites like
+Submodules
+----------
+helpers   : generic utilities (phase_matrix, edge indices, LDOS/pairing
+            traces, embed_block, ...) - no physics-heavy logic, just
+            building blocks used everywhere else.
+matrices  : Hamiltonian builders. Two basis conventions live side by side:
+              - plain Nambu (c up, c down, c down dagger, c up dagger):
+                onsite_matrix, t_matrix_x, t_matrix_y, build_sns_* functions
+              - Scharf-Pientka (c up, c down, c down dagger, minus c up dagger),
+                suffixed _sp: onsite_matrix_sc_sp, onsite_matrix_normal_sp,
+                hopping_x_sp, hopping_y_sp, make_slice_*_sp, make_x_hopping_sp
+            These two conventions are NOT interchangeable - see the basis
+            note at the top of matrices.py before mixing them.
+solvers   : Green's function solvers - Sancho-Rubio surface GFs
+            (get_surface_gf), phase gauge (apply_phase_gauge), and RGF
+            sweeps (get_rgf_sns, get_rgf_finite_system, get_rgf_phi_sweep).
+transport : Multi-terminal self-energies, broadening matrices, edge-lead
+            embedding (attach_edge_lead, build_dressed_slices), and
+            Landauer-Buttiker / current-phase current formulas.
 
-    import modules
-    modules.get_rgf_sns(...)
-    modules.onsite_matrix(...)
+Typical usage
+-------------
+    from modules import matrices, solvers, transport, helpers
 
-continue to work unchanged, while new code can also do
-
-    from modules import SNSJunction
-    from modules.systems import SNSJunction
-    from modules.matrices import build_sns_slice_2d
+    H_slice = matrices.make_slice_normal_sp(...)
+    g_surf, _ = solvers.get_surface_gf(energy, H_lead, V_lead, eta=eta)
+    Sigma = transport.self_energy(V_couple, g_surf)
+    ldos = helpers.ldos_trace(G, idx)
 """
 
-# ── matrix / Hamiltonian builders ────────────────────────────────────────────
-from .matrices import (
-    # elementary blocks
-    onsite_matrix,
-    t_matrix_x,
-    t_matrix_y,
-    # 1D builders
-    get_tb_hamiltonian,
-    build_sns_junction,
-    build_sns_junction_sliced,
-    build_middle_region,
-    # 2D builders
-    build_sns_slice_2d,
-    build_sns_junction_sliced_2d,
-    build_sns_normal_only_2d,
-    get_lead_slice_2d,
-)
+from . import helpers
+from . import matrices
+from . import solvers
+from . import transport
 
-# ── solvers ───────────────────────────────────────────────────────────────────
-from .solvers import (
-    get_surface_gf,
-    calc_G,
-    get_G_energy,
-    get_G_lehmann,
-    get_G_k_energy,
-    get_rgf_sns,
-    get_rgf_finite_system,
-    get_surface_gfs_phased,
-    get_surface_gfs_2d_phased,
-)
-
-# ── helpers ───────────────────────────────────────────────────────────────────
-from .helpers import (
-    phase_matrix,
-    get_z,
-    get_ldos_site,
-    get_pairing_amplitude,
-    get_pairing_phase,
-    check_particle_hole_symmetry,
-    check_ldos_positivity,
-    get_colorbar_label,
-)
-
-# ── high-level OOP interface ──────────────────────────────────────────────────
-from .systems import SNSJunction
-
-__all__ = [
-    # matrices
-    "onsite_matrix", "t_matrix_x", "t_matrix_y",
-    "get_tb_hamiltonian",
-    "build_sns_junction", "build_sns_junction_sliced", "build_middle_region",
-    "build_sns_slice_2d", "build_sns_junction_sliced_2d",
-    "build_sns_normal_only_2d", "get_lead_slice_2d",
-    # solvers
-    "get_surface_gf", "calc_G", "get_G_energy", "get_G_lehmann", "get_G_k_energy",
-    "get_rgf_sns", "get_rgf_finite_system",
-    "get_surface_gfs_phased", "get_surface_gfs_2d_phased",
-    # helpers
-    "phase_matrix", "get_z", "get_ldos_site",
-    "get_pairing_amplitude", "get_pairing_phase",
-    "check_particle_hole_symmetry", "check_ldos_positivity",
-    "get_colorbar_label",
-    # OOP
-    "SNSJunction",
-]
+__all__ = ["helpers", "matrices", "solvers", "transport"]

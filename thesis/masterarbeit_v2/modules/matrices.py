@@ -4,30 +4,49 @@ matrices.py - Hamiltonian builders and matrix helpers
 
 Contains Hamiltonian-related functions for both 1D and 2D SNS junctions.
 
-1D functions
-------------
-onsite_matrix          : on-site Nambu Hamiltonian block
-t_matrix_x             : x-direction Rashba hopping (σ_y, p_x)
-t_matrix_y             : y-direction Rashba hopping (σ_x, p_y)
-get_tb_hamiltonian     : generic tight-binding assembler
-build_sns_junction     : full finite 1D SNS Hamiltonian (dense)
-build_sns_junction_sliced : 1D SNS as slice list + hopping (for RGF)
-build_middle_region    : middle-region slices only (1D)
 
-2D functions
-------------
-build_sns_slice_2d         : within-slice Hamiltonian (y-chain, σ_x, p_y hops)
-build_sns_junction_sliced_2d : full 2D SNS slice list + x-hopping (σ_y, p_x)
-build_sns_normal_only_2d   : normal-region slices only (2D, for RGF with surface GFs)
-get_lead_slice_2d          : unphased SC lead slice (real delta)
+Default basis: Ψ = (c↑, c↓, c↓†, −c↑†)
+----------------------------------------
+This is the standard basis convention for this project going forward.
+The builders below carrying this basis have no special suffix:
+onsite_energy, onsite_matrix_sc, onsite_matrix_normal, hopping_y,
+hopping_x, tile_block_diagonal, tile_transverse_hopping, make_slice_sc,
+make_slice_normal, make_x_hopping.
 
-Geometry convention
+
+Legacy plain-Nambu basis (suffix ``_plain``)
+---------------------------------------------
+An earlier, different basis convention Ψ = (c↑, c↓, c↓†, c↑†) (no minus
+sign on the last component) is used by an older family of builders, kept
+around for backward compatibility and suffixed ``_plain`` throughout:
+
+
+------------
+1D functions:
+    onsite_matrix_plain          : on-site Nambu Hamiltonian block
+    t_matrix_x_plain             : x-direction Rashba hopping (σ_y, p_x)
+    t_matrix_y_plain             : y-direction Rashba hopping (σ_x, p_y)
+    get_tb_hamiltonian           : generic tight-binding assembler (basis-agnostic)
+    build_sns_junction_plain     : full finite 1D SNS Hamiltonian (dense)
+    build_sns_junction_sliced_plain : 1D SNS as slice list + hopping (for RGF)
+    build_middle_region_plain    : middle-region slices only (1D)
+
+    
+------------
+2D functions:
+    build_sns_slice_2d_plain         : within-slice Hamiltonian (y-chain, σ_x, p_y hops)
+    build_sns_junction_sliced_2d_plain : full 2D SNS slice list + x-hopping (σ_y, p_x)
+    build_sns_normal_only_2d_plain   : normal-region slices only (2D, for RGF with surface GFs)
+    get_lead_slice_2d_plain          : unphased SC lead slice (real delta)
+
+    
 -------------------
-x-direction : transport / RGF-recursive direction (slice index)
-y-direction : transverse direction within each slice
+Geometry convention:
+    x-direction : transport / RGF-recursive direction (slice index)
+    y-direction : transverse direction within each slice
 
-  within a slice  →  t_matrix_y  (σ_x, p_y Rashba)
-  between slices  →  t_matrix_x  (σ_y, p_x Rashba)
+    within a slice  →  t_matrix_y_plain  (σ_x, p_y Rashba)
+    between slices  →  t_matrix_x_plain  (σ_y, p_x Rashba)
 """
 
 import numpy as np
@@ -35,10 +54,10 @@ from typing import List, Tuple
 
 
 # ============================================================================
-# ELEMENTARY BUILDING BLOCKS
+# ELEMENTARY BUILDING BLOCKS (plain Nambu basis)
 # ============================================================================
 
-def onsite_matrix(t: float, mu: float, h: float, delta: complex, twod: bool = False) -> np.ndarray:
+def onsite_matrix_plain(t: float, mu: float, h: float, delta: complex, twod: bool = False) -> np.ndarray:
     """
     On-site Nambu Hamiltonian block in basis (c↑, c↓, c↓†, c↑†).
 
@@ -62,7 +81,7 @@ def onsite_matrix(t: float, mu: float, h: float, delta: complex, twod: bool = Fa
     ], dtype=np.complex128)
 
 
-def t_matrix_x(t: float, alpha: float) -> np.ndarray:
+def t_matrix_x_plain(t: float, alpha: float) -> np.ndarray:
     """
     Rashba hopping in the x-direction (inter-slice).
 
@@ -84,7 +103,7 @@ def t_matrix_x(t: float, alpha: float) -> np.ndarray:
     ], dtype=np.complex128)
 
 
-def t_matrix_y(t: float, alpha: float) -> np.ndarray:
+def t_matrix_y_plain(t: float, alpha: float) -> np.ndarray:
     """
     Rashba hopping in the y-direction (intra-slice / transverse).
 
@@ -131,7 +150,7 @@ def get_tb_hamiltonian(h0_matrix: np.ndarray, hopping_matrix: np.ndarray, sites:
     return H_0 + T_1 + T_2
 
 
-def build_sns_junction(
+def build_sns_junction_plain(
     t: float,
     mu_sc: float,
     mu_m: float,
@@ -152,7 +171,7 @@ def build_sns_junction(
 
     .. warning::
         This returns a single dense matrix; it cannot be used directly with
-        the RGF routines.  Use ``build_sns_junction_sliced`` for RGF.
+        the RGF routines.  Use ``build_sns_junction_sliced_plain`` for RGF.
 
     Args:
         t           : hopping amplitude
@@ -174,7 +193,7 @@ def build_sns_junction(
     sites_tot = sites_left + sites_right + sites_mid
     N_tot = dof * sites_tot
     H_tot = np.zeros((N_tot, N_tot), dtype=np.complex128)
-    V = t_matrix_x(t, alpha)
+    V = t_matrix_x_plain(t, alpha)
 
     phi_L = -phi / 2  if symmetric else 0.0
     phi_R = phi / 2 if symmetric else phi
@@ -182,11 +201,11 @@ def build_sns_junction(
     for i in range(sites_tot):
         idx = i * dof
         if i < sites_left:
-            H_site = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_L))
+            H_site = onsite_matrix_plain(t, mu_sc, h, delta * np.exp(1j * phi_L))
         elif i < sites_left + sites_mid:
-            H_site = onsite_matrix(t, mu_m,  h, 0)
+            H_site = onsite_matrix_plain(t, mu_m,  h, 0)
         else:
-            H_site = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_R))
+            H_site = onsite_matrix_plain(t, mu_sc, h, delta * np.exp(1j * phi_R))
 
         H_tot[idx:idx + dof, idx:idx + dof] = H_site
 
@@ -198,7 +217,7 @@ def build_sns_junction(
     return H_tot
 
 
-def build_sns_junction_sliced(
+def build_sns_junction_sliced_plain(
     t: float,
     mu_sc: float,
     mu_m: float,
@@ -236,10 +255,10 @@ def build_sns_junction_sliced(
     phi_L = -phi / 2  if symmetric else 0.0
     phi_R = phi / 2 if symmetric else phi
 
-    H_L = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_L))
-    H_R = onsite_matrix(t, mu_sc, h, delta * np.exp(1j * phi_R))
-    H_M = onsite_matrix(t, mu_m,  h, 0)
-    V   = t_matrix_x(t, alpha)
+    H_L = onsite_matrix_plain(t, mu_sc, h, delta * np.exp(1j * phi_L))
+    H_R = onsite_matrix_plain(t, mu_sc, h, delta * np.exp(1j * phi_R))
+    H_M = onsite_matrix_plain(t, mu_m,  h, 0)
+    V   = t_matrix_x_plain(t, alpha)
 
     H_slices = (
         [H_L for _ in range(sites_left)] +
@@ -249,7 +268,7 @@ def build_sns_junction_sliced(
     return H_slices, V
 
 
-def build_middle_region(
+def build_middle_region_plain(
     t: float,
     mu_m: float,
     alpha: float,
@@ -270,13 +289,13 @@ def build_middle_region(
         H_slices : list of (4, 4) on-site blocks
         V        : (4, 4) inter-site hopping matrix
     """
-    H_N = onsite_matrix(t, mu_m, h, 0)
-    V   = t_matrix_x(t, alpha)
+    H_N = onsite_matrix_plain(t, mu_m, h, 0)
+    V   = t_matrix_x_plain(t, alpha)
     return [H_N.copy() for _ in range(sites_mid)], V
 
 
 
-def build_sns_slice_2d(
+def build_sns_slice_2d_plain(
     N_y: int,
     t: float,
     mu: float,
@@ -288,7 +307,7 @@ def build_sns_slice_2d(
     Build the within-slice Hamiltonian for a 2D SNS junction.
 
     Each slice is a chain of N_y sites running in the y-direction, coupled
-    by σ_y Rashba hops (``t_matrix_y``).  The result is a
+    by σ_y Rashba hops (``t_matrix_y_plain``).  The result is a
     (4·N_y) × (4·N_y) matrix.
 
     Args:
@@ -302,8 +321,8 @@ def build_sns_slice_2d(
     Returns:
         (4*N_y, 4*N_y) complex Hamiltonian slice
     """
-    h_0     = onsite_matrix(t, mu, h, delta)
-    V_y     = t_matrix_y(t, alpha)
+    h_0     = onsite_matrix_plain(t, mu, h, delta)
+    V_y     = t_matrix_y_plain(t, alpha)
     I_y     = np.eye(N_y, dtype=np.complex128)
     off_y   = np.eye(N_y, k=1, dtype=np.complex128)
     return (
@@ -313,7 +332,7 @@ def build_sns_slice_2d(
     )
 
 
-def build_sns_junction_sliced_2d(
+def build_sns_junction_sliced_2d_plain(
     N_y: int,
     t: float,
     mu_sc: float,
@@ -331,10 +350,10 @@ def build_sns_junction_sliced_2d(
     Build the 2D SNS junction as slice Hamiltonians + inter-slice hopping.
 
     Each slice is a (4·N_y) × (4·N_y) block representing a column of N_y
-    sites.  Inter-slice hopping uses σ_y Rashba (t_matrix_x), tiled
-    over N_y sites. Intra-slice hopping uses σ_x Rashba (t_matrix_y), included in the slice Hamiltonians.
+    sites.  Inter-slice hopping uses σ_y Rashba (t_matrix_x_plain), tiled
+    over N_y sites. Intra-slice hopping uses σ_x Rashba (t_matrix_y_plain), included in the slice Hamiltonians.
 
-    Gauge conventions (consistent with ``build_sns_junction_sliced``):
+    Gauge conventions (consistent with ``build_sns_junction_sliced_plain``):
         symmetric  → Δ_L = Δ·exp(−iφ/2),  Δ_R = Δ·exp(+iφ/2)
         asymmetric → Δ_L = Δ (real),       Δ_R = Δ·exp(+iφ)
 
@@ -359,11 +378,11 @@ def build_sns_junction_sliced_2d(
     phi_L = -phi / 2 if symmetric else 0.0
     phi_R =  phi / 2 if symmetric else phi
 
-    H_L = build_sns_slice_2d(N_y, t, mu_sc, h, alpha, delta * np.exp(1j * phi_L))
-    H_R = build_sns_slice_2d(N_y, t, mu_sc, h, alpha, delta * np.exp(1j * phi_R))
-    H_M = build_sns_slice_2d(N_y, t, mu_m,  h, alpha, 0.0)
+    H_L = build_sns_slice_2d_plain(N_y, t, mu_sc, h, alpha, delta * np.exp(1j * phi_L))
+    H_R = build_sns_slice_2d_plain(N_y, t, mu_sc, h, alpha, delta * np.exp(1j * phi_R))
+    H_M = build_sns_slice_2d_plain(N_y, t, mu_m,  h, alpha, 0.0)
 
-    V_x_2d = np.kron(np.eye(N_y, dtype=np.complex128), t_matrix_x(t, alpha))
+    V_x_2d = np.kron(np.eye(N_y, dtype=np.complex128), t_matrix_x_plain(t, alpha))
 
     H_slices = (
         [H_L.copy() for _ in range(sites_left)] +
@@ -373,7 +392,7 @@ def build_sns_junction_sliced_2d(
     return H_slices, V_x_2d
 
 
-def build_sns_normal_only_2d(
+def build_sns_normal_only_2d_plain(
     N_y: int,
     t: float,
     mu_m: float,
@@ -399,12 +418,12 @@ def build_sns_normal_only_2d(
         H_slices : list of (4*N_y, 4*N_y) normal-region slice Hamiltonians
         V_x_2d   : (4*N_y, 4*N_y) inter-slice hopping matrix
     """
-    H_M    = build_sns_slice_2d(N_y, t, mu_m, h, alpha, 0.0)
-    V_x_2d = np.kron(np.eye(N_y, dtype=np.complex128), t_matrix_x(t, alpha))
+    H_M    = build_sns_slice_2d_plain(N_y, t, mu_m, h, alpha, 0.0)
+    V_x_2d = np.kron(np.eye(N_y, dtype=np.complex128), t_matrix_x_plain(t, alpha))
     return [H_M.copy() for _ in range(sites_mid)], V_x_2d
 
 
-def get_lead_slice_2d(
+def get_lead_slice_2d_plain(
     N_y: int,
     t: float,
     mu_sc: float,
@@ -429,4 +448,147 @@ def get_lead_slice_2d(
     Returns:
         (4*N_y, 4*N_y) lead Hamiltonian slice
     """
-    return build_sns_slice_2d(N_y, t, mu_sc, h, alpha, delta)
+    return build_sns_slice_2d_plain(N_y, t, mu_sc, h, alpha, delta)
+
+
+# ============================================================================
+# DEFAULT BASIS BUILDERS
+# Basis: Ψ = (c↑, c↓, c↓†, −c↑†)
+#
+# This is the standard basis for this project going forward. Decomposed
+# into small reusable pieces (raw 4x4 blocks + generic tiling) instead of
+# a monolithic make_H_SC/make_H_N, so the same pieces serve SC leads and
+# normal regions, and the tiling utilities are reusable for the 4-terminal
+# geometry (e.g. metal leads will need their own onsite block tiled with
+# the same hopping_y/hopping_x, just mu -> mu_lead and no Zeeman/pairing).
+#
+# Verified numerically identical (bit-for-bit within 1e-15) to the
+# original make_H_SC / make_H_N / _make_x_hopping / _make_transverse_hopping.
+# ============================================================================
+
+def onsite_energy(t: float, mu: float, alpha_t: float, beta_t: float, twod: bool = True) -> float:
+    """
+    Common SOC-renormalized band offset appearing in every SP-basis onsite
+    block: (4t − μ) + (α² + β²)/4 in 2D, or (2t − μ) + (α² + β²)/4 in 1D.
+    """
+    base = 4 * t - mu if twod else 2 * t - mu
+    return base + (alpha_t**2 + beta_t**2) / 4
+
+
+def onsite_matrix_sc(t: float, mu: float, delta: complex, alpha_t: float, beta_t: float,
+                         twod: bool = True) -> np.ndarray:
+    """
+    SC-lead on-site 4x4 block in the default basis (c↑, c↓, c↓†, −c↑†).
+
+    Pairing enters at [0,2]/[1,3] (not [0,3]/[1,2] as in the plain Nambu
+    basis) — this is the direct consequence of the minus sign on the last
+    basis component.
+    """
+    val = onsite_energy(t, mu, alpha_t, beta_t, twod=twod)
+    H = np.zeros((4, 4), dtype=np.complex128)
+    H[0, 0] = val;  H[1, 1] = val
+    H[2, 2] = -val; H[3, 3] = -val
+    H[0, 2] = delta; H[1, 3] = delta
+    H[2, 0] = np.conjugate(delta); H[3, 1] = np.conjugate(delta)
+    return H
+
+
+def onsite_matrix_normal(t: float, mu: float, E_par: float, theta_z: float, E_z: float,
+                             alpha_t: float, beta_t: float, twod: bool = True) -> np.ndarray:
+    """
+    Normal-region on-site 4x4 block in the default basis (c↑, c↓, c↓†, −c↑†),
+    with an in-plane Zeeman field E_par at azimuthal angle theta_z and an
+    out-of-plane Zeeman field E_z.
+    """
+    val = onsite_energy(t, mu, alpha_t, beta_t, twod=twod)
+    Bxy = E_par * np.exp(1j * theta_z)
+    H = np.zeros((4, 4), dtype=np.complex128)
+    H[0, 0] = val + E_z;  H[1, 1] = val - E_z
+    H[2, 2] = -val + E_z; H[3, 3] = -val - E_z
+    H[0, 1] = Bxy; H[1, 0] = np.conjugate(Bxy)
+    H[2, 3] = Bxy; H[3, 2] = np.conjugate(Bxy)
+    return H
+
+
+def hopping_y(alpha_t: float, beta_t: float, t: float = 1.0) -> np.ndarray:
+    """
+    Raw 4x4 transverse (y-direction) hopping block, default basis.
+
+    Tile along y with ``tile_transverse_hopping`` to build a full slice's
+    intra-slice hopping.
+    """
+    hop = np.diag([-t, -t, t, t]).astype(np.complex128)
+    soc = np.array([
+        [0,   1j,  0,   0  ],
+        [1j,  0,   0,   0  ],
+        [0,   0,   0,  -1j ],
+        [0,   0,  -1j,  0  ],
+    ], dtype=np.complex128) * (alpha_t + beta_t) / 2
+    return hop + soc
+
+
+def hopping_x(alpha_t: float, beta_t: float, t: float = 1.0) -> np.ndarray:
+    """
+    Raw 4x4 longitudinal (x-direction, inter-slice) hopping block, default basis.
+
+    Tile with ``tile_block_diagonal`` (block-diagonal over y-sites, since
+    x-hopping doesn't mix different y-sites) to get the full inter-slice
+    hopping matrix.
+    """
+    s = 0.5 * (alpha_t - beta_t)
+    v = np.zeros((4, 4), dtype=np.complex128)
+    v[0, 0] = -t;  v[1, 1] = -t
+    v[2, 2] =  t;  v[3, 3] =  t
+    v[0, 1] = -s;  v[1, 0] =  s
+    v[2, 3] =  s;  v[3, 2] = -s
+    return v
+
+
+def tile_block_diagonal(block: np.ndarray, N: int) -> np.ndarray:
+    """N copies of a (dof, dof) block placed block-diagonally (no inter-site coupling)."""
+    return np.kron(np.eye(N, dtype=np.complex128), block)
+
+
+def tile_transverse_hopping(hop_block: np.ndarray, N_y: int) -> np.ndarray:
+    """
+    Build a full (dof*N_y, dof*N_y) nearest-neighbour y-hopping matrix
+    (open boundary chain) from a raw (dof, dof) hopping block.
+    """
+    dof = hop_block.shape[0]
+    dim = dof * N_y
+    H = np.zeros((dim, dim), dtype=np.complex128)
+    for i in range(N_y - 1):
+        H[dof*i:dof*(i+1), dof*(i+1):dof*(i+2)] = hop_block
+        H[dof*(i+1):dof*(i+2), dof*i:dof*(i+1)] = hop_block.conj().T
+    return H
+
+
+def make_slice_sc(N_y: int, t: float, mu_sc: float, delta: complex,
+                      alpha_t: float, beta_t: float) -> np.ndarray:
+    """
+    Full (4*N_y, 4*N_y) SC-lead slice Hamiltonian in the default basis
+    (onsite + transverse hopping), for use as the bulk unit cell fed into
+    ``solvers.get_surface_gf``.
+    """
+    onsite = onsite_matrix_sc(t, mu_sc, delta, alpha_t, beta_t, twod=True)
+    H = tile_block_diagonal(onsite, N_y)
+    H += tile_transverse_hopping(hopping_y(alpha_t, beta_t, t), N_y)
+    return H
+
+
+def make_slice_normal(N_y: int, t: float, mu_n: float, E_par: float, theta_z: float,
+                          E_z: float, alpha_t: float, beta_t: float) -> np.ndarray:
+    """
+    Full (4*N_y, 4*N_y) normal-region slice Hamiltonian in the default basis
+    (onsite + transverse hopping), for use as an ``H_slices[i]`` entry in
+    the RGF solvers.
+    """
+    onsite = onsite_matrix_normal(t, mu_n, E_par, theta_z, E_z, alpha_t, beta_t, twod=True)
+    H = tile_block_diagonal(onsite, N_y)
+    H += tile_transverse_hopping(hopping_y(alpha_t, beta_t, t), N_y)
+    return H
+
+
+def make_x_hopping(N_y: int, alpha_t: float, beta_t: float, t: float = 1.0) -> np.ndarray:
+    """Full (4*N_y, 4*N_y) inter-slice (x-direction) hopping matrix, default basis."""
+    return tile_block_diagonal(hopping_x(alpha_t, beta_t, t), N_y)

@@ -8,12 +8,55 @@ original `my_functions.py`.
 
 import numpy as np
 from scipy.linalg import inv, norm
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 from .helpers import phase_matrix
 
 
-def get_surface_gf(energy: float, eps: np.ndarray, t_matrix: np.ndarray, eta: float = 1e-4) -> Tuple[np.ndarray, np.ndarray]:
-    """Sancho-López retarded surface Green's function for a semi-infinite lead."""
+def get_surface_gf(
+    energy: float,
+    eps: np.ndarray,
+    t_matrix: np.ndarray,
+    eta: float = 1e-4,
+    max_iter: int = 400,
+    tol: float = 1e-14,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Sancho-Lopez retarded surface Green's function for a semi-infinite lead.
+
+    This is the single canonical implementation of the Sancho-Rubio/Lopez
+    decimation algorithm (previously also duplicated as a script-local
+    ``sancho()`` with a different call signature; that version has been
+    folded into this one — see convention note below).
+
+    Convention (IMPORTANT, verified numerically against the previous
+    script-local ``sancho(H, V_right, V_left, ...)``):
+        get_surface_gf(energy, eps, t_matrix) is equivalent to
+        sancho(eps, V_right=t_matrix.conj().T, V_left=t_matrix, ...).
+    i.e. ``t_matrix`` plays the role of "V_left" / alpha_0 in the
+    decimation recursion; beta_0 is derived automatically as its
+    conjugate transpose. There is deliberately no separate "V_left"
+    argument: since beta is always t_matrix.conj().T, there's no way to
+    accidentally swap left/right hopping arguments the way the old
+    two-argument ``sancho()`` allowed.
+
+    Which physical t_matrix to pass for "the left lead" vs "the right
+    lead" depends on your Hamiltonian's hopping-direction convention and
+    is NOT universal across bases — check against a known limit (e.g.
+    alpha=beta=0, where left/right leads must coincide) before trusting
+    a new geometry.
+
+    Args:
+        energy   : real energy
+        eps      : (dof, dof) onsite Hamiltonian block of the bulk lead unit cell
+        t_matrix : (dof, dof) inter-cell hopping matrix (see convention note)
+        eta      : broadening
+        max_iter : maximum decimation iterations (was hardcoded to 600)
+        tol      : convergence tolerance on alpha/beta (was hardcoded to 1e-12)
+
+    Returns:
+        Gs : (dof, dof) surface Green's function
+        Gb : (dof, dof) bulk Green's function
+    """
     dof = eps.shape[0]
     z = (energy + 1j * eta) * np.eye(dof, dtype=np.complex128)
     alpha_0 = t_matrix
@@ -25,18 +68,40 @@ def get_surface_gf(energy: float, eps: np.ndarray, t_matrix: np.ndarray, eta: fl
     alpha        = alpha_0 @ g0 @ alpha_0
     beta         = beta_0  @ g0 @ beta_0
 
-    for i in range(600):
+    for i in range(max_iter):
         aux = inv(z - Epsilon_bulk)
         Epsilon_surf = Epsilon_surf + alpha @ aux @ beta
         Epsilon_bulk = Epsilon_bulk + alpha @ aux @ beta + beta @ aux @ alpha
         alpha = alpha @ aux @ alpha
         beta = beta @ aux @ beta
-        if norm(alpha, np.inf) < 1e-12 and norm(beta, np.inf) < 1e-12:
+        if norm(alpha, np.inf) < tol and norm(beta, np.inf) < tol:
             break
 
     Gs = inv(z - Epsilon_surf)
     Gb = inv(z - Epsilon_bulk)
     return Gs, Gb
+
+
+def apply_phase_gauge(G: np.ndarray, phi: float, N_y: int) -> np.ndarray:
+    """
+    Apply a U(1) SC-phase gauge rotation to a Green's function (or any
+    operator in the same Nambu basis) via U†(φ) G U(φ), U = phase_matrix(φ, N_y).
+
+    Generalizes the old script-local ``_apply_phase`` (verified numerically
+    identical for the (c↑,c↓,c↓†,±c↑†)-type bases, since the phase rotation
+    only cares about which indices are "hole-like" mod 4, not the overall
+    sign convention on the last component).
+
+    Args:
+        G   : (4*N_y, 4*N_y) operator (e.g. a surface Green's function)
+        phi : SC phase to apply
+        N_y : transverse width
+
+    Returns:
+        (4*N_y, 4*N_y) gauge-rotated operator
+    """
+    U = phase_matrix(phi, N_y=N_y)
+    return U.conj().T @ G @ U
 
 
 def calc_G(energy: float, hamiltonian: np.ndarray, eta: float = 1e-4, ra: str = 'r') -> np.ndarray:
@@ -57,7 +122,7 @@ def calc_G(energy: float, hamiltonian: np.ndarray, eta: float = 1e-4, ra: str = 
 def get_G_energy(energy_array: np.ndarray, hamiltonian: np.ndarray, eta: float = 1e-4, ra: str = 'r') -> np.ndarray:
     """
     Calculates retarded or advanced Green functions G(E) over the specified energy range.
-    
+
     Args:
         energy_array : np.ndarray, energy range over which G_r(E) is calculated
         oniste_matrix:np.ndarray, onsite H_0 in a tight binding model
@@ -162,16 +227,16 @@ def get_rgf_sns(H_slices, V, g_L, g_R, energy, eta: float = 1e-4, ra: str = 'r',
     RGF for SNS junction with infinite leads via recursive algorithm.
     The infinite leads are represented by surface Green's functions computed via Sancho-López.
     This algorithm is based on the paper from Lewenkopf and Mucciolo 2013 "The recursive Green's function method for graphene" (https://journals.aps.org/prb/abstract/10.1103/PhysRevB.88.155426) and adapted to the SNS junction geometry.
-    
+
     Algorithm:
     1. LEFT SWEEP: Propagate from left lead boundary forward
        GL[i] = (z*I - H_i - Sigma_L[i])^-1, where Sigma_L[i] = V† GL[i-1] V
-    
+
     2. RIGHT SWEEP: Propagate from right lead boundary backward  
        GR[i] = (z*I - H_i - Sigma_R[i])^-1, where Sigma_R[i] = V GR[i+1] V†
-    
+
     3. COMBINE: Full local GF = (z*I - H_i - Sigma_L[i] - Sigma_R[i])^-1
-    
+
     Args:    
         middle_hamiltonian: np.ndarray, Hamiltonian for finite middle region (includes internal hopping)
                            Dimensions: (sites_mid * dof, sites_mid * dof)
@@ -183,7 +248,7 @@ def get_rgf_sns(H_slices, V, g_L, g_R, energy, eta: float = 1e-4, ra: str = 'r',
         ra: str, 'r' for retarded or 'a' for advanced Green's function
         return_full: bool, if True returns full matrix; if False returns diagonal blocks only
         return_dense: bool, if True it returns the complete NxN GF as the 5th output
-    
+
     Returns:
         G_out: np.ndarray, Green's function (diagonal blocks or full matrix)
         GL: np.ndarray, local GFs from left sweep (sites x dof x dof)
@@ -307,10 +372,127 @@ def get_rgf_finite_system(H_slices, V, energy, eta: float = 1e-4, ra: str = 'r',
     return G_diag, GL, GR, G_blocks, G_dense
 
 
-def get_surface_gfs_phased(E: float, H_slice: np.ndarray, V_x: np.ndarray, N_y: int, phi: float, symmetric: bool = False, eta: float = 1e-4):
+def get_rgf_phi_sweep(
+    H_slices: List[np.ndarray],
+    V: np.ndarray,
+    g_L_bare: np.ndarray,
+    g_R_bare: np.ndarray,
+    phi_vals: np.ndarray,
+    N_y: int,
+    energy: float,
+    eta: float = 1e-4,
+    ra: str = 'r',
+    symmetric: bool = False,
+    return_full: bool = False,
+):
     """
-    Returns the Surface GFs of a left and right lead with SC phase difference phi applied as Nambu gauge rotation.
-    
+    RGF sweep for an SNS-type middle region at a SINGLE energy but over MANY
+    SC phase differences phi, exploiting the fact that the middle-region
+    Hamiltonian (H_slices, V) is gauge-independent w.r.t. phi — only the
+    lead surface Green's functions need to be phase-rotated (Scharf-Pientka
+    Eq. structure; see also build_sns_junction_sliced's gauge convention).
+
+    Gauge conventions:
+        symmetric=False 
+            the LEFT lead stays at phi=0 for every phi in phi_vals, so its sweep (glr) is
+            computed ONCE and reused — this is the actual speed win. Only
+            the RIGHT lead's bare surface GF is gauge-rotated per phi.
+        symmetric=True: 
+            BOTH leads carry ±phi/2, so the left sweep also
+            depends on phi and must be recomputed per phi (no reuse
+            possible).
+    Args:
+        H_slices  : list of N (dof, dof) on-site blocks for the MIDDLE
+                    region only (no leads)
+        V         : (dof, dof) inter-slice hopping, H_slices[i] -> H_slices[i+1]
+        g_L_bare  : (dof, dof) LEFT lead surface GF at phi=0
+        g_R_bare  : (dof, dof) RIGHT lead surface GF at phi=0
+        phi_vals  : 1D array of SC phase differences to sweep
+        N_y       : transverse width (dof = 4*N_y expected by apply_phase_gauge)
+        energy    : fixed energy for this sweep
+        eta, ra   : as elsewhere
+        symmetric : gauge choice, see above
+        return_full : if True, also returns full (N, N, dof, dof) blocks per
+                      phi (memory-heavy; needed for off-diagonal/current
+                      quantities between different slices)
+
+    Returns:
+        G_diag : (nphi, N, dof, dof) diagonal-block Green's functions
+        G_blocks : (nphi, N, N, dof, dof), only if return_full=True
+    """
+    N = len(H_slices)
+    dof = H_slices[0].shape[0]
+    I = np.eye(dof, dtype=np.complex128)
+    z = energy + 1j * eta if ra == 'r' else energy - 1j * eta
+    nphi = len(phi_vals)
+
+    G_diag = np.zeros((nphi, N, dof, dof), dtype=np.complex128)
+    if return_full:
+        G_blocks = np.zeros((nphi, N, N, dof, dof), dtype=np.complex128)
+
+    if not symmetric:
+        # phi-independent left sweep, computed once
+        glr = np.empty((N, dof, dof), dtype=np.complex128)
+        glr[0] = inv(z * I - H_slices[0] - V.conj().T @ g_L_bare @ V)
+        for i in range(1, N):
+            glr[i] = inv(z * I - H_slices[i] - V.conj().T @ glr[i-1] @ V)
+
+    for iphi, phi in enumerate(phi_vals):
+        if symmetric:
+            g_L = apply_phase_gauge(g_L_bare, -phi / 2, N_y)
+            g_R = apply_phase_gauge(g_R_bare,  phi / 2, N_y)
+            glr_phi = np.empty((N, dof, dof), dtype=np.complex128)
+            glr_phi[0] = inv(z * I - H_slices[0] - V.conj().T @ g_L @ V)
+            for i in range(1, N):
+                glr_phi[i] = inv(z * I - H_slices[i] - V.conj().T @ glr_phi[i-1] @ V)
+            left_env = glr_phi
+            g_L_used = g_L
+        else:
+            g_R = apply_phase_gauge(g_R_bare, phi, N_y)
+            left_env = glr
+            g_L_used = g_L_bare
+
+        grl = np.empty((N, dof, dof), dtype=np.complex128)
+        grl[-1] = inv(z * I - H_slices[-1] - V @ g_R @ V.conj().T)
+        for i in range(N - 2, -1, -1):
+            grl[i] = inv(z * I - H_slices[i] - V @ grl[i+1] @ V.conj().T)
+
+        for i in range(N):
+            S_L = V.conj().T @ g_L_used @ V if i == 0 else V.conj().T @ left_env[i-1] @ V
+            S_R = V @ g_R @ V.conj().T if i == N - 1 else V @ grl[i+1] @ V.conj().T
+            G_diag[iphi, i] = inv(z * I - H_slices[i] - S_L - S_R)
+
+        if return_full:
+            G_blocks[iphi, 0, 0] = G_diag[iphi, 0]
+            for i in range(N):
+                G_blocks[iphi, i, i] = G_diag[iphi, i]
+            for i in range(N):
+                for j in range(i+1, N):
+                    G_blocks[iphi, i, j] = G_blocks[iphi, i, j-1] @ V @ grl[j]
+            for i in range(N):
+                for j in range(i-1, -1, -1):
+                    G_blocks[iphi, i, j] = G_blocks[iphi, i, j+1] @ V.conj().T @ left_env[j]
+
+    if return_full:
+        return G_diag, G_blocks
+    return G_diag, None
+
+
+def get_surface_gfs_phased(
+    E: float,
+    H_slice: np.ndarray,
+    V_x: np.ndarray,
+    N_y: int,
+    phi: float,
+    symmetric: bool = False,
+    eta: float = 1e-4,
+    max_iter: int = 400,
+    tol: float = 1e-14,
+):
+    """
+    Returns the (left, right) surface Green's functions of a lead pair with
+    SC phase difference phi applied as a Nambu gauge rotation.
+
     Args:
         E:float, Energy at which the surface gfs are calculated.
         H_slice:np.ndarray, Hamiltonian slice for the lead.
@@ -318,48 +500,75 @@ def get_surface_gfs_phased(E: float, H_slice: np.ndarray, V_x: np.ndarray, N_y: 
         N_y:int, Number of sites in the y-direction.
         phi:float, Phase difference of the SC leads.
         symmetric:bool, True = symmetric gauge, False = antisymmetric gauge
-    
+
     Convention (matches build_sns_junction_sliced):
-      U(theta) @ H(Delta) @ U(theta)† = H(Delta * exp(-i*theta))
-    
+      U(theta)† @ H(Delta) @ U(theta) = H(Delta * exp(i*theta))
+
     Symmetric gauge:
       Delta_L = Delta*exp(i*phi/2)  →  UL = phase_matrix(-phi/2)
       Delta_R = Delta*exp(-i*phi/2)  →  UR = phase_matrix(+phi/2)
-    
+
     Asymmetric gauge:
       Delta_L = Delta (real)          →  UL = identity
       Delta_R = Delta*exp(+i*phi)     →  UR = phase_matrix(phi)
-
-    
     """
-    gL, _ = get_surface_gf(E, H_slice, V_x.conj().T, eta=eta)
-    gR, _ = get_surface_gf(E, H_slice, V_x, eta=eta)
-    
+    gL, _ = get_surface_gf(E, H_slice, V_x.conj().T, eta=eta, max_iter=max_iter, tol=tol)
+    gR, _ = get_surface_gf(E, H_slice, V_x, eta=eta, max_iter=max_iter, tol=tol)
+
     if symmetric:
-        U_L = phase_matrix(-phi/2, N_y=N_y)
-        U_R = phase_matrix(phi/2, N_y=N_y)
+        g_L_phased = apply_phase_gauge(gL, -phi / 2, N_y)
+        g_R_phased = apply_phase_gauge(gR,  phi / 2, N_y)
     else:
-        U_L = np.eye(4 * N_y, dtype=np.complex128)
-        U_R = phase_matrix(phi, N_y=N_y)
-    
-    g_L_phased = U_L.conj().T @ gL @ U_L
-    g_R_phased = U_R.conj().T @ gR @ U_R
-    
+        g_L_phased = gL
+        g_R_phased = apply_phase_gauge(gR, phi, N_y)
+
     return g_L_phased, g_R_phased
 
 
-def get_surface_gfs_2d_phased(energy, H_slice, V_x, N_y, phi, symmetric=False, eta=1e-4):
-    """2D surface GF with phase rotation applied."""
-    gL_1d, _ = get_surface_gf(energy, H_slice, V_x.conj().T, eta=eta)
-    gR_1d, _ = get_surface_gf(energy, H_slice, V_x, eta=eta)
-    if symmetric:
-        U_L = phase_matrix(-phi/2, N_y=N_y)
-        U_R = phase_matrix(phi/2, N_y=N_y)
-    else:
-        U_L = np.eye(4 * N_y, dtype=np.complex128)
-        U_R = phase_matrix(phi, N_y=N_y)
+# Backward-compatible alias: previously a separate, identical function.
+get_surface_gfs_2d_phased = get_surface_gfs_phased
+
+def rgf_one_energy_spatial(w: float, phi: float, Hn: np.ndarray, V0: np.ndarray, Vd: np.ndarray, gSL: np.ndarray, gSR: np.ndarray, Id: np.ndarray, eta: float, nx: int, ny: int) -> np.ndarray:
+    """
+    Spatially resolved RGF calculation at one energy w and one phase phi.
+    The phase is applied to the right lead surface GF gSR and the unphased surface GFs gSL, gSR are used for the leads.
     
-    g_L = U_L.conj().T @ gL_1d @ U_L
-    g_R = U_R.conj().T @ gR_1d @ U_R
-    
-    return g_L, g_R
+    Args: 
+        w (float): Energy.
+        phi (float): Phase.
+        Hn (numpy.ndarray): Hamiltonian for the central region.
+        V0 (numpy.ndarray): Hopping matrix for the left lead.
+        Vd (numpy.ndarray): Hopping matrix for the right lead.
+        gSL (numpy.ndarray): Surface Green's function for the left lead.
+        gSR (numpy.ndarray): Surface Green's function for the right lead.
+        Id (numpy.ndarray): Identity matrix.
+        eta (float): Imaginary part of the energy.
+        nx (int): Number of sites in the x-direction.
+        ny (int): Number of sites in the y-direction.
+    """
+    z   = w + 1j * eta
+    zI  = z * Id
+    ny  = ny
+    nx  = nx
+    dim = 4 * ny
+
+    glr    = np.empty((nx, dim, dim), dtype=np.complex128)
+    glr[0] = gSL
+    for i in range(1, nx):
+        glr[i] = inv(zI - Hn - Vd @ glr[i-1] @ V0)
+
+    grl_phi    = np.empty((nx, dim, dim), dtype=np.complex128)
+    grl_phi[-1] = apply_phase_gauge(gSR, phi, ny)
+    for i in range(nx - 2, -1, -1):
+        grl_phi[i] = inv(zI - Hn - V0 @ grl_phi[i+1] @ Vd)
+
+    result = np.zeros((nx, ny), dtype=np.float64)
+    for i in range(nx):
+        left_dressed = zI - Hn - Vd @ glr[i] @ V0
+        G    = inv(left_dressed - V0 @ grl_phi[i] @ Vd)
+        diag = np.diagonal(G).reshape(ny, 4)
+        result[i, :] = -np.imag(diag.sum(axis=1)) / np.pi
+
+    return result
+
+

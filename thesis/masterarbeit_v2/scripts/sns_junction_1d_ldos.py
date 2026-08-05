@@ -90,7 +90,6 @@ def get_surface_gfs(E, phi, onsite_sc, symmetric=False, eta=1e-3):
 def ph_check(name, M):
     ok = np.allclose(M, -C_ph @ M.conj() @ C_ph, atol=1e-12)
     print(f"  PH symmetry [{name}]: {'✓ PASS' if ok else '✗ FAIL'}")
-
 def compute_energy_slice(e_idx, E):
     """Compute LDOS for all phases at a fixed energy."""
     row = np.zeros(N_PHI)

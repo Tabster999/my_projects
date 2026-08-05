@@ -20,7 +20,7 @@ _hbar  = 1.05e-34        # J·s
 _e     = 1.602e-19       # C
 _m0    = 9.1e-31         # kg
 _muB   = 5.78e-2         # meV / T   (Bohr magneton)
-
+#symmetric and antisymmetric coupling, compute conductance from left and right 
 
 #%% PARAMETERS
 #  All inputs in physical units; one conversion block produces t-units.
