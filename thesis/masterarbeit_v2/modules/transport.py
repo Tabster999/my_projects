@@ -218,41 +218,7 @@ def landauer_current(
     f_p = fermi(energies, mu_p, kT_p)
     f_q = fermi(energies, mu_q, kT_q)
     integrand = np.asarray(T_pq_of_E) * (f_p - f_q)
-    _trapz = getattr(np, 'trapezoid', None) or np.trapezoid
-    return float((e_charge / h_planck) * _trapz(integrand, energies))
-
-
-def current_phase_from_abs(E_n_of_phi: np.ndarray, phi_vals: np.ndarray, kT: float = 0.0,
-                            e_charge: float = 1.602e-19, hbar: float = 1.0545718176461565e-34) -> np.ndarray:
-    """
-    Current-phase relation via the Furusaki-Tsukada / Beenakker-style
-    derivative of the Andreev bound state spectrum:
-
-        I(phi) = (2e/hbar) * sum_n  d E_n(phi)/d phi * [f(E_n) - 1/2]
-
-    (equilibrium, phase-biased limit — matches your memory note that
-    static phase bias collapses the problem to equilibrium, G^< slaved to
-    G^r via fluctuation-dissipation). At T=0 this reduces to the familiar
-    I(phi) = (2e/hbar) sum_{n: E_n<0} dE_n/dphi.
-
-    Args:
-        E_n_of_phi : (n_states, n_phi) array of ABS energies at each phi
-                     (only bound states below the gap; you supply these,
-                     e.g. from poles of G^r or an eigenvalue solve)
-        phi_vals   : (n_phi,) phase values E_n_of_phi was evaluated at
-        kT         : temperature (0 for the T=0 ground-state formula)
-        e_charge, hbar : unit convention, see `landauer_current`
-
-    Returns:
-        (n_phi,) array I(phi)
-    """
-    dE_dphi = np.gradient(E_n_of_phi, phi_vals, axis=1)
-    if kT <= 0:
-        occ = np.where(E_n_of_phi < 0, 1.0, 0.0) - 0.5
-    else:
-        occ = fermi(E_n_of_phi, 0.0, kT) - 0.5
-    return (2 * e_charge / hbar) * np.sum(dE_dphi * occ, axis=0)
-
+    return float((e_charge / h_planck) * np.trapezoid(integrand, energies))
 
 # ============================================================================
 # ELECTRON-HOLE RESOLVED TRANSMISSION AND ONSAGER THERMOELECTRIC FORMALISM

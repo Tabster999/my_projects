@@ -172,7 +172,10 @@ def compute_all_channels(E_sweep, central, eta, site_of):
     return results
 
 def other_name(name):
-    return 'right' if name=='left' else 'left'
+    if name not in ['left', 'right']:
+        raise ValueError("Invalid lead name. Must be 'left' or 'right'.")
+    else:
+        return 'right' if name=='left' else 'left'
 
 def conductance_matrix(bias0, leads, channel_sweeps, E_sweep, kT, dV=1e-5):
     G = {}

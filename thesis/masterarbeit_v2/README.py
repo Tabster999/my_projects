@@ -11,18 +11,17 @@ Workflow:
 
   Often the full Green function is not computed but only the observables to save time. 
 
-Folders: 
-  - Scripts:  Tested and working code, computing observables like ldos and pairing, 
-              for different topological systems (mostly SNS junctions in 1D or 2D).
+Folders:
+  - scripts/: tested and working code for observables (LDOS, pairing, transmission)
+              and different topological systems (mostly SNS junctions in 1D or 2D).
 
-  - Testing:  Work in progress code, some is going to be scrapped, subfolder names are self explanatory
+  - tests/: work-in-progress and exploratory calculations; some files are temporary
+            or meant to be replaced later.
 
-  - Modules:  Working functions, which are being reused often; 
-            files:  ~ Matrices.py: contains onsite and hopping matrices and the likes
+  - modules/: reusable numerical routines and core building blocks.
 
-                    ~ Solvers.py : solvers like the sancho algorithm or the RGF 
-                                   computations
-                                   
-                    ~ Helpers.py : helper functions like the phase matrix or compute 
-                                   ldos from GF block
+  - config.py: project-wide parameters and settings.
+
+A simple convention is to keep stable routines under modules/ and scripts/, while
+new or experimental work lives under tests/.
 """

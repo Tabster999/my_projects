@@ -2,9 +2,12 @@ import importlib.util
 import cProfile
 import pstats
 import io
+from pathlib import Path
 
 # load dense module
-spec = importlib.util.spec_from_file_location("quasi2_dense", r"C:\coding\my_projects\thesis\masterarbeit_v2\scripts\quasi_2d_benni.py")
+repo_root = Path(__file__).resolve().parents[2]
+script_path = repo_root / "scripts" / "quasi_2d_benni.py"
+spec = importlib.util.spec_from_file_location("quasi2_dense", script_path)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 

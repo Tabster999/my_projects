@@ -28,9 +28,9 @@ modules; this script only wires them together for this geometry.
 """
 
 #%% IMPORTS
-import os
+import os, sys
 import multiprocessing
-
+from pathlib import Path
 slurm_cpus = os.environ.get('SLURM_CPUS_PER_TASK', str(multiprocessing.cpu_count()))
 os.environ['MKL_NUM_THREADS']      = slurm_cpus
 os.environ['OMP_NUM_THREADS']      = slurm_cpus
@@ -40,7 +40,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from tqdm import tqdm
+current_dir = Path(__file__).resolve().parent
+p_dir = current_dir.parent
+parent_dir = p_dir.parent
+sys.path.insert(0, str(parent_dir))
 
+import modules as myf
 from modules import matrices, solvers, transport, helpers
 
 #%% PHYSICAL CONSTANTS (fixed, never touch)
