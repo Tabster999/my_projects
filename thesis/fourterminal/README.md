@@ -1,11 +1,11 @@
 # Four Terminal Junction
 
-Computation of Green functions, transmission, and observables (LDOS, pairing) for
+Computation of Green functions, transmissions, currents and conductances for
 four-terminal superconductor-normal-metal junctions using Non-Equilibrium Green's Functions (NEGF).
 
 ## Structure
 
-- `four_terminal_junction.py` - Main NEGF solver for four-terminal junctions
+- `four_terminal_junction.py` - Main NEGF solver for four-terminal junction
 - `four_terminal_testing.py` - Test suite and validation scripts
 - `testing_4_terminal.py` - Additional testing and benchmarking
 
