@@ -45,8 +45,8 @@ epsilon_atom = 0.0     # Fixed atom energy
 t_lead       = 1.0     # Lead hopping 
 eps_lead     = 0.0     # Lead band center
 eta          = 1e-4    
-mu_bias = 4.0
-symmetric = False 
+mu_bias = 0.0
+symmetric = True 
 
 if symmetric:
     mu_L, mu_R = mu_bias / 2 , mu_bias / 2  
@@ -86,9 +86,9 @@ for tc in t_couplings:
 
 plt.axvline(x=-2*t_lead, color='gray', linestyle='--', alpha=0.7, label=r'Lead Band Edges ($E = \pm 2t$)')
 plt.axvline(x=2*t_lead, color='gray', linestyle='--', alpha=0.7)
-plt.xlabel(r'Electron Energy $E$ (eV)')
+plt.xlabel(r'Energy $E$')
 plt.ylabel(r'Transmission $T(E)$')
-plt.title(r'$T(E)$, ' + f' Symmetric = {symmetric}')
+plt.title(r'Transmission for a Single-Level System')
 plt.ylim(-0.05, 1.15)
 plt.grid(True, alpha=0.3)
 plt.legend()

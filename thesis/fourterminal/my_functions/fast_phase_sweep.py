@@ -112,8 +112,8 @@ class FastPhaseSweep:
         self.XrefTop = self.Xref[:, self.cT, :]      # (N_E, 4nx, n_lead_cols)
         self.IdT = np.eye(4 * nx, dtype=complex)[None, :, :]
 
-        self.Gamma_L = -2.0 * np.imag(Sigma_l)
-        self.Gamma_R = -2.0 * np.imag(Sigma_r)
+        self.Gamma_L = 1j * (Sigma_l - Sigma_l.conj().transpose(0, 2, 1))
+        self.Gamma_R = 1j * (Sigma_r - Sigma_r.conj().transpose(0, 2, 1))
 
         e_idx = np.where(np.tile([True, True, False, False], ny))[0]
         h_idx = np.where(np.tile([False, False, True, True], ny))[0]
@@ -164,7 +164,7 @@ class FastPhaseSweep:
             return M.conj().transpose(0, 2, 1)
 
         def T(G1, B1_, G2, B2):
-            return np.einsum('nij,njk,nkl,nli->n', G1, B1_, G2, B2).real
+            return np.trace(G1 @ B1_ @ G2 @ B2, axis1=1, axis2=2).real
 
         Gamma_Les = sub(self.Gamma_L, e_idx, e_idx)
         Gamma_Lhs = sub(self.Gamma_L, h_idx, h_idx)

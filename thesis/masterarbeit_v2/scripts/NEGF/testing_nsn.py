@@ -34,7 +34,7 @@ def embed_lead_coupling(local_couplings, n_sites, dim_per_site):
     return V
 
 def gamma_from_sigma(sigma_r):
-    return -2.0 * np.imag(sigma_r)
+    return -1j * (sigma_r - sigma_r.conj().T)
 
 
 #%% --- CLASSES ---
@@ -196,7 +196,7 @@ mu_n, mu_s = 0.3, 0.3
 delta = 0.1
 eta = 1e-5
 tc = 0.6
-kT = 1e-3 * delta  
+kT = 5e-3 * delta  
 n_sites = 5
 dim_per_site = 2
 
@@ -219,7 +219,7 @@ lead_right = Lead("right", H_N, V_N, V_right_full, eta=eta)
 central = CentralRegion(H_C, [lead_left, lead_right])
 site_of = {"left": 0, "right": n_sites - 1}
 
-E_sweep = np.linspace(-4.05*delta , 4.05*delta, 5001)
+E_sweep = np.linspace(-4.05*delta , 4.05*delta, 10001)
 V_range = np.linspace(-2.05 * delta, 2.05 * delta, 302)
 
 #%% --- COMPUTATIONS ---

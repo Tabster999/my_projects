@@ -2,7 +2,7 @@
 """
 General-purpose NEGF transport framework.
 
-Generalizes the single-site N-S BTK script into:
+Generalizes the single-site script into:
   - Lead:            arbitrary internal dimension, Sancho-Rubio surface GF,
                       self-energy, and broadening matrix Gamma_l = i(Sigma_r - Sigma_a).
   - CentralRegion:    arbitrary H_C (any number of sites / internal degrees of
@@ -113,7 +113,7 @@ class CentralRegion:
     def lead(self, name):
         return self._by_name[name]
 
-    def green_functions(self, E, eta=1e-6):
+    def green_functions(self, E, eta=1e-5):
         """Retarded/advanced central-region Green's functions with ALL leads'
         self-energies summed in, plus the individual self-energies (useful for Gamma_l)."""
         dim = self.H_C.shape[0]
@@ -123,7 +123,7 @@ class CentralRegion:
         GA = GR.conj().T
         return GR, GA, sigmas
 
-    def transmission(self, E, lead_out, lead_in, P_out=None, P_in=None, eta=1e-6):
+    def transmission(self, E, lead_out, lead_in, P_out=None, P_in=None, eta=1e-5):
         """
         Generic transmission:
             T = Tr{ P_out Gamma_out P_out  G^r  P_in Gamma_in P_in  G^a }
@@ -150,11 +150,11 @@ class CentralRegion:
 
 if __name__ == "__main__":
     t_n, t_s = 1.0, 1.0
-    mu_n, mu_s = 2.0, 2.0
+    mu_n, mu_s = 2.0, 1.0
     delta = 0.1
     eta = 1e-5
     t_couplings = [1.0, 0.4]
-    colors = ['blue', 'orange']
+    colors = ['tab:orange', 'tab:blue']
     plt.figure(figsize=(10, 7.5))
     for i, tc in enumerate(t_couplings):
 
@@ -179,12 +179,15 @@ if __name__ == "__main__":
             T_eS = central.transmission(e, lead_S, lead_N, P_out=None, P_in=P_e)
 
             R_ee = 1.0 - T_he - T_eS
-            G.append(1.0 - R_ee + T_he)
+            G.append((T_eS + T_he + T_he) / 2.0)  # in units of e^2/h
         plt.plot(E_array, G, label=fr'$t_c ={tc:.1f}$', c=colors[i], alpha = .7)
     plt.xlabel('Energy E')
-    plt.ylabel(r'$G / G_0$')
-    plt.title('Conductance G vs. particle energy E of N-S interface')
-    plt.legend()
+    plt.ylabel(r'Transmission $T$')
+    plt.title('Transmission for N-S interface')
+    plt.axvline(x=-delta, ls='--', c='k', alpha=.3)
+    plt.axvline(x=delta, ls='--', c='k', alpha=.3, label=r'$\pm \Delta$')
     plt.grid(alpha = .3)
+    plt.ylim(-0.005,1.1)
+    plt.legend()
     plt.show()
 # %%

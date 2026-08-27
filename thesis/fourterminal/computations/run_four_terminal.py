@@ -4,33 +4,25 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from dataclasses import replace
 import os
+import scipy as sp
 os.chdir(r"c:\coding\my_projects\thesis\fourterminal")
 import my_functions as myf
 import time
 #%% --- DEINFE CORE COMPUTATION FUNCTIONS --- 
 
-def get_transmissions(params, phi_array, E_fixed=0.0, LR='left'):
-
-    T_ee = np.zeros(len(phi_array))
-    T_hh = np.zeros(len(phi_array))
-    T_eh = np.zeros(len(phi_array))
-    T_he = np.zeros(len(phi_array))
-    T_lar_eh = np.zeros(len(phi_array))
-    T_lar_he = np.zeros(len(phi_array))
+def get_transmissions(params, phi_array, E_fixed=0.0, LR='left', is_ribbon=True):
+    T_ee = np.zeros(len(phi_array)); T_hh = np.zeros(len(phi_array))
+    T_eh = np.zeros(len(phi_array)); T_he = np.zeros(len(phi_array))
+    T_lar_eh = np.zeros(len(phi_array)); T_lar_he = np.zeros(len(phi_array))
     E0 = np.array([E_fixed])
-    junction_phi = myf.FourTerminalJunction(params)
-    fps = myf.FastPhaseSweep(junction_phi, E0, phi_ref=params.phi)
     for i, phi_val in enumerate(phi_array):
-        ch = fps.channels_at_phi(phi_val, side_name=LR)
-
-        T_ee[i]     = ch['ee'][0]           #type:ignore
-        T_hh[i]     = ch['hh'][0]           #type:ignore
-        T_eh[i]     = (ch['eh_cross'])[0]   #type:ignore
-        T_he[i]     = (ch['he_cross'])[0]   #type:ignore
-        T_lar_eh[i] = (ch['eh_local'])[0]   #type:ignore
-        T_lar_he[i] = (ch['he_local'])[0]   #type:ignore
-
+        p_phi = replace(params, phi=phi_val)
+        ch = myf.FourTerminalJunction(p_phi).channels(E0, side_name=LR, is_ribbon=is_ribbon)
+        T_ee[i], T_hh[i] = ch['ee'][0], ch['hh'][0] # type: ignore
+        T_eh[i], T_he[i] = ch['eh_cross'][0], ch['he_cross'][0] # type: ignore
+        T_lar_eh[i], T_lar_he[i] = ch['eh_local'][0], ch['he_local'][0] # type: ignore
     return T_ee, T_hh, T_eh, T_he, T_lar_eh, T_lar_he
+
 #%% --- BUILD JUNCTION & RUN CORE COMPUTATION ---
 # eta should be larger than the energy step size, to smooth out numerical integration
 
@@ -343,4 +335,44 @@ ax[1].grid(True)
 plt.tight_layout()
 plt.show()
 
+# %% --- 2D SCs REPLACED BY 1D CHAINS --- 
+p_1d2d = myf.Params(
+    nx=10, ny=5, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
+    delta=0.35, phi=np.pi / 4, tc_top=1.00, tc_bot=1.00, tc_barr=1.00,
+    eta=2e-5, kT=5e-6,
+)
+
+phi_values = np.linspace(0, 2 * np.pi, 301)
+E_fixed = 0.00
+dir = 'left'
+
+results_ribbon = get_transmissions(p_1d2d, phi_values, E_fixed, LR=dir, is_ribbon=True)
+results_chain  = get_transmissions(p_1d2d, phi_values, E_fixed, LR=dir, is_ribbon=False)
+
+panels = [
+    (0, r'EC ($e\to e$)',        r'$T_{ee}$'),
+    (1, r'EC ($h\to h$)',        r'$T_{hh}$'),
+    (2, r'CAR ($e\to h$ cross)', r'$T_{eh}$'),
+    (3, r'CAR ($h\to e$ cross)', r'$T_{he}$'),
+    (4, r'LAR ($e\to h$ local)', r'$T_{LAR,eh}$'),
+    (5, r'LAR ($h\to e$ local)', r'$T_{LAR,he}$'),
+]
+
+fig_phi, axes_phi = plt.subplots(2, 3, figsize=(13, 7), sharex=True)
+for ax, (idx, title, lbl) in zip(axes_phi.flat, panels):
+    ax.plot(phi_values, results_ribbon[idx], linewidth=2, label=f'{lbl} (2D ribbon)')
+    ax.plot(phi_values, results_chain[idx], linewidth=2, linestyle='--', label=f'{lbl} (1D chains)')
+    ax.set_xticks([0, np.pi / 2, np.pi, 3 * np.pi / 2, 2 * np.pi])
+    ax.set_xticklabels(['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
+    ax.grid(alpha=0.5)
+    ax.legend(loc='upper right', fontsize=8)
+    myf.style_axis(ax, title)
+for ax in axes_phi[1, :]:
+    ax.set_xlabel(r'Phase difference $\phi$')
+for ax in axes_phi[:, 0]:
+    ax.set_ylabel(r'Transmission ($e^2/h$)')
+
+fig_phi.suptitle(fr'Ribbon vs. chain leads at fixed $E={E_fixed:.2f}$, lead={dir}')
+plt.tight_layout()
+plt.show()
 # %%

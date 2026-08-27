@@ -49,7 +49,7 @@ class Params:
         self.beta    = 7.3           # meV·nm,  Dresselhaus SOC
 
         # --- Zeeman (in-plane) ---
-        self.g       = 10            # g-factor
+        self.g       = 1           # g-factor
         self.B       = 0.398           # T,  magnetic field magnitude
         # theta_z: azimuthal angle of E_∥ in the xy-plane (rad).
         # Set to theta_z_optimal() for the topological phase.
@@ -126,21 +126,26 @@ class Params:
 
     def summary(self):
         t = self.tunits
-        print(f"{'─'*60}")
-        print(f"  tunits         = {t:.2f} meV")
-        print(f"  Delta          = {self.Delta:.3f} meV  =  {self.Delta_t:.5f} t")
-        print(f"  mu_S           = {self.mu_S:.3f} meV  =  {self.mu_S_t:.3f} t")
-        print(f"  mu_N           = {self.mu_N:.3f} meV  =  {self.mu_N_t:.3f} t")
-        print(f"  alpha          = {self.alpha:.2f} meV·nm  =  {self.alpha_t:.3f} t")
-        print(f"  beta           = {self.beta:.2f} meV·nm  =  {self.beta_t:.3f} t")
-        print(f"  E_∥            = {self.E_par_meV:.3f} meV  =  {self.E_par_t:.3f} t")
-        print(f"  E_z            = {self.E_z:.3f} meV  =  {self.E_z_t:.3f} t")
-        print(f"  theta_z        = {self.theta_z/np.pi:.2f} π")
-        print(f"  theta_z_opt    = {self.theta_z_optimal()/np.pi:.2f} π")
-        print(f"  eta            = {self.eta:.6f} t  ({self.eta_rel} × Delta)")
-        print(f"  ny={self.ny}, nx={self.nx}, n_edge={self.n_edge}")
-        print(f"  nphi={self.nphi}, nw={self.nw}")
-        print(f"{'─'*60}")
+        lines = [
+            ("Δ",        self.Delta,      "meV", self.Delta_t,   "t"),
+            ("μ_S",      self.mu_S,       "meV", self.mu_S_t,    "t"),
+            ("μ_N",      self.mu_N,       "meV", self.mu_N_t,    "t"),
+            ("α",        self.alpha,      "meV·nm", self.alpha_t, "t"),
+            ("β",        self.beta,       "meV·nm", self.beta_t,  "t"),
+            ("E_∥",       self.E_par_meV,  "meV", self.E_par_t,   "t"),
+            ("E_z",      self.E_z,        "meV", self.E_z_t,     "t"),
+        ]
+
+        print("─" * 60)
+        print(f"  t_units        = {t:.2f} meV")
+        for sym, val, unit, val_t, unit_t in lines:
+            print(f"  {sym:<12} = {val:>8.3f} {unit:<8} = {val_t:>8.5f} {unit_t}")
+        print(f"  θ_z            = {self.theta_z/np.pi:.2f}π")
+        print(f"  θ_z,opt        = {self.theta_z_optimal()/np.pi:.2f}π")
+        print(f"  η              = {self.eta:.6f} t  ({self.eta_rel} × Δ)")
+        print(f"  n_y={self.ny}, n_x={self.nx}, n_edge={self.n_edge}")
+        print(f"  n_φ={self.nphi}, n_w={self.nw}")
+        print("─" * 60)
 
 
 #%%  FUNCTIONS 
@@ -339,7 +344,7 @@ def calculate_surface_gfs(H, V_forward, V_backward, w, eta, Id, iterations):
     return gSL, gSR
 
 
-def _ldos_one_energy(w, Hs, Hn, V0, Vd, Id, p: Params, phi_vals, electron_only=False):
+def _ldos_one_energy(w, Hs, Hn, V0, Vd, Id, p: Params, phi_vals, electron_only=True):
     """
     LDOS at one energy w, for all phi in phi_vals.
     Probes the last n_edge y-sites (top edge of N region), all nx x-slices.
@@ -430,7 +435,7 @@ def _ldos_one_energy_spatial(w, phi, Hs, Hn, V0, Vd, Id, p: Params):
 
 #  DRIVERS
 
-def compute_ldos_E_phi(p: Params, electron_only=False):
+def compute_ldos_E_phi(p: Params, electron_only=True):
     """
     Main LDOS(E, φ) sweep for Fig. 8-style plots.
     Returns array of shape (nw, nphi).
@@ -474,7 +479,7 @@ def compute_ldos_spatial(p: Params, phi=np.pi, target_energy=0.0):
 def _style(ax):
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
-    ax.tick_params(which='both', direction='in')
+    ax.tick_params(which='both', direction='out', top=False, right=False)
 
 
 def plot_ldos_E_phi(ldos, p: Params):
@@ -483,8 +488,10 @@ def plot_ldos_E_phi(ldos, p: Params):
     energies = p.energies / p.Delta_t
     phases = p.phi_vals / np.pi
     cf = ax.imshow(ldos.T,
-        extent=[energies[0] / p.Delta_t, energies[-1] / p.Delta_t, phases[0] / np.pi, phases[-1] / np.pi], #type: ignore
-        cmap='jet', interpolation='bilinear', aspect='auto'
+        extent=[energies[0] , energies[-1] , phases[0] , phases[-1] ], #type: ignore
+        cmap='jet', 
+        aspect='auto',
+        interpolation='bilinear'
     )
     fig.colorbar(cf, ax=ax, label='LDOS (a.u.)')
     ax.set_xlabel(r'$\omega\,/\,\Delta$', loc='right')
@@ -495,10 +502,12 @@ def plot_ldos_E_phi(ldos, p: Params):
         rf'$\alpha={p.alpha:.1f}$ nm·meV, $\beta={p.beta:.1f}$ nm·meV, '
         rf'$E_\parallel={p.E_par_meV:.3f}$ meV, $E_z={p.E_z:.3f}$ meV, '
         rf'$\theta_z={p.theta_z/np.pi:.3f}\pi$, '
-        rf'$n_y={p.ny}$, $n_x={p.nx}$, $\mu_N={p.mu_N:.2f}$ meV',
+        rf'$n_y={p.ny}$, $n_x={p.nx}$, $\mu_N={p.mu_N:.2f}$ meV, $\mu_S={p.mu_S:.2f}$ meV',
         loc='right', fontsize=8
     )
     _style(ax)
+    ax.set_yticks([0, 0.5, 1, 1.5, 2])
+    ax.set_xticks([-1, -0.5, 0, 0.5, 1])
     plt.tight_layout()
     return fig, ax
 
@@ -509,7 +518,8 @@ def plot_ldos_B_phi(ldos, B_vals, p: Params, target_energy=0.0):
     cf = ax.imshow(
         ldos, aspect='auto', origin='lower',
         extent=[p.phi_vals[0]/np.pi, p.phi_vals[-1]/np.pi, B_vals[0], B_vals[-1]], #type: ignore
-        cmap='magma', interpolation='gaussian',
+        cmap='magma',
+        interpolation='gaussian' 
     )
     fig.colorbar(cf, ax=ax, label='LDOS (a.u.)')
     ax.set_xlabel(r'$\phi\,/\,\pi$', loc='right')
@@ -523,6 +533,8 @@ def plot_ldos_B_phi(ldos, B_vals, p: Params, target_energy=0.0):
         loc='right', fontsize=9
     )
     _style(ax)
+    ax.set_yticks([0, 0.5, 1, 1.5, 2])
+    ax.set_xticks([-1, -0.5, 0, 0.5, 1])
     plt.tight_layout()
     return fig, ax
 
@@ -534,18 +546,19 @@ def plot_ldos_spatial(ldos_xy, p: Params, phi, target_energy=0.0):
     cf = ax.imshow(
         ldos_xy.T / vmax, aspect='auto', origin='lower',
         extent=[-0.5, p.nx - 0.5, -0.5, p.ny - 0.5], #type: ignore
-        cmap='magma', interpolation='gaussian',
+        cmap='magma', 
+        interpolation='gaussian',
     )
-    fig.colorbar(cf, ax=ax, label='LDOS (norm.)')
-    ax.set_xlabel('x (junction slice)', loc='right')
-    ax.set_ylabel('y (transverse site)', loc='top', rotation=0, labelpad=12)
+    fig.colorbar(cf, ax=ax, label='LDOS (normalized to max value)')
+    ax.set_xlabel('x-site', loc='right')
+    ax.set_ylabel('y-site', loc='top', rotation=0, labelpad=12)
     ax.set_title(
         rf'$\phi={phi/np.pi:.2f}\pi$, $\omega={target_energy:.4f}$ t, '
         rf'$E_\parallel={p.E_par_meV:.3f}$ meV',
         loc='right', fontsize=9
     )
     _style(ax)
-    ax.set_xticks(np.arange(1, p.nx  , step=max(1, p.nx // 5)))
+    ax.set_xticks(np.arange(1, p.nx , step=max(1, p.nx // 5)))
     ax.set_yticks(np.arange(1, p.ny + 1, step=max(1, p.ny // 5)))
     plt.tight_layout()
     return fig, ax
@@ -559,38 +572,39 @@ if __name__ == '__main__':
     p.alpha   = 14.3    # meV·nm
     p.beta    = 7.3     # meV·nm
     p.Delta   = 0.25    # meV
-    p.mu_S    = 2.0     # meV
+    p.mu_S    = 1.0     # meV
     p.mu_N    = 0.7    # meV
-    p.g       = 10
-    p.ny      = 50
+    p.g       = 1
+    p.ny      = 100
     p.nx      = 5
     p.n_edge  = 5
     p.eta_rel = 0.01
     p.nphi    = 41
-    p.nw      = 61
+    p.nw      = 41
     p.w_range = 1.0
     p.E_z     = 0.0
  
     # set theta_z to the optimal angle (E_∥ ⊥ n_soc)
-    p.theta_z = np.pi / 2 #- np.arctan2(p.beta_t, p.alpha_t)
+    p.theta_z = p.theta_z_optimal()
 
     p.summary()
 
     # --- Fig. 8 panels (a)-(d): E_∥ = 0, 0.23, 0.46, 0.69 meV ---
-    E_per = .0   # meV
+    E_per = [0.0, 0.23, 0.46, 0.69]   # meV
 
-    p.B = E_per / (_muB * p.g)   # convert meV → T
-    print(f"\nPanel E_∥ = {p.E_par_meV:.3f} meV  (B = {p.B:.3f} T)")
+    for E_per_val in E_per:
+        p.B = E_per_val / (_muB * p.g)   # convert meV → T
+        print(f"\nPanel E_∥ = {p.E_par_meV:.3f} meV  (B = {p.B:.3f} T)")
 
-    ldos = compute_ldos_E_phi(p)
-    fig, ax = plot_ldos_E_phi(ldos, p)
-    print(f"  ✓ shape {ldos.shape},  max = {ldos.max():.3f}")
+        ldos = compute_ldos_E_phi(p, electron_only=False)
+        fig, ax = plot_ldos_E_phi(ldos, p)
+        print(f"  ✓ shape {ldos.shape},  max = {ldos.max():.3f}")
 
-    # --- spatial LDOS at phi=pi, E=0 ---
-    ldos_xy = compute_ldos_spatial(p, phi=np.pi, target_energy=0.0)
-    plot_ldos_spatial(ldos_xy, p, phi=np.pi, target_energy=0.0)
-    print(f"\n✓ Spatial LDOS shape: {ldos_xy.shape}")
+        # --- spatial LDOS at phi=pi, E=0 ---
+        ldos_xy = compute_ldos_spatial(p, phi=np.pi, target_energy=0.0)
+        plot_ldos_spatial(ldos_xy, p, phi=np.pi, target_energy=0.0)
+        print(f"\n✓ Spatial LDOS shape: {ldos_xy.shape}")
 
-    plt.show()
-    print("\nDone.")
+        plt.show()
+        print("\nDone.")
 # %%

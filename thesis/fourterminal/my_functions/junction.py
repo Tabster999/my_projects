@@ -38,6 +38,8 @@ class FourTerminalJunction:
         self.lead_R = Lead('R', H_layer_N, V_n, V_coupling_LR, p, br=True)
         self.ribbon_top = self._make_ribbon(p.phi, p.tc_top)
         self.ribbon_bot = self._make_ribbon(0, p.tc_bot)
+        self.chain_top = self._make_single_chain(p.phi, is_bot=False)
+        self.chain_bot = self._make_single_chain(0, is_bot=True)
 
         left_sites = [ix + nx * iy for iy in range(ny) for ix in [0]]
         right_sites = [ix + nx * iy for iy in range(ny) for ix in [nx - 1]]
@@ -50,7 +52,17 @@ class FourTerminalJunction:
         H_intra = make_row_hamiltonian(p.nx, onsite_SC, Vx(p.t_s))
         H_inter = block_diag(*([Vy(p.t_s)] * p.nx))
         V_coupling = block_diag(*([Vy(tc)] * p.nx))
-        return Lead('ribbon', H_intra, H_inter, V_coupling, p, br=is_bot)
+        name = 'sc_bot' if is_bot else 'sc_top'
+        return Lead(name, H_intra, H_inter, V_coupling, p, br=is_bot)
+
+    def _make_single_chain(self, phi_lead, is_bot=False):
+        p = self.p
+        onsite_sc = onsite_block(p.t_s, p.mu_s, delta=p.delta, phi=phi_lead, Bz=0.0, Bxy=0.0, theta_z=0.0, alpha=0.0, beta=0.0, twod=False)
+        hop_y = Vy(p.t_s, alpha=0.0, beta=0.0)
+        tc = p.tc_bot if is_bot else p.tc_top
+        hop_c = Vy(tc)
+        name = 'sc_bot' if is_bot else 'sc_top'
+        return Lead(name, onsite_sc, hop_y, hop_c, p, br=False)
 
     def _z_batches(self, E_sweep):
         p = self.p
@@ -59,7 +71,7 @@ class FourTerminalJunction:
         zN = (E_sweep + 1j * p.eta)[:, None, None] * np.eye(dim, dtype=complex)[None, :, :]
         return z1, zN
 
-    def channels(self, E_sweep, side_name=None, precompute_sigmas_n=None):
+    def channels(self, E_sweep, side_name=None, precompute_sigmas_n=None, is_ribbon=True):
         """
         Compute the EC/CAR/LAR transmission channels for the requested lead(s).
 
@@ -81,6 +93,7 @@ class FourTerminalJunction:
         z_lead_N = z_1D * np.eye(4 * ny, dtype=complex)[None, :, :]
         z_lead_SC = z_1D * np.eye(4 * nx, dtype=complex)[None, :, :]
         z_center = z_1D * np.eye(dim, dtype=complex)[None, :, :]
+        z_single = z_1D * np.eye(4, dtype=complex)[None, :, :]
 
         if precompute_sigmas_n is None:
             Sigma_l = self.lead_L.self_energy(z_lead_N)
@@ -88,21 +101,28 @@ class FourTerminalJunction:
         else:
             Sigma_l, Sigma_r = precompute_sigmas_n
 
-        Sigma_t = self.ribbon_top.self_energy(z_lead_SC)
-        Sigma_b = self.ribbon_bot.self_energy(z_lead_SC)
-
+        Sigma_t = self.ribbon_top.self_energy(z_lead_SC) if is_ribbon else self.chain_top.self_energy(z_single)
+        Sigma_b = self.ribbon_bot.self_energy(z_lead_SC) if is_ribbon else self.chain_bot.self_energy(z_single)
         Sigma_tot = np.zeros((N_E, dim, dim), dtype=complex)
-        Sigma_tot[:, :4 * nx, :4 * nx] += Sigma_t
-        Sigma_tot[:, -4 * nx:, -4 * nx:] += Sigma_b
+
+        if is_ribbon:
+            Sigma_tot[:, :4 * nx, :4 * nx] += Sigma_t
+            Sigma_tot[:, -4 * nx:, -4 * nx:] += Sigma_b
+        else:
+            for ix in range(nx):
+                Sigma_tot[:, 4*ix:4*(ix+1), 4*ix:4*(ix+1)] += Sigma_t
+                Sigma_tot[:, 4*(ix + nx*(ny-1)):4*(ix + nx*(ny-1)+1), 4*(ix + nx*(ny-1)):4*(ix + nx*(ny-1)+1)] += Sigma_b
+
         iL, iR = self.idx_L, self.idx_R
-        #Using advanced indexing to add Sigma_l and Sigma_r to the correct blocks of Sigma_tot. M[N_E, dim, dim] --> M[:, i[:, None], j[None, :]] extracts M[:, i, j] for all energies. 
+        #Advanced indexing to add Sigma_l and Sigma_r to the correct blocks of Sigma_tot. 
+        # M[N_E, dim, dim] -> M[:, i[:, None], j[None, :]] extracts M[:, i, j] for all energies. 
         Sigma_tot[:, iL[:, None], iL[None, :]] += Sigma_l 
         Sigma_tot[:, iR[:, None], iR[None, :]] += Sigma_r
 
         GR = inv(z_center - self.H_C[None, :, :] - Sigma_tot)
         GA = GR.conj().transpose(0, 2, 1)
-        Gamma_L = -2.0 * np.imag(Sigma_l)
-        Gamma_R = -2.0 * np.imag(Sigma_r)
+        Gamma_L = 1j * (Sigma_l - Sigma_l.conj().transpose(0, 2, 1))
+        Gamma_R = 1j * (Sigma_r - Sigma_r.conj().transpose(0, 2, 1))
 
         def block(M, i, j): #M[:, i[:, None], j[None, :]] extracts M[:, i, j] for all energies. 
             return M[:, i[:, None], j[None, :]] 
@@ -121,7 +141,7 @@ class FourTerminalJunction:
         he = lambda M: M[:, h_idx[:, None], e_idx[None, :]]
 
         def T(G1, B1, G2, B2):
-            return np.einsum('nij,njk,nkl,nli->n', G1, B1, G2, B2).real
+            return np.trace(G1 @ B1 @ G2 @ B2, axis1=1, axis2=2).real
 
         #GaL is the lead under consideration. GaO is the other lead. So if we are considering the left lead, GaL = Gamma_L and GaO = Gamma_R.
         def side(name):

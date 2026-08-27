@@ -33,7 +33,7 @@ def kron(a, b):
     return np.kron(a, b)
 
 #%% --- SURFACE GREEN'S FUNCTION AND TRANSMISSION COEFFICIENTS ---
-def surface_gf(z_batch, H_onsite, V_hop, E, max_iter=400, tol=1e-14):
+def surface_gf(z_batch, H_onsite, V_hop, max_iter=400, tol=1e-14):
 
     N_E = z_batch.shape[0]
     M = H_onsite.shape[0]
