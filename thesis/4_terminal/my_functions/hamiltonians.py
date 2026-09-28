@@ -125,12 +125,24 @@ def dirac_Vy(t, m0):
 # =============================================================================
 # Model dispatch: the ONLY place that knows which model is active
 # =============================================================================
+def region_alpha(p, region):
+    """Rashba coupling of region 'c', 'n' or 's' (per-region override or the global alpha)."""
+    a = {'c': p.alpha_c, 'n': p.alpha_n, 's': p.alpha_s}[region]
+    return p.alpha if a is None else a
+
+
+def bond_alpha(p, ra, rb):
+    """Rashba coupling on a bond joining two regions (arithmetic mean, as for the Wilson mass)."""
+    return 0.5 * (region_alpha(p, ra) + region_alpha(p, rb))
+
+
 def region_params(p, region):
     """Physical parameters of region 'c' (central), 'n' (normal leads) or 's' (SC ribbons)."""
     if region == 'c':
         return dict(t=p.t_c, mu=p.mu_c, delta=0.0, Bz=p.Bz, Bxy=p.Bxy, theta_z=p.theta_z, m0=p.m0_c)
     if region == 'n':
-        return dict(t=p.t_n, mu=p.mu_n, delta=0.0, Bz=p.Bz, Bxy=p.Bxy, theta_z=p.theta_z_n, m0=p.m0_n)
+        return dict(t=p.t_n, mu=p.mu_n, delta=0.0, Bz=p.Bz if p.Bz_n is None else p.Bz_n, Bxy=p.Bxy,
+                    theta_z=p.theta_z_n, m0=p.m0_n)
     if region == 's':
         return dict(t=p.t_s, mu=p.mu_s, delta=p.delta, Bz=p.Bz_s, Bxy=p.Bxy, theta_z=p.theta_z, m0=p.m0)
     raise ValueError(f"unknown region {region!r}")
@@ -142,18 +154,19 @@ def model_onsite(p, region, phi=0.0, twod=True, **override):
     r.update(override)
     if p.model == 'rashba':
         return onsite_block(r['t'], r['mu'], delta=r['delta'], phi=phi, Bz=r['Bz'], Bxy=r['Bxy'],
-                            theta_z=r['theta_z'], alpha=p.alpha, beta=p.beta, twod=twod)
+                            theta_z=r['theta_z'], alpha=region_alpha(p, region), beta=p.beta, twod=twod)
     return dirac_onsite_block(r['mu'], r['m0'], delta=r['delta'], phi=phi, Bz=r['Bz'], Bxy=r['Bxy'],
                               theta_z=r['theta_z'], twod=twod)
 
 
-def model_hop(p, direction, t, m0):
+def model_hop(p, direction, t, m0, alpha=None):
     """
     Hopping block H_{j,j+1} along `direction` ('x' or 'y') with amplitude t.
     m0 is the Wilson mass of the bond (ignored by the Rashba model).
     """
     if p.model == 'rashba':
-        return Vx(t, p.alpha, p.beta) if direction == 'x' else Vy(t, p.alpha, p.beta)
+        a = p.alpha if alpha is None else alpha
+        return Vx(t, a, p.beta) if direction == 'x' else Vy(t, a, p.beta)
     return dirac_Vx(t, m0) if direction == 'x' else dirac_Vy(t, m0)
 
 

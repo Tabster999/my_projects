@@ -4,7 +4,7 @@ import numpy as np
 from numpy.linalg import inv
 from scipy.linalg import block_diag
 
-from .hamiltonians import (model_onsite, model_hop, bond_m0, make_row_hamiltonian,
+from .hamiltonians import (model_onsite, model_hop, region_alpha, bond_alpha, bond_m0, make_row_hamiltonian,
                            get_2d_hamiltonian, flat_site_idx)
 from .leads import Lead
 
@@ -30,15 +30,15 @@ class FourTerminalJunction:
 
         # --- central region: store the blocks; the dense H_C is built only on demand ---
         self.onsite_C = model_onsite(p, 'c')
-        self.Vx_C = model_hop(p, 'x', p.t_c, p.m0_c)
-        self.Vy_C = model_hop(p, 'y', p.t_c, p.m0_c)
+        self.Vx_C = model_hop(p, 'x', p.t_c, p.m0_c, alpha=region_alpha(p, 'c'))
+        self.Vy_C = model_hop(p, 'y', p.t_c, p.m0_c, alpha=region_alpha(p, 'c'))
         self._H_C = None
 
         # --- normal leads: one lead cell = a column of ny sites chained along y ---
         onsite_N = model_onsite(p, 'n')
-        H_layer_N = make_row_hamiltonian(ny, onsite_N, model_hop(p, 'y', p.t_n, p.m0_n))
-        V_n = block_diag(*[model_hop(p, 'x', p.t_n, p.m0_n)] * ny)                        # H_{x,x+1} inside the N leads
-        V_b = block_diag(*[model_hop(p, 'x', p.tc_barr, bond_m0(p.m0_n, p.m0_c))] * ny)  # H_{x,x+1} across the barrier bond
+        H_layer_N = make_row_hamiltonian(ny, onsite_N, model_hop(p, 'y', p.t_n, p.m0_n, alpha=region_alpha(p, 'n')))
+        V_n = block_diag(*[model_hop(p, 'x', p.t_n, p.m0_n, alpha=region_alpha(p, 'n'))] * ny)                        # H_{x,x+1} inside the N leads
+        V_b = block_diag(*[model_hop(p, 'x', p.tc_barr, bond_m0(p.m0_n, p.m0_c), alpha=bond_alpha(p, 'n', 'c'))] * ny)  # H_{x,x+1} across the barrier bond
 
         # Left lead, cells x = -1, -2, ...: outward hop H_{-1,-2} = V_n^dag, coupling H_{-1,0} = V_b
         self.lead_L = Lead('L', H_layer_N, V_n, V_b, p, br=False, dual=True)
@@ -81,18 +81,18 @@ class FourTerminalJunction:
         """
         p = self.p
         onsite_SC = model_onsite(p, 's', phi=phi_lead)
-        H_intra = make_row_hamiltonian(p.nx, onsite_SC, model_hop(p, 'x', p.t_s, p.m0))
-        V_s = block_diag(*([model_hop(p, 'y', p.t_s, p.m0)] * p.nx))                     # H_{y,y+1} inside ribbon
-        V_c = block_diag(*([model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c))] * p.nx))       # H_{y,y+1} ribbon<->centre bond
+        H_intra = make_row_hamiltonian(p.nx, onsite_SC, model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')))
+        V_s = block_diag(*([model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))] * p.nx))                     # H_{y,y+1} inside ribbon
+        V_c = block_diag(*([model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))] * p.nx))       # H_{y,y+1} ribbon<->centre bond
         name = 'sc_bot' if is_bot else 'sc_top'
         return Lead(name, H_intra, V_s, V_c, p, br=is_bot, dual=not is_bot)
 
     def _make_single_chain(self, phi_lead, is_bot=False):
         p = self.p
         onsite_sc = model_onsite(p, 's', phi=phi_lead, twod=False, Bxy=0.0, theta_z=0.0)
-        hop_y = model_hop(p, 'y', p.t_s, p.m0)                                   # H_{y,y+1}
+        hop_y = model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))                                   # H_{y,y+1}
         tc = p.tc_bot if is_bot else p.tc_top
-        hop_c = model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c))                     # H_{y,y+1} across the bond
+        hop_c = model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))                     # H_{y,y+1} across the bond
         name = 'sc_bot' if is_bot else 'sc_top'
         return Lead(name, onsite_sc, hop_y, hop_c, p, br=is_bot, dual=not is_bot)
 

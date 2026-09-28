@@ -13,11 +13,49 @@ and, if the relative residual is too large, refined by Newton steps on that equa
 counted in N_UNRELIABLE and reported with a warning.
 """
 
+import hashlib
 import warnings
+from collections import OrderedDict
 import numpy as np
 from numpy.linalg import inv, norm
 
 N_UNRELIABLE = 0          # number of lead energies that failed the self-consistency check
+ACCEPT_TOL = 1e-8         # max. relative Dyson residual for a lead solution to be accepted
+
+# Cache of lead solutions.  It pays off when the same lead comes back, i.e. in sweeps of central-region
+# parameters (mu_c, tc, tc_barr, phi, ...), where the expensive ribbon decimation is then done once.
+# In ribbon sweeps (mu_s, Bz_s, ...) every lead is new, so storing it would only cost memory: a solution
+# is therefore stored only the SECOND time its key is requested (the keys seen so far are remembered,
+# hashes only), and at most CACHE_MAX_ENTRIES solutions are kept (LRU; one junction needs <= 3 on the
+# RGF path).  The key contains everything the solution depends on; cached arrays are read-only; a
+# cached failure (NaN) is counted again on every reuse.
+CACHE_ENABLED = True
+CACHE_MAX_ENTRIES = 4     # per process
+CACHE_MAX_BYTES = 1.0e9   # per process, safety cap on top of the entry limit
+CACHE_STATS = {"hits": 0, "misses": 0}
+_CACHE = OrderedDict()
+_SEEN = OrderedDict()     # keys requested once but not stored (admission on the second request)
+_SEEN_MAX = 256
+
+
+def clear_cache():
+    _CACHE.clear()
+    _SEEN.clear()
+    CACHE_STATS.update(hits=0, misses=0)
+
+
+def cache_bytes():
+    """Memory held by the lead cache of this process [bytes]."""
+    return sum(a.nbytes + b.nbytes for a, b in _CACHE.values())
+
+
+def _cache_key(H_onsite, V_plus, zs, p, need):
+    h = hashlib.sha1()
+    for a in (H_onsite, V_plus, zs):
+        a = np.ascontiguousarray(a)
+        h.update(str((a.shape, a.dtype)).encode()); h.update(a.tobytes())
+    h.update(repr((p.max_iter, p.tol, p.lead_refine, tuple(need), ACCEPT_TOL)).encode())
+    return h.hexdigest()
 
 
 def sancho_rubio(H_onsite, V_plus, z_batch, max_iter=100, tol=1e-14):
@@ -95,14 +133,41 @@ def newton_refine(H_onsite, V_out, z, eps, tol=1e-12, max_steps=8):
     return best, best_res
 
 
+def eigenmode_eps(H_onsite, V_out, z):
+    """
+    Non-iterative surface onsite eps = H0 + V_out F from the lead's decaying Bloch modes
+    ((z - H0 - lam V_out - V_out^dag / lam) u = 0, the M modes with smallest |lam|, F = U diag(lam) U^-1).
+    Used as a fallback where Sancho-Rubio + Newton fail (at E ~ 0 when the ribbon edge gap << eta).
+    """
+    import scipy.linalg as sl
+    M = H_onsite.shape[0]
+    I, O = np.eye(M), np.zeros((M, M))
+    lam, X = sl.eig(np.block([[O, I], [V_out.conj().T, -(z * I - H_onsite)]]), np.block([[I, O], [O, -V_out]]))
+    order = np.argsort(np.abs(lam))[:M]
+    U = X[:M, order]
+    return H_onsite + V_out @ (U @ np.diag(lam[order]) @ np.linalg.inv(U))
+
+
 def surface_eps_pair(H_onsite, V_plus, z_batch, p, name="lead", need=(True, True)):
     """
-    Sancho-Rubio surface onsite (eps_plus, eps_minus), checked and, if needed, Newton-refined.
+    Sancho-Rubio surface onsite (eps_plus, eps_minus), checked against the Dyson equation; failures
+    are Newton-refined, then replaced by the eigenmode solution, and set to NaN if still failing.
     need = which orientations to check (the other one is returned unchecked).
     """
     global N_UNRELIABLE
-    pair = list(sancho_rubio(H_onsite, V_plus, z_batch, p.max_iter, p.tol))
     zs = np.einsum('nii->n', z_batch) / H_onsite.shape[0]
+    if CACHE_ENABLED:
+        key = _cache_key(H_onsite, V_plus, zs, p, need)
+        if key in _CACHE:
+            _CACHE.move_to_end(key); CACHE_STATS["hits"] += 1
+            hit = _CACHE[key]
+            n_bad = sum(int(np.isnan(a).any(axis=(1, 2)).sum()) for a in hit)
+            if n_bad:
+                N_UNRELIABLE += n_bad
+                warnings.warn("cached lead solution contains failed (NaN) energies; counted in N_UNRELIABLE.")
+            return hit
+        CACHE_STATS["misses"] += 1
+    pair = list(sancho_rubio(H_onsite, V_plus, z_batch, p.max_iter, p.tol))
     for k, V_out in enumerate((V_plus, V_plus.conj().T)):
         if not need[k]:
             continue
@@ -110,11 +175,33 @@ def surface_eps_pair(H_onsite, V_plus, z_batch, p, name="lead", need=(True, True
         for n in np.flatnonzero(res > 1e-10):
             if p.lead_refine:
                 pair[k][n], res[n] = newton_refine(H_onsite, V_out, zs[n], pair[k][n])
-        bad = res > 1e-8
+        for n in np.flatnonzero(res > ACCEPT_TOL):       # still failing: eigenmode solution
+            try:
+                with np.errstate(all='ignore'):
+                    cand = eigenmode_eps(H_onsite, V_out, zs[n])
+                    r_c = residual(H_onsite, V_out, z_batch[n:n+1], cand[None])[0]
+                if np.isfinite(r_c) and r_c < res[n]:
+                    pair[k][n], res[n] = cand, r_c
+            except (np.linalg.LinAlgError, ValueError):
+                pass
+        bad = res > ACCEPT_TOL
         if bad.any():
             N_UNRELIABLE += int(bad.sum())
-            warnings.warn("Sancho-Rubio surface GF not self-consistent at some energies "
-                          "(counted in my_functions.leads.N_UNRELIABLE); results there are unreliable.")
+            pair[k][bad] = np.nan                          # never hand on a wrong lead as data
+            warnings.warn("lead surface GF not self-consistent at some energies even after Newton and the "
+                          "eigenmode fallback (counted in my_functions.leads.N_UNRELIABLE); set to NaN.")
+    if CACHE_ENABLED:
+        if key in _SEEN:                                   # requested before -> likely to come back: store
+            del _SEEN[key]
+            for a in pair:
+                a.setflags(write=False)
+            _CACHE[key] = (pair[0], pair[1])
+            while len(_CACHE) > 1 and (len(_CACHE) > CACHE_MAX_ENTRIES or cache_bytes() > CACHE_MAX_BYTES):
+                _CACHE.popitem(last=False)
+        else:                                              # first request: remember the key only
+            _SEEN[key] = None
+            while len(_SEEN) > _SEEN_MAX:
+                _SEEN.popitem(last=False)
     return pair[0], pair[1]
 
 

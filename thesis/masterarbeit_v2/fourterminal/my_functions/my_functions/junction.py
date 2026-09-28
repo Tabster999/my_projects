@@ -8,6 +8,39 @@ from .hamiltonians import onsite_block, Vx, Vy, make_row_hamiltonian, get_2d_ham
 from .leads import Lead
 
 
+def lead_escape(G_self, Gamma, e_idx, h_idx):
+    """
+    Total transmission from a normal lead's electron / hole channels into ALL
+    other terminals (the other normal lead AND the SC ribbons), from the local
+    block G_self = G^r at the lead's own attachment sites only:
+
+        out_a = Tr[Gamma_a A_aa] - Tr[Gamma_a G_aa Gamma_a G_aa^dag] - Tr[Gamma_a G_ab Gamma_b G_ab^dag]
+
+    with A = i(G^r - G^a), a in {e, h}, b the opposite. This is unitarity
+    (N_a - R_aa - R_ab) written with G^r Gamma_tot G^a = A, so it is exact up
+    to an O(eta) leak. Above the gap it includes quasiparticle transmission
+    into the SC ribbons, which the ee/eh_cross channels do not.
+    """
+    def sub(M, r, c):
+        return M[:, r[:, None], c[None, :]]
+
+    def dagger(M):
+        return M.conj().transpose(0, 2, 1)
+
+    def T(G1, B1, G2, B2):
+        return np.trace(G1 @ B1 @ G2 @ B2, axis1=1, axis2=2).real
+
+    out = {}
+    for key, a, b in (('out_e', e_idx, h_idx), ('out_h', h_idx, e_idx)):
+        Gam_a, Gam_b = sub(Gamma, a, a), sub(Gamma, b, b)
+        G_aa, G_ab = sub(G_self, a, a), sub(G_self, a, b)
+        A_aa = 1j * (G_aa - dagger(G_aa))
+        out[key] = (np.trace(Gam_a @ A_aa, axis1=1, axis2=2).real
+                    - T(Gam_a, G_aa, Gam_a, dagger(G_aa))
+                    - T(Gam_a, G_ab, Gam_b, dagger(G_ab)))
+    return out
+
+
 class FourTerminalJunction:
     """
     Geometry: central nx*ny normal region, with SC ribbons (width nx) attached
@@ -145,6 +178,8 @@ class FourTerminalJunction:
             return np.trace(G1 @ B1 @ G2 @ B2, axis1=1, axis2=2).real
 
         #GaL is the lead under consideration. GaO is the other lead. So if we are considering the left lead, GaL = Gamma_L and GaO = Gamma_R.
+        # Caroli: T_{L<-R} = Tr[Gamma_L G^r_LR Gamma_R (G^r_LR)^dag], and (G^r_LR)^dag = G^a_RL. Using G^r_RL
+        # instead only agrees without spin-orbit coupling (with Rashba it gives negative 'transmissions').
         def side(name):
             # T_{i<-j} = Tr[Gamma_i G^R_{ij} Gamma_j G^A_{ji}]  (i = this lead, j = the other one)
             if name == 'left':
@@ -162,6 +197,7 @@ class FourTerminalJunction:
                 "he_cross": T(h(GaL), he(GL), e(GaO), eh(GLA)),
                 "eh_local": T(e(GaLL), eh(GLL), h(GaLL), he(GLLA)),
                 "he_local": T(h(GaLL), he(GLL), e(GaLL), eh(GLLA)),
+                **lead_escape(GLL, GaLL, e_idx, h_idx),
             }
 
         if side_name is None:

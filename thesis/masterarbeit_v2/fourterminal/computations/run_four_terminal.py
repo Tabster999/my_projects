@@ -1,6 +1,7 @@
 #%% --- IMPORTS ---
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 from tqdm import tqdm
 from dataclasses import replace
 import os
@@ -376,4 +377,102 @@ for ax in axes_phi[:, 0]:
 fig_phi.suptitle(fr'Ribbon vs. chain leads at fixed $E={E_fixed:.2f}$, lead={dir}')
 plt.tight_layout()
 plt.show()
+#%% --- THERMAL CONDUCTANCE: COMPUTE kappa(phi, kT) ---
+# Zero-bias linear response, SC ribbons grounded at mu=0 and at the lead temperature.
+# kappa in units of kappa0 = pi^2 k_B^2 T / 3h, G in e^2/h, same BdG normalization as
+# dc_current_channels, so the Lorenz ratio (kappa/kappa0)/(G/G0) = 1 under Wiedemann-Franz.
+# E_th must resolve the smallest kT (dE << kT_min) and reach ~15 kT_max.
+p_th = myf.Params(
+    nx=10, ny=5, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
+    delta=0.35, phi=0.0, tc_top=1.00, tc_bot=1.00, tc_barr=1.00,
+    eta=2e-5,
+)
+
+kT_vals = p_th.delta * np.geomspace(0.02, 0.5, 25)
+phi_vals_th = np.linspace(0, 2 * np.pi, 61)
+E_th = np.linspace(-8 * p_th.delta, 8 * p_th.delta, 4001)
+assert E_th[1] - E_th[0] < kT_vals[0] / 3, "energy grid too coarse for smallest kT"
+
+thermo = myf.compute_thermal_vs_phi(p_th, E_th, phi_vals_th, kT_vals, side='left')
+myf.print_params(p_th)
+
+#%% --- THERMAL CONDUCTANCE vs TEMPERATURE (fixed phi) ---
+phi_show = [0.0, np.pi / 2, np.pi]
+i_phi = [np.argmin(np.abs(phi_vals_th - ph)) for ph in phi_show]
+phi_lbl = ['0', r'\pi/2', r'\pi']
+x = kT_vals / p_th.delta
+kT_ticks = [0.02, 0.05, 0.1, 0.2, 0.5]
+
+def log_kT_axis(ax, which='x'):
+    """Log kT axis with plain major labels only (default minor labels collide)."""
+    getattr(ax, f'set_{which}scale')('log')
+    axis = getattr(ax, f'{which}axis')
+    axis.set_ticks(kT_ticks)
+    axis.set_major_formatter(mticker.FormatStrFormatter('%g'))
+    axis.set_minor_formatter(mticker.NullFormatter())
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), sharex=True)
+panels = [
+    ('kappa_LL', r'Local $\kappa_{LL}=\partial J_L/\partial T_L$', r'$\kappa/\kappa_0$'),
+    ('kappa_LR', r'Non-local $\kappa_{LR}=\partial J_L/\partial T_R$', r'$\kappa/\kappa_0$'),
+    ('kappa_LS', r'Into SC ribbons $\kappa_{LL}+\kappa_{LR}$', r'$\kappa/\kappa_0$'),
+]
+for ax, (key, title, ylab) in zip(axes, panels):
+    for c, (i, lbl) in enumerate(zip(i_phi, phi_lbl)):
+        ax.plot(x, thermo[key][i], linewidth=2, color=f'C{c}', label=rf'$\phi={lbl}$')
+    log_kT_axis(ax, 'x')
+    ax.set_xlabel(r'$k_BT/\Delta$')
+    ax.set_ylabel(ylab)
+    ax.grid(alpha=0.3)
+    ax.legend()
+    myf.style_axis(ax, title)
+plt.tight_layout()
+plt.show()
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.2), sharex=True, sharey=True)
+for ax, key, title in [(axes[0], 'lorenz_LL', r'Local $L_{LL}/L_0$'),
+                       (axes[1], 'lorenz_LR', r'Non-local $L_{LR}/L_0$')]:
+    for c, (i, lbl) in enumerate(zip(i_phi, phi_lbl)):
+        ax.plot(x, thermo[key][i], linewidth=2, color=f'C{c}', label=rf'$\phi={lbl}$')
+    ax.axhline(1.0, color='k', linestyle=':', linewidth=1)
+    log_kT_axis(ax, 'x')
+    ax.set_xlabel(r'$k_BT/\Delta$')
+    ax.grid(alpha=0.3)
+    ax.legend()
+    myf.style_axis(ax, title + r'  (Wiedemann-Franz: 1)')
+axes[0].set_ylabel(r'$(\kappa/\kappa_0)\,/\,(G/G_0)$')
+plt.tight_layout()
+plt.show()
+
+#%% --- THERMAL CONDUCTANCE vs PHASE (several kT) ---
+j_kT = np.linspace(0, len(kT_vals) - 1, 4).astype(int)
+shades = plt.cm.Greys(np.linspace(0.4, 1.0, len(j_kT)))
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), sharex=True)
+for ax, (key, title, ylab) in zip(axes, panels):
+    for shade, j in zip(shades, j_kT):
+        ax.plot(phi_vals_th / np.pi, thermo[key][:, j], linewidth=2, color=shade,
+                label=rf'$k_BT={kT_vals[j] / p_th.delta:.2g}\Delta$')
+    ax.set_xlabel(r'$\phi/\pi$')
+    ax.set_ylabel(ylab)
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8)
+    myf.style_axis(ax, title)
+plt.tight_layout()
+plt.show()
+
+#%% --- THERMAL CONDUCTANCE MAP kappa(phi, kT) ---
+fig, axs = plt.subplots(1, 2, figsize=(13, 4.8))
+for ax, key, title in [(axs[0], 'kappa_LL', r'$\kappa_{LL}/\kappa_0$'),
+                       (axs[1], 'kappa_LR', r'$-\kappa_{LR}/\kappa_0$')]:
+    data = thermo[key] if key == 'kappa_LL' else -thermo[key]
+    cf = ax.contourf(phi_vals_th / np.pi, kT_vals / p_th.delta, data.T, levels=60, cmap='viridis')
+    fig.colorbar(cf, ax=ax, label=r'$\kappa/\kappa_0$')
+    log_kT_axis(ax, 'y')
+    ax.set_xlabel(r'$\phi/\pi$')
+    ax.set_ylabel(r'$k_BT/\Delta$')
+    myf.style_axis(ax, title)
+plt.tight_layout()
+plt.show()
+myf.print_params(p_th)
 # %%

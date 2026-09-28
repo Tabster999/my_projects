@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .hamiltonians import model_onsite, model_hop, bond_m0, make_row_hamiltonian
+from .hamiltonians import model_onsite, model_hop, region_alpha, bond_alpha, bond_m0, make_row_hamiltonian
 from .leads import Lead
 
 
@@ -12,7 +12,7 @@ def chern_number(p, N=48):
     Fukui-Hatsugai lattice method on an N x N k-grid.  Uses t_s, mu_s, delta, Bz_s, ... of p.
     """
     o = model_onsite(p, 's')
-    X, Y = model_hop(p, 'x', p.t_s, p.m0), model_hop(p, 'y', p.t_s, p.m0)
+    X, Y = model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')), model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))
     k = np.linspace(-np.pi, np.pi, N, endpoint=False)
     KX, KY = np.meshgrid(k, k, indexing='ij')
     ex, ey = np.exp(1j * KX)[..., None, None], np.exp(1j * KY)[..., None, None]
@@ -33,10 +33,10 @@ def junction_spectrum_kx(p, kx_vals, E_vals):
     z = np.asarray(E_vals) + 1j * p.eta
     z4 = z[:, None, None] * np.eye(4)[None]
     zC = z[:, None, None] * np.eye(4 * ny)[None]
-    VxC, VyC = model_hop(p, 'x', p.t_c, p.m0_c), model_hop(p, 'y', p.t_c, p.m0_c)
-    VxS, VyS = model_hop(p, 'x', p.t_s, p.m0), model_hop(p, 'y', p.t_s, p.m0)
-    VcT = model_hop(p, 'y', p.tc_top, bond_m0(p.m0, p.m0_c))
-    VcB = model_hop(p, 'y', p.tc_bot, bond_m0(p.m0, p.m0_c))
+    VxC, VyC = model_hop(p, 'x', p.t_c, p.m0_c, alpha=region_alpha(p, 'c')), model_hop(p, 'y', p.t_c, p.m0_c, alpha=region_alpha(p, 'c'))
+    VxS, VyS = model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')), model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))
+    VcT = model_hop(p, 'y', p.tc_top, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))
+    VcB = model_hop(p, 'y', p.tc_bot, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))
     A = np.zeros((len(z), len(kx_vals)))
     for n, k in enumerate(kx_vals):
         bloch = lambda h0, Vx: h0 + Vx * np.exp(1j * k) + Vx.conj().T * np.exp(-1j * k)
@@ -59,8 +59,8 @@ def ribbon_gap(p, nk=301):
     """
     from numpy.linalg import eigvalsh
     from scipy.linalg import block_diag
-    H0 = make_row_hamiltonian(p.nx, model_onsite(p, 's'), model_hop(p, 'x', p.t_s, p.m0))
-    V = block_diag(*[model_hop(p, 'y', p.t_s, p.m0)] * p.nx)
+    H0 = make_row_hamiltonian(p.nx, model_onsite(p, 's'), model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')))
+    V = block_diag(*[model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))] * p.nx)
     return min(np.min(np.abs(eigvalsh(H0 + V * np.exp(1j * k) + V.conj().T * np.exp(-1j * k))))
                for k in np.linspace(0, np.pi, nk))
 
@@ -145,3 +145,43 @@ class LocalGreen:
         G_diag = self.g0_MM + np.einsum('nij,nji->ni', self.Lft, np.linalg.solve(K, self.Rgt))
         A = (-G_diag.imag / np.pi).reshape(len(G_diag), len(self.cols), self.ny, 4)
         return A[..., :2].sum(-1), A[..., 2:].sum(-1)
+
+
+def edge_state_profile(p, k_y=0.0, n_states=2):
+    """
+    Site-resolved weight |psi(x)|^2 of the SC ribbon's n_states lowest states across its width
+    (the two Majorana edge states in the topological phase), and their decay length.
+    Returns (x, density, xi, energies); xi from |psi|^2 ~ exp(-2x/xi) between the left edge and
+    the profile minimum (np.nan if too few points).  Use a wide ribbon, e.g. replace(p, nx=200).
+    """
+    from numpy.linalg import eigh
+    from scipy.linalg import block_diag
+    H0 = make_row_hamiltonian(p.nx, model_onsite(p, 's'), model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')))
+    V = block_diag(*[model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))] * p.nx)
+    w, v = eigh(H0 + V * np.exp(1j * k_y) + V.conj().T * np.exp(-1j * k_y))
+    idx = np.argsort(np.abs(w))[:n_states]
+    dens = sum((np.abs(v[:, i])**2).reshape(p.nx, 4).sum(1) for i in idx)
+    x = np.arange(p.nx)
+    xmin = int(np.argmin(dens[:p.nx // 2 + 1]))
+    sel = (x >= 2) & (x <= max(6, xmin - 3)) & (dens > 1e-15)
+    xi = -2 / np.polyfit(x[sel], np.log(dens[sel]), 1)[0] if sel.sum() > 3 else np.nan
+    return x, dens, xi, w[idx]
+
+
+def coherence_length(p, k_y=0.0):
+    """
+    Majorana decay length xi of the SC ribbon material [sites]: the slowest evanescent solution
+    of the bulk BdG equation at E = 0 (transfer-matrix eigenvalue lambda, xi = -1/ln|lambda|).
+    Sets the edge-overlap gap ribbon_gap ~ exp(-nx/xi); rule of thumb nx >~ 12 xi at T -> 0
+    (eta = 1e-6) and >~ 7 xi at kT = 1e-3.  Diverges at topological transitions.
+    Not the BCS hbar v_F/(pi Delta), which is several times shorter here.
+    """
+    import scipy.linalg as sl
+    Vy = model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))
+    Vx = model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's'))
+    H0 = model_onsite(p, 's') + Vy * np.exp(1j * k_y) + Vy.conj().T * np.exp(-1j * k_y)
+    M = len(H0)
+    I, O = np.eye(M), np.zeros((M, M))
+    lam = sl.eig(np.block([[O, I], [-Vx.conj().T, -H0]]), np.block([[I, O], [O, Vx]]), right=False)
+    inside = np.abs(lam[np.abs(lam) < 1 - 1e-12])
+    return -1 / np.log(inside.max()) if inside.size else np.inf

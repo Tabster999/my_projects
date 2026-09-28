@@ -96,3 +96,92 @@ def total_dIdV_map(ch, E, V, dV, kT, scheme):
     Ip = eval_I_total(ch, E, V + dV, sign * (V + dV), kT)
     Im = eval_I_total(ch, E, V - dV, sign * (V - dV), kT)
     return (Ip - Im) / (2 * dV)
+
+
+# --- THERMAL TRANSPORT (all voltages zero, SC leads grounded at mu=0) ---
+#
+# Every quasiparticle at energy E (electron or hole) carries heat E, so unlike
+# the charge current there is no sgn(e/h) weight, and local Andreev reflection
+# carries no heat. Normalization matches dc_current_channels (sum over both
+# BdG sectors, no 1/2): a single perfect channel gives G/G0 = kappa/kappa0 = 2,
+# so the Lorenz ratio (kappa/kappa0)/(G/G0) is 1 for energy-independent transmission.
+
+
+def minus_dfdE(E, kT):
+    """-df/dE of the equilibrium Fermi function at mu=0 (overflow-safe)."""
+    x = np.clip(E / (2 * kT), -350, 350)
+    return 1.0 / (4 * kT * np.cosh(x) ** 2)
+
+
+def thermal_grid(kT, n=64, xmax=30.0):
+    """
+    Energy nodes and weights for the thermal integrals at temperature kT:
+    Gauss-Legendre in x = E/kT on [-xmax, xmax]. The weights (E/kT)^m (-df/dE)
+    vanish beyond |E| ~ 30 kT, so ~64 nodes replace a uniform grid that would
+    need dE << kT over the full band (tens of thousands of points at low kT).
+
+    Returns (E, wq); pass both to linear_response_coeffs(ch, E, kT, wq=wq)
+    with ch computed on exactly these energies. Check convergence by
+    comparing n and 2n: channels sharper than kT need more nodes.
+    """
+    x, w = np.polynomial.legendre.leggauss(n)
+    return kT * xmax * x, kT * xmax * w
+
+
+def nonlocal_T(ch):
+    """Total lead-to-lead transmission (EC + CAR, both BdG sectors)."""
+    return ch['ee'] + ch['hh'] + ch['eh_cross'] + ch['he_cross']
+
+
+def linear_response_coeffs(ch, E, kT, wq=None):
+    """
+    Zero-bias linear-response charge and thermal conductances for the lead
+    `ch` belongs to (L, with R the other normal lead), from one channel dict.
+
+    Returns a dict (G in e^2/h, kappa in kappa0 = pi^2 k_B^2 T / 3h):
+        G_LL, G_LR           : dI_L/dV_L, dI_L/dV_R
+        kappa_LL, kappa_LR   : dJ_L/dT_L, dJ_L/dT_R
+        kappa_LS             : kappa_LL + kappa_LR, heat into the SC ribbons
+                               (quasiparticles above the gap; ~0 for kT << Delta)
+        lorenz_LL, lorenz_LR : (kappa/kappa0)/(G/G0), = 1 under Wiedemann-Franz
+
+    G_LL uses the out_e/out_h escape channels, so unlike partial_G_vectorized
+    it also counts quasiparticle current into the SC ribbons above the gap.
+    With wq=None, E is integrated by the trapezoid rule and must resolve kT
+    (dE << kT) and extend to ~ +-15 kT. With (E, wq) from thermal_grid the
+    sums are Gauss quadratures, which is far cheaper at low kT.
+    """
+    if wq is None:
+        integrate = lambda y: np.trapezoid(y, E, axis=-1)
+    else:
+        integrate = lambda y: np.sum(wq * y, axis=-1)
+    w = minus_dfdE(E, kT)
+    w2 = (E / kT) ** 2 * w * 3 / np.pi**2
+    out = ch['out_e'] + ch['out_h']
+    lar = ch['eh_local'] + ch['he_local']
+    cross = ch['eh_cross'] + ch['he_cross'] - ch['ee'] - ch['hh']
+
+    G_LL = integrate(w * (out + 2 * lar))
+    G_LR = integrate(w * cross)
+    kappa_LL = integrate(w2 * out)
+    kappa_LR = -integrate(w2 * nonlocal_T(ch))
+    with np.errstate(divide='ignore', invalid='ignore'):
+        lorenz_LL = kappa_LL / G_LL
+        lorenz_LR = kappa_LR / G_LR
+    return {'G_LL': G_LL, 'G_LR': G_LR,
+            'kappa_LL': kappa_LL, 'kappa_LR': kappa_LR, 'kappa_LS': kappa_LL + kappa_LR,
+            'lorenz_LL': lorenz_LL, 'lorenz_LR': lorenz_LR}
+
+
+def heat_current(ch, E, kT_L, kT_R, kT_S):
+    """
+    Heat current out of lead L for arbitrary (not linearized) lead temperatures,
+    all voltages zero, in units of 1/h (energy^2). Split into the part going
+    to lead R and the part absorbed by the SC ribbons.
+    """
+    f = lambda kT: f_electron(E, 0.0, kT)
+    T_LR = nonlocal_T(ch)
+    T_LS = ch['out_e'] + ch['out_h'] - T_LR
+    J_R = np.trapezoid(E * T_LR * (f(kT_L) - f(kT_R)), E)
+    J_S = np.trapezoid(E * T_LS * (f(kT_L) - f(kT_S)), E)
+    return {'to_R': J_R, 'to_S': J_S, 'total': J_R + J_S}

@@ -33,6 +33,18 @@ Here (i) the first intermediate is G(C+L+R), broadened by the metallic normal
 leads, and (ii) the ribbons enter through g_s^-1 = z - eps_s, which stays finite.
 Verified against dense inversion and Kwant down to eta = 1e-9 (verify_solvers.py).
 
+PARAMETER SCANS OVER THE RIBBONS
+--------------------------------
+The expensive phi-independent part (normal leads + RGF through C + the boundary
+projections) never sees the ribbon Hamiltonians, only their couplings W.  For scans
+over ribbon-only parameters (mu_s, Bz_s, delta, t_s, ...) use
+
+    rgf2 = rgf.with_ribbons(FourTerminalJunction(p_new))
+
+which redoes only the ribbon decimation.  It checks (central_fingerprint) that the
+central region, normal leads, couplings, energies and eta are identical, and raises
+otherwise, so it can never silently reuse a stale solve.
+
 PHASE SWEEPS
 ------------
 Only g_T^-1 depends on phi:  g_T^-1(phi) = U^dag g_T^-1(phi_ref) U,
@@ -50,6 +62,9 @@ CONVENTIONS (slices = columns ix)
 H_slice and V come from junction.slice_blocks_x() (the same model blocks that build
 H_C), so the solver is model-agnostic and never needs the dense H_C.
 """
+
+import copy
+import hashlib
 
 import numpy as np
 from numpy.linalg import inv, solve
@@ -149,6 +164,27 @@ def _g0_on_subspace(z, H_slice, V, Sigma_ends, sub):
     return g0
 
 
+def central_fingerprint(junction, E_sweep):
+    """
+    Hash of everything the phi- and ribbon-independent RGF part depends on: central
+    slice blocks, normal leads, ribbon<->centre couplings, energies, eta and the lead
+    numerics.  Equal fingerprints -> RGFFourTerminal.with_ribbons may reuse the solve.
+    """
+    p = junction.p
+    H_slice, V = junction.slice_blocks_x()
+    parts = [H_slice, V, np.atleast_1d(np.asarray(E_sweep, dtype=float)),
+             np.array([p.eta, p.tol, p.max_iter, p.lead_refine, p.nx, p.ny], dtype=float)]
+    for lead in (junction.lead_L, junction.lead_R):
+        parts += [lead.H_onsite, lead.V_hop, lead.V_coupling]
+    parts += [junction.ribbon_top.V_coupling, junction.ribbon_bot.V_coupling]
+    h = hashlib.sha1()
+    for a in parts:
+        a = np.ascontiguousarray(a)
+        h.update(str(a.shape).encode())
+        h.update(a.tobytes())
+    return h.hexdigest()
+
+
 # ---------------------------------------------------------------------------
 #  main solver
 # ---------------------------------------------------------------------------
@@ -189,6 +225,23 @@ class RGFFourTerminal:
 
         self._build_static()
         self._run_rgf()
+        self._attach_ribbons()
+        self.fingerprint = central_fingerprint(junction, self.E_sweep)
+
+    def with_ribbons(self, junction):
+        """
+        Same central solve, new SC ribbons: a copy of this solver for `junction`, which
+        may differ from the original ONLY in ribbon parameters (mu_s, Bz_s, delta, t_s,
+        m0, ...).  Costs one ribbon decimation instead of a full setup.  Raises
+        ValueError if anything the central solve depends on has changed.
+        """
+        if central_fingerprint(junction, self.E_sweep) != self.fingerprint:
+            raise ValueError("with_ribbons: central region, normal leads, couplings, energies "
+                             "or eta differ from the cached solve; build a new RGFFourTerminal")
+        new = copy.copy(self)
+        new.junction, new.p = junction, junction.p
+        new._attach_ribbons()
+        return new
 
     # ---------------- static blocks ----------------
     def _build_static(self):
@@ -224,7 +277,6 @@ class RGFFourTerminal:
         z = self.E_sweep + 1j * p.eta
         zb = z[:, None, None]
         zN = zb * np.eye(4 * ny, dtype=complex)[None]
-        zS = zb * np.eye(4 * nx, dtype=complex)[None]
 
         Sigma_L = J.lead_L.self_energy(zN)
         Sigma_R = J.lead_R.self_energy(zN)
@@ -232,14 +284,6 @@ class RGFFourTerminal:
         self.Gamma_R = 1j * (Sigma_R - Sigma_R.conj().transpose(0, 2, 1))
 
         top_ref = J._make_ribbon(self.phi_ref, p.tc_top, is_bot=False)
-        bot = J.ribbon_bot
-        if np.array_equal(top_ref.H_onsite, bot.H_onsite) and np.array_equal(top_ref.V_hop, bot.V_hop):
-            # same ribbon, opposite growth direction: one Sancho-Rubio run gives both surfaces
-            eps_bot, eps_top = surface_eps_pair(bot.H_onsite, bot.V_hop, zS, p, 'sc ribbons')
-        else:
-            eps_top, eps_bot = top_ref.surface_eps(zS), bot.surface_eps(zS)
-        self.gT_inv_ref = zS - eps_top
-        self.gB_inv = zS - eps_bot
         W = block_diag(top_ref.V_coupling, J.ribbon_bot.V_coupling)       # H_{s,C}, (8nx, 8nx)
         Wd = W.conj().T
 
@@ -263,6 +307,21 @@ class RGFFourTerminal:
             self.Lft[s:e] = blk(g0, Q, P) @ Wd
             self.Rgt[s:e] = W @ blk(g0, P, Q)
             self.Cpp[s:e] = W @ blk(g0, P, P) @ Wd
+
+    # ---------------- ribbon part (the only piece that sees mu_s, Bz_s, delta, ...) ----------------
+    def _attach_ribbons(self):
+        p, J = self.p, self.junction
+        z = self.E_sweep + 1j * p.eta
+        zS = z[:, None, None] * np.eye(4 * self.nx, dtype=complex)[None]
+        top_ref = J._make_ribbon(self.phi_ref, p.tc_top, is_bot=False)
+        bot = J.ribbon_bot
+        if np.array_equal(top_ref.H_onsite, bot.H_onsite) and np.array_equal(top_ref.V_hop, bot.V_hop):
+            # same ribbon, opposite growth direction: one Sancho-Rubio run gives both surfaces
+            eps_bot, eps_top = surface_eps_pair(bot.H_onsite, bot.V_hop, zS, p, 'sc ribbons')
+        else:
+            eps_top, eps_bot = top_ref.surface_eps(zS), bot.surface_eps(zS)
+        self.gT_inv_ref = zS - eps_top
+        self.gB_inv = zS - eps_bot
 
     # ---------------- per-phi part ----------------
     def _gT_inv(self, phi):

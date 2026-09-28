@@ -44,6 +44,11 @@ class Params:
     theta_z: float = 0.0    # in-plane Zeeman angle, central region + SC ribbons
     theta_z_n: float = 0.0  # in-plane Zeeman angle, normal leads
     Bz_s: float = 0.0       # out-of-plane Zeeman in SC ribbons (= Z in Gresta et al.)
+    # optional per-region overrides (None = use the global value above)
+    alpha_c: float = None   # Rashba in the central region
+    alpha_n: float = None   # Rashba in the normal leads
+    alpha_s: float = None   # Rashba in the SC ribbons
+    Bz_n: float = None      # out-of-plane Zeeman in the normal leads (default: Bz)
 
     # --- Wilson masses (model='dirac' only); paper: all 0.8, appendix: m0_c = m0_n = 0 ---
     m0: float = 0.8         # SC ribbons

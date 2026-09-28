@@ -40,7 +40,7 @@ from my_functions import leads
 p_base = myf.Params(
     model='rashba', nx=85, ny=20, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=-0.05, t_s=1.0, mu_s=0.05,
     delta=0.25, phi=np.pi, tc_top=1.0, tc_bot=1.0, tc_barr=1.0,
-    alpha=1.2, Bz=0.0, Bxy=0.0, Bz_s=0.7, eta=2e-5, kT = 0.0       # nx 120 -> 80, Bz_s 0.7 -> 0.6, eta 1e-5 -> 1e-6
+    alpha=1.2, Bz=0.0, Bxy=0.0, Bz_s=0.7, eta=2e-5, kT = 0.0 
 )
 KT = 0.0                     # 0 -> T -> 0 limit; e.g. 1e-3 -> finite temperature (16 energies/point)
 MAX_SECONDS = None             # e.g. 250 to stop the map early and resume on the next run

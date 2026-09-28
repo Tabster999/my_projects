@@ -12,9 +12,10 @@ params        : Params dataclass holding all physical/numerical parameters
 hamiltonians  : onsite/hopping block builders, lattice assembly, index helpers
 leads         : Lead class (Sancho-Rubio surface Green's function + self-energy)
 junction      : FourTerminalJunction class (assembles H_C, leads, channels())
-transport     : Fermi functions, dc currents, conductance matrix, bias maps
+transport     : Fermi functions, dc currents, conductance matrix, bias maps,
+                linear-response thermal conductance and heat currents
 plotting      : shared plot styling helpers
-analysis      : phase/bias map + parameter-grid scan utilities
+analysis      : phase/bias maps, thermal (phi, kT) sweeps, parameter-grid scans
 
 Typical usage
 -------------
@@ -36,7 +37,7 @@ from .hamiltonians import (
     flat_site_idx,
 )
 from .leads import Lead
-from .junction import FourTerminalJunction
+from .junction import FourTerminalJunction, lead_escape
 from .transport import (
     f_electron,
     f_hole,
@@ -46,11 +47,17 @@ from .transport import (
     partial_G_vectorized,
     eval_I_total,
     total_dIdV_map,
+    minus_dfdE,
+    thermal_grid,
+    nonlocal_T,
+    linear_response_coeffs,
+    heat_current,
 )
 from .plotting import style_axis, print_params
 from .fast_phase_sweep import FastPhaseSweep
 from .analysis import (
     compute_phase_bias_maps,
+    compute_thermal_vs_phi,
     summarize_map,
     scan_grid,
     plot_grid_thumbnails,
@@ -75,10 +82,17 @@ __all__ = [
     "partial_G_vectorized",
     "eval_I_total",
     "total_dIdV_map",
+    "minus_dfdE",
+    "thermal_grid",
+    "nonlocal_T",
+    "linear_response_coeffs",
+    "heat_current",
+    "lead_escape",
     "style_axis",
     "print_params",
     "FastPhaseSweep",
     "compute_phase_bias_maps",
+    "compute_thermal_vs_phi",
     "summarize_map",
     "scan_grid",
     "plot_grid_thumbnails",
