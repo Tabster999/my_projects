@@ -113,12 +113,27 @@ def minus_dfdE(E, kT):
     return 1.0 / (4 * kT * np.cosh(x) ** 2)
 
 
+def thermal_grid(kT, n=64, xmax=30.0):
+    """
+    Energy nodes and weights for the thermal integrals at temperature kT:
+    Gauss-Legendre in x = E/kT on [-xmax, xmax]. The weights (E/kT)^m (-df/dE)
+    vanish beyond |E| ~ 30 kT, so ~64 nodes replace a uniform grid that would
+    need dE << kT over the full band (tens of thousands of points at low kT).
+
+    Returns (E, wq); pass both to linear_response_coeffs(ch, E, kT, wq=wq)
+    with ch computed on exactly these energies. Check convergence by
+    comparing n and 2n: channels sharper than kT need more nodes.
+    """
+    x, w = np.polynomial.legendre.leggauss(n)
+    return kT * xmax * x, kT * xmax * w
+
+
 def nonlocal_T(ch):
     """Total lead-to-lead transmission (EC + CAR, both BdG sectors)."""
     return ch['ee'] + ch['hh'] + ch['eh_cross'] + ch['he_cross']
 
 
-def linear_response_coeffs(ch, E, kT):
+def linear_response_coeffs(ch, E, kT, wq=None):
     """
     Zero-bias linear-response charge and thermal conductances for the lead
     `ch` belongs to (L, with R the other normal lead), from one channel dict.
@@ -132,18 +147,24 @@ def linear_response_coeffs(ch, E, kT):
 
     G_LL uses the out_e/out_h escape channels, so unlike partial_G_vectorized
     it also counts quasiparticle current into the SC ribbons above the gap.
-    E must resolve kT (dE << kT) and extend to ~ +-15 kT.
+    With wq=None, E is integrated by the trapezoid rule and must resolve kT
+    (dE << kT) and extend to ~ +-15 kT. With (E, wq) from thermal_grid the
+    sums are Gauss quadratures, which is far cheaper at low kT.
     """
+    if wq is None:
+        integrate = lambda y: np.trapezoid(y, E, axis=-1)
+    else:
+        integrate = lambda y: np.sum(wq * y, axis=-1)
     w = minus_dfdE(E, kT)
     w2 = (E / kT) ** 2 * w * 3 / np.pi**2
     out = ch['out_e'] + ch['out_h']
     lar = ch['eh_local'] + ch['he_local']
     cross = ch['eh_cross'] + ch['he_cross'] - ch['ee'] - ch['hh']
 
-    G_LL = np.trapezoid(w * (out + 2 * lar), E, axis=-1)
-    G_LR = np.trapezoid(w * cross, E, axis=-1)
-    kappa_LL = np.trapezoid(w2 * out, E, axis=-1)
-    kappa_LR = -np.trapezoid(w2 * nonlocal_T(ch), E, axis=-1)
+    G_LL = integrate(w * (out + 2 * lar))
+    G_LR = integrate(w * cross)
+    kappa_LL = integrate(w2 * out)
+    kappa_LR = -integrate(w2 * nonlocal_T(ch))
     with np.errstate(divide='ignore', invalid='ignore'):
         lorenz_LL = kappa_LL / G_LL
         lorenz_LR = kappa_LR / G_LR

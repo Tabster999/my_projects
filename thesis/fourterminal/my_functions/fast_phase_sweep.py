@@ -173,7 +173,7 @@ class FastPhaseSweep:
         Gamma_Rhs = sub(self.Gamma_R, h_idx, h_idx)
 
         def side(name):
-            G = G_RL if name == 'left' else G_LR
+            G = G_LR if name == 'left' else G_RL   # Caroli: Tr[Gamma_own G_own,other Gamma_other G^dag]
             G_self = G_LL if name == 'left' else G_RR
             Gamma_own_e = Gamma_Les if name == 'left' else Gamma_Res
             Gamma_own_h = Gamma_Lhs if name == 'left' else Gamma_Rhs

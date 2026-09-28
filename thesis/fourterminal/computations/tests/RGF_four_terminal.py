@@ -417,10 +417,10 @@ class RGFFourTerminal:
 
         def side(name):
             if name == 'left':
-                G, G_self = G_RL, G_LL
+                G, G_self = G_LR, G_LL
                 own_e, own_h, oth_e, oth_h = Ge_L, Gh_L, Ge_R, Gh_R
             else:
-                G, G_self = G_LR, G_RR
+                G, G_self = G_RL, G_RR
                 own_e, own_h, oth_e, oth_h = Ge_R, Gh_R, Ge_L, Gh_L
 
             G_ee, G_hh = sub_(G, e_idx, e_idx), sub_(G, h_idx, h_idx)

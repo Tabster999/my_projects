@@ -177,12 +177,14 @@ class FourTerminalJunction:
             return np.trace(G1 @ B1 @ G2 @ B2, axis1=1, axis2=2).real
 
         #GaL is the lead under consideration. GaO is the other lead. So if we are considering the left lead, GaL = Gamma_L and GaO = Gamma_R.
+        # Caroli: T_{L<-R} = Tr[Gamma_L G^r_LR Gamma_R (G^r_LR)^dag], and (G^r_LR)^dag = G^a_RL. Using G^r_RL
+        # instead only agrees without spin-orbit coupling (with Rashba it gives negative 'transmissions').
         def side(name):
             if name == 'left':
-                GL, GLA, GaL, GaO = G_RL, G_RL_A, Gamma_L, Gamma_R
+                GL, GLA, GaL, GaO = G_LR, G_RL_A, Gamma_L, Gamma_R
                 GLL, GLLA, GaLL = G_LL, G_LL_A, Gamma_L
             else:
-                GL, GLA, GaL, GaO = G_LR, G_LR_A, Gamma_R, Gamma_L
+                GL, GLA, GaL, GaO = G_RL, G_LR_A, Gamma_R, Gamma_L
                 GLL, GLLA, GaLL = G_RR, G_RR_A, Gamma_R
             return {
                 "ee": T(e(GaL), e(GL), e(GaO), e(GLA)),
