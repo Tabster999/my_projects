@@ -163,6 +163,37 @@ def linear_response_nodes(kT, n=16, x_max=10.0):
     return x * kT, (3 / np.pi**2) * kernel * x**2, kernel
  
  
+def linear_response_nodes_phs(kT, n=16, x_max=10.0):
+    """
+    Half the energies of linear_response_nodes, using particle-hole symmetry.
+
+    BdG gives T_ee(-E) = T_hh(E) and T_he(-E) = T_eh(E) (exact, checked to 1e-12 with
+    Rashba, in-plane and out-of-plane Zeeman at arbitrary phi), and the Gauss rule is
+    symmetric, so only the n/2 nodes E > 0 are needed:
+
+        kappa/kappa0 = sum_i w_th[i] * (T_ee + T_he + T_hh + T_eh)(E_i)
+        G/G0         = sum_i w_el[i] * (T_ee - T_he + T_hh - T_eh)(E_i)
+
+    (use thermal_from_channels_phs).  Weights are those of linear_response_nodes at the
+    same nodes.  kT = 0 returns the single node E = 0 with weights 1/2, so the same sums
+    give T_th(0) and T_el(0).  n must be even (an odd rule has a node at E = 0).
+    """
+    if kT == 0:
+        return np.zeros(1), np.full(1, 0.5), np.full(1, 0.5)
+    if n % 2:
+        raise ValueError("n must be even for the particle-hole-symmetric rule")
+    E, w_th, w_el = linear_response_nodes(kT, n, x_max)
+    pos = E > 0
+    return E[pos], w_th[pos], w_el[pos]
+
+
+def thermal_from_channels_phs(ch, w_th, w_el):
+    """(kappa/kappa0, G/G0) from channels at the nodes of linear_response_nodes_phs."""
+    ee, hh = np.asarray(ch['ee']), np.asarray(ch['hh'])
+    he, eh = np.asarray(ch['he_cross']), np.asarray(ch['eh_cross'])
+    return float(np.dot(w_th, ee + he + hh + eh)), float(np.dot(w_el, ee - he + hh - eh))
+
+
 def kappa_nodes(kT, n=16, x_max=10.0):
     """Energies and thermal weights only (see linear_response_nodes)."""
     E, w_th, _ = linear_response_nodes(kT, n, x_max)

@@ -18,7 +18,8 @@ leads            : Lead (Sancho-Rubio surface GF, self-consistency check + Newto
 junction         : FourTerminalJunction (geometry, leads, dense channels() reference)
 rgf              : RGFFourTerminal (fast, robust; use this for large systems and maps)
 fast_phase_sweep : FastPhaseSweep (dense, cheap phase updates; small systems)
-transport        : Fermi functions, currents, conductances
+transport        : Fermi functions, currents, conductances, linear-response nodes
+scans            : fast parallel (kappa, G) parameter scans (PHS-halved energies, central-solve reuse)
 spectra          : bulk Chern number, SC-ribbon gap, junction spectrum with PBC in x
 plotting, analysis : helpers
 """
@@ -30,13 +31,15 @@ from .hamiltonians import (
 )
 from .leads import Lead
 from .junction import FourTerminalJunction
-from .rgf import RGFFourTerminal
+from .rgf import RGFFourTerminal, central_fingerprint
 from .fast_phase_sweep import FastPhaseSweep
 from .transport import (
     f_electron, f_hole, dc_current_channels, other_name, conductance_matrix,
     partial_G_vectorized, eval_I_total, total_dIdV_map, linear_response_nodes, kappa_nodes, kappa_from_channels,
+    linear_response_nodes_phs, thermal_from_channels_phs,
 )
 from .plotting import style_axis, print_params, param_title
+from .scans import thermal_point, thermal_scan, make_pool
 from .spectra import chern_number, junction_spectrum_kx, ribbon_gap
 from .analysis import (
     compute_phase_bias_maps, summarize_map, scan_grid, plot_grid_thumbnails, plot_summary_trends,
