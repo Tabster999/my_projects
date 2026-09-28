@@ -30,8 +30,6 @@ Both are exact (not approximations) given converged decimation.
 
 import numpy as np
 from scipy.linalg import solve as batched_solve
-from .hamiltonians import onsite_block, Vx, Vy, make_row_hamiltonian
-from scipy.linalg import block_diag
 
 
 class FastPhaseSweep:
@@ -68,7 +66,7 @@ class FastPhaseSweep:
         Sigma_b = junction.ribbon_bot.self_energy(z_lead_SC)
 
         # --- Top self-energy at the reference phase (one decimation) ---
-        ribbon_top_ref = self._make_ribbon(phi_ref, p.tc_top)
+        ribbon_top_ref = junction._make_ribbon(phi_ref, p.tc_top, is_bot=False)   # same builder as the junction
         Sigma_t_ref = ribbon_top_ref.self_energy(z_lead_SC)   # shape (N_E, 4nx, 4nx)
         self.Sigma_t_ref = Sigma_t_ref
         self.phi_ref = phi_ref
@@ -119,15 +117,6 @@ class FastPhaseSweep:
         h_idx = np.where(np.tile([False, False, True, True], ny))[0]
         self.e_idx, self.h_idx = e_idx, h_idx
 
-    def _make_ribbon(self, phi_lead, tc):
-        from .leads import Lead
-        p = self.p
-        onsite_SC = onsite_block(p.t_s, p.mu_s, delta=p.delta, phi=phi_lead, twod=True)
-        H_intra = make_row_hamiltonian(p.nx, onsite_SC, Vx(p.t_s))
-        H_inter = block_diag(*([Vy(p.t_s)] * p.nx))
-        V_coupling = block_diag(*([Vy(tc)] * p.nx))
-        return Lead('ribbon', H_intra, H_inter, V_coupling, p, br=False)
-
     def _gauge_matrix(self, phi):
         u_site = np.array([1.0, 1.0, np.exp(1j * phi), np.exp(1j * phi)])
         u_full = np.tile(u_site, self.nx)
@@ -172,7 +161,7 @@ class FastPhaseSweep:
         Gamma_Rhs = sub(self.Gamma_R, h_idx, h_idx)
 
         def side(name):
-            G = G_RL if name == 'left' else G_LR
+            G = G_LR if name == 'left' else G_RL      # G^R_{ij}, i = this lead
             G_self = G_LL if name == 'left' else G_RR
             Gamma_own_e = Gamma_Les if name == 'left' else Gamma_Res
             Gamma_own_h = Gamma_Lhs if name == 'left' else Gamma_Rhs

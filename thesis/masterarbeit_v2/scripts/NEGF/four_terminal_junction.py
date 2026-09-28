@@ -11,7 +11,7 @@ def self_energy(g_surf, V_coupling):
     return V_coupling @ g_surf @ V_coupling.conj().T
 
 def gamma_from_self_energy(Sigma):
-    return -2.0 * np.imag(Sigma)
+    return 1j * (Sigma - Sigma.conj().T)
 
 def make_block_diagonal(block_4x4, ny):
     """ny copies of a 4×4 block on the diagonal."""
@@ -175,8 +175,8 @@ def compute_all_channels(E_sweep, sys):
     GA          =   GR.conj().transpose(0, 2, 1)
 
     # 4. Compute Gamma matrices
-    Gamma_L = -2.0 * np.imag(Sigma_l)
-    Gamma_R = -2.0 * np.imag(Sigma_r)
+    Gamma_L = 1j * (Sigma_l - Sigma_l.conj().T)
+    Gamma_R = 1j * (Sigma_r - Sigma_r.conj().T)
 
     # 5. Extract Green's function for the left and right interfaces
     G_LR = GR[:, :4, -4:]   ;   G_LR_A = GA[:, -4:, :4]

@@ -99,7 +99,7 @@ class Lead:
     def gamma(self, E):
         """Gamma_l(E) = i[Sigma_l^r - Sigma_l^a] = -2 Im(Sigma_l^r), in central-region space."""
         sigma_r = self.self_energy(E)
-        return -2.0 * np.imag(sigma_r)
+        return 1j * (sigma_r - sigma_r.conj().T)
 
 
 # CentralRegion: arbitrary H_C coupled to an arbitrary list of Leads

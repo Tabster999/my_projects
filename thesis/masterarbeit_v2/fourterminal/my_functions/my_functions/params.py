@@ -35,7 +35,7 @@ class Params:
     Bz: float = 0.0       # out-of-plane Zeeman
     Bxy: float = 0.0      # in-plane Zeeman magnitude
     theta_z: float = 0.0  # in-plane Zeeman angle
-
+    Bz_s: float = 0.0     # out-of-plane Zeeman in SC ribbonn
     # --- numerics ---
     eta: float = 1e-5
     max_iter: int = 450
