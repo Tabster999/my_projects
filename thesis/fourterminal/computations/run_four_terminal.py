@@ -1,6 +1,7 @@
 #%% --- IMPORTS ---
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 from tqdm import tqdm
 from dataclasses import replace
 import os
@@ -399,6 +400,15 @@ phi_show = [0.0, np.pi / 2, np.pi]
 i_phi = [np.argmin(np.abs(phi_vals_th - ph)) for ph in phi_show]
 phi_lbl = ['0', r'\pi/2', r'\pi']
 x = kT_vals / p_th.delta
+kT_ticks = [0.02, 0.05, 0.1, 0.2, 0.5]
+
+def log_kT_axis(ax, which='x'):
+    """Log kT axis with plain major labels only (default minor labels collide)."""
+    getattr(ax, f'set_{which}scale')('log')
+    axis = getattr(ax, f'{which}axis')
+    axis.set_ticks(kT_ticks)
+    axis.set_major_formatter(mticker.FormatStrFormatter('%g'))
+    axis.set_minor_formatter(mticker.NullFormatter())
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), sharex=True)
 panels = [
@@ -409,7 +419,7 @@ panels = [
 for ax, (key, title, ylab) in zip(axes, panels):
     for c, (i, lbl) in enumerate(zip(i_phi, phi_lbl)):
         ax.plot(x, thermo[key][i], linewidth=2, color=f'C{c}', label=rf'$\phi={lbl}$')
-    ax.set_xscale('log')
+    log_kT_axis(ax, 'x')
     ax.set_xlabel(r'$k_BT/\Delta$')
     ax.set_ylabel(ylab)
     ax.grid(alpha=0.3)
@@ -424,7 +434,7 @@ for ax, key, title in [(axes[0], 'lorenz_LL', r'Local $L_{LL}/L_0$'),
     for c, (i, lbl) in enumerate(zip(i_phi, phi_lbl)):
         ax.plot(x, thermo[key][i], linewidth=2, color=f'C{c}', label=rf'$\phi={lbl}$')
     ax.axhline(1.0, color='k', linestyle=':', linewidth=1)
-    ax.set_xscale('log')
+    log_kT_axis(ax, 'x')
     ax.set_xlabel(r'$k_BT/\Delta$')
     ax.grid(alpha=0.3)
     ax.legend()
@@ -457,7 +467,7 @@ for ax, key, title in [(axs[0], 'kappa_LL', r'$\kappa_{LL}/\kappa_0$'),
     data = thermo[key] if key == 'kappa_LL' else -thermo[key]
     cf = ax.contourf(phi_vals_th / np.pi, kT_vals / p_th.delta, data.T, levels=60, cmap='viridis')
     fig.colorbar(cf, ax=ax, label=r'$\kappa/\kappa_0$')
-    ax.set_yscale('log')
+    log_kT_axis(ax, 'y')
     ax.set_xlabel(r'$\phi/\pi$')
     ax.set_ylabel(r'$k_BT/\Delta$')
     myf.style_axis(ax, title)
