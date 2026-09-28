@@ -2,43 +2,25 @@
 
 import numpy as np
 from numpy.linalg import inv
+from scipy.linalg import lu_factor, lu_solve
 from scipy.linalg import block_diag
 
 from .hamiltonians import onsite_block, Vx, Vy, make_row_hamiltonian, get_2d_hamiltonian, flat_site_idx
 from .leads import Lead
 
 
-def lead_escape(G_self, Gamma, e_idx, h_idx):
+def normal_lead_blocks(p):
     """
-    Total transmission from a normal lead's electron / hole channels into ALL
-    other terminals (the other normal lead AND the SC ribbons), from the local
-    block G_self = G^r at the lead's own attachment sites only:
-
-        out_a = Tr[Gamma_a A_aa] - Tr[Gamma_a G_aa Gamma_a G_aa^dag] - Tr[Gamma_a G_ab Gamma_b G_ab^dag]
-
-    with A = i(G^r - G^a), a in {e, h}, b the opposite. This is unitarity
-    (N_a - R_aa - R_ab) written with G^r Gamma_tot G^a = A, so it is exact up
-    to an O(eta) leak. Above the gap it includes quasiparticle transmission
-    into the SC ribbons, which the ee/eh_cross channels do not.
+    Blocks of the semi-infinite L/R normal leads: (onsite, intra-layer H, inter-layer V).
+    Single source of truth -- anything that needs the lead Hamiltonian (junction assembly,
+    channel counting, diagnostics) must call this, so the pieces cannot drift apart.
     """
-    def sub(M, r, c):
-        return M[:, r[:, None], c[None, :]]
-
-    def dagger(M):
-        return M.conj().transpose(0, 2, 1)
-
-    def T(G1, B1, G2, B2):
-        return np.trace(G1 @ B1 @ G2 @ B2, axis1=1, axis2=2).real
-
-    out = {}
-    for key, a, b in (('out_e', e_idx, h_idx), ('out_h', h_idx, e_idx)):
-        Gam_a, Gam_b = sub(Gamma, a, a), sub(Gamma, b, b)
-        G_aa, G_ab = sub(G_self, a, a), sub(G_self, a, b)
-        A_aa = 1j * (G_aa - dagger(G_aa))
-        out[key] = (np.trace(Gam_a @ A_aa, axis1=1, axis2=2).real
-                    - T(Gam_a, G_aa, Gam_a, dagger(G_aa))
-                    - T(Gam_a, G_ab, Gam_b, dagger(G_ab)))
-    return out
+    soc_n = (p.alpha, p.beta) if p.soc_in_n else (0.0, 0.0)
+    onsite_N = onsite_block(p.t_n, p.mu_n, Bz=p.Bz, Bxy=p.Bxy, theta_z=p.theta_z,
+                            alpha=soc_n[0], beta=soc_n[1], twod=True)
+    H_layer = make_row_hamiltonian(p.ny, onsite_N, Vy(p.t_n, *soc_n))
+    V_hop = block_diag(*[Vx(p.t_n, *soc_n)] * p.ny)
+    return onsite_N, H_layer, V_hop
 
 
 class FourTerminalJunction:
@@ -61,16 +43,13 @@ class FourTerminalJunction:
         self.H_C = get_2d_hamiltonian(nx, ny, onsite_C, Vx(p.t_c, p.alpha, p.beta),
                                        Vy(p.t_c, p.alpha, p.beta))
 
-        onsite_N = onsite_block(p.t_n, p.mu_n, Bz=p.Bz, Bxy=p.Bxy, theta_z=p.theta_z,
-                                 alpha=p.alpha, beta=p.beta, twod=True)
-        H_layer_N = make_row_hamiltonian(ny, onsite_N, Vy(p.t_n, p.alpha, p.beta))
-        V_n = block_diag(*[Vx(p.t_n, p.alpha, p.beta)] * ny)
-        V_coupling_LR = block_diag(*[Vx(p.tc_barr)] * ny)
+        _, H_layer_N, V_n = normal_lead_blocks(p)
+        V_coupling_LR = block_diag(*[self._bond(Vx, p.tc_barr)] * ny)
 
-        self.lead_L = Lead('L', H_layer_N, V_n, V_coupling_LR, p, br=False)
+        self.lead_L = Lead('L', H_layer_N, V_n, V_coupling_LR, p, br=False, dual=True)
         self.lead_R = Lead('R', H_layer_N, V_n, V_coupling_LR, p, br=True)
         self.ribbon_top = self._make_ribbon(p.phi, p.tc_top)
-        self.ribbon_bot = self._make_ribbon(0, p.tc_bot)
+        self.ribbon_bot = self._make_ribbon(0, p.tc_bot, is_bot=True)
         self.chain_top = self._make_single_chain(p.phi, is_bot=False)
         self.chain_bot = self._make_single_chain(0, is_bot=True)
 
@@ -79,30 +58,41 @@ class FourTerminalJunction:
         self.idx_L = flat_site_idx(left_sites)
         self.idx_R = flat_site_idx(right_sites)
 
+    def _bond(self, V, tc):
+        """
+        Bond C <-> lead.  soc_bonds=False: pure hopping V(tc) (old behaviour).
+        soc_bonds=True : the uniform-lattice bond V(t_c, alpha, beta) scaled as a whole
+                         by tc/t_c, so tc = t_c means 'no barrier' and tc = 0 decouples
+                         exactly (V(tc, alpha, beta) would keep the full SOC at tc = 0).
+        """
+        p = self.p
+        if not p.soc_bonds:
+            return V(tc)
+        return (tc / p.t_c) * V(p.t_c, p.alpha, p.beta)
+
     def _make_ribbon(self, phi_lead, tc, is_bot=False):
         p = self.p
-        onsite_SC = onsite_block(p.t_s, p.mu_s, delta=p.delta, phi=phi_lead, twod=True)
-        H_intra = make_row_hamiltonian(p.nx, onsite_SC, Vx(p.t_s))
-        H_inter = block_diag(*([Vy(p.t_s)] * p.nx))
-        V_coupling = block_diag(*([Vy(tc)] * p.nx))
+        soc_s = (p.alpha, p.beta) if p.soc_in_sc else (0.0, 0.0)
+        onsite_SC = onsite_block(p.t_s, p.mu_s, delta=p.delta, phi=phi_lead, Bz=p.Bz_s, alpha=soc_s[0], beta=soc_s[1], twod=True)
+        H_intra = make_row_hamiltonian(p.nx, onsite_SC, Vx(p.t_s, *soc_s))
+        H_inter = block_diag(*([Vy(p.t_s, *soc_s)] * p.nx))
+        V_coupling = block_diag(*([self._bond(Vy, tc)] * p.nx))
         name = 'sc_bot' if is_bot else 'sc_top'
-        return Lead(name, H_intra, H_inter, V_coupling, p, br=is_bot)
+        return Lead(name, H_intra, H_inter, V_coupling, p, br=is_bot, dual=not is_bot)
 
     def _make_single_chain(self, phi_lead, is_bot=False):
+        """One independent 1D SC chain per column (used when channels(is_ribbon=False)).
+        Same Zeeman / SOC / bond conventions as _make_ribbon; only the intra-lead x-hopping
+        is dropped, which is what makes the chains independent."""
         p = self.p
-        onsite_sc = onsite_block(p.t_s, p.mu_s, delta=p.delta, phi=phi_lead, Bz=0.0, Bxy=0.0, theta_z=0.0, alpha=0.0, beta=0.0, twod=False)
-        hop_y = Vy(p.t_s, alpha=0.0, beta=0.0)
+        soc_s = (p.alpha, p.beta) if p.soc_in_sc else (0.0, 0.0)
+        onsite_sc = onsite_block(p.t_s, p.mu_s, delta=p.delta, phi=phi_lead, Bz=p.Bz_s,
+                                 alpha=soc_s[0], beta=soc_s[1], twod=False)
+        hop_y = Vy(p.t_s, *soc_s)
         tc = p.tc_bot if is_bot else p.tc_top
-        hop_c = Vy(tc)
+        hop_c = self._bond(Vy, tc)
         name = 'sc_bot' if is_bot else 'sc_top'
-        return Lead(name, onsite_sc, hop_y, hop_c, p, br=False)
-
-    def _z_batches(self, E_sweep):
-        p = self.p
-        dim = 4 * p.nx * p.ny
-        z1 = (E_sweep + 1j * p.eta)[:, None, None] * np.eye(4 * p.ny, dtype=complex)[None, :, :]
-        zN = (E_sweep + 1j * p.eta)[:, None, None] * np.eye(dim, dtype=complex)[None, :, :]
-        return z1, zN
+        return Lead(name, onsite_sc, hop_y, hop_c, p, br=is_bot, dual=not is_bot)
 
     def channels(self, E_sweep, side_name=None, precompute_sigmas_n=None, is_ribbon=True):
         """
@@ -177,14 +167,12 @@ class FourTerminalJunction:
             return np.trace(G1 @ B1 @ G2 @ B2, axis1=1, axis2=2).real
 
         #GaL is the lead under consideration. GaO is the other lead. So if we are considering the left lead, GaL = Gamma_L and GaO = Gamma_R.
-        # Caroli: T_{L<-R} = Tr[Gamma_L G^r_LR Gamma_R (G^r_LR)^dag], and (G^r_LR)^dag = G^a_RL. Using G^r_RL
-        # instead only agrees without spin-orbit coupling (with Rashba it gives negative 'transmissions').
         def side(name):
             if name == 'left':
-                GL, GLA, GaL, GaO = G_LR, G_RL_A, Gamma_L, Gamma_R
+                GL, GLA, GaL, GaO = G_LR, G_RL_A, Gamma_L, Gamma_R   # Tr[Γ_L G_LR Γ_R (G_LR)^†]
                 GLL, GLLA, GaLL = G_LL, G_LL_A, Gamma_L
             else:
-                GL, GLA, GaL, GaO = G_RL, G_LR_A, Gamma_R, Gamma_L
+                GL, GLA, GaL, GaO = G_RL, G_LR_A, Gamma_R, Gamma_L   # Tr[Γ_R G_RL Γ_L (G_RL)^†]
                 GLL, GLLA, GaLL = G_RR, G_RR_A, Gamma_R
             return {
                 "ee": T(e(GaL), e(GL), e(GaO), e(GLA)),
@@ -193,7 +181,6 @@ class FourTerminalJunction:
                 "he_cross": T(h(GaL), he(GL), e(GaO), eh(GLA)),
                 "eh_local": T(e(GaLL), eh(GLL), h(GaLL), he(GLLA)),
                 "he_local": T(h(GaLL), he(GLL), e(GaLL), eh(GLLA)),
-                **lead_escape(GLL, GaLL, e_idx, h_idx),
             }
 
         if side_name is None:
@@ -203,3 +190,49 @@ class FourTerminalJunction:
         if side_name == 'right':
             return side('right')
         raise ValueError(f"Invalid side_name: {side_name}. Must be 'left', 'right', or None.")
+
+    def thermal_T0(self, E=0.0, precompute_sigmas_n=None):
+        """
+        T -> 0 thermal / nonlocal electrical transmission at ONE energy (Gresta Eqs. 9-10):
+            T_th = T^ee_RL + T^he_RL ,   T_el = T^ee_RL - T^he_RL .
+        Same physics as thermal_electrical_T0(self.channels(E, 'right')), but one LU and only
+        the 2*ny electron columns of lead L are solved (~3x faster, no dense inverse).
+
+        precompute_sigmas_n : (Sigma_L, Sigma_R), each (4ny, 4ny), at this E -- reuse
+                              across scans that only change SC-lead parameters.
+        """
+        p = self.p
+        nx, ny = p.nx, p.ny
+        dim = 4 * nx * ny
+        z = E + 1j * p.eta
+
+        if precompute_sigmas_n is None:
+            zN = z * np.eye(4 * ny, dtype=complex)[None]
+            SL, SR = self.lead_L.self_energy(zN)[0], self.lead_R.self_energy(zN)[0]
+        else:
+            SL, SR = precompute_sigmas_n
+        zS = z * np.eye(4 * nx, dtype=complex)[None]
+        ST, SB = self.ribbon_top.self_energy(zS)[0], self.ribbon_bot.self_energy(zS)[0]
+
+        iL, iR = self.idx_L, self.idx_R
+        A = -self.H_C.astype(complex)
+        A[np.diag_indices(dim)] += z
+        A[:4 * nx, :4 * nx] -= ST
+        A[-4 * nx:, -4 * nx:] -= SB
+        A[iL[:, None], iL[None, :]] -= SL
+        A[iR[:, None], iR[None, :]] -= SR
+
+        e = np.where(np.tile([True, True, False, False], ny))[0]
+        h = np.where(np.tile([False, False, True, True], ny))[0]
+        rhs = np.zeros((dim, len(e)), dtype=complex)
+        rhs[iL[e], np.arange(len(e))] = 1.0                       # electron columns of L
+        X = lu_solve(lu_factor(A, overwrite_a=True, check_finite=False), rhs, check_finite=False)
+
+        Gamma_L = 1j * (SL - SL.conj().T)
+        Gamma_R = 1j * (SR - SR.conj().T)
+        GLe = Gamma_L[e[:, None], e[None, :]]
+        G_ee = X[iR[e]]                                           # G^{ee}_{RL}
+        G_he = X[iR[h]]                                           # G^{he}_{RL}
+        T_ee = np.trace(Gamma_R[e[:, None], e[None, :]] @ G_ee @ GLe @ G_ee.conj().T).real
+        T_he = np.trace(Gamma_R[h[:, None], h[None, :]] @ G_he @ GLe @ G_he.conj().T).real
+        return T_ee + T_he, T_ee - T_he

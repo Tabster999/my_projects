@@ -32,7 +32,7 @@ def get_self_energy(g_surf, t_coupling):
     return (t_coupling**2) * g_surf
 
 def get_gamma(sigma):
-    return -np.imag(sigma)
+    return 1j * (sigma - sigma.conj().T)
 
 def get_retarded_green_function(E, epsilon_atom, sigma_l, sigma_r, eta=1e-6):
     return 1.0 / (E + 1j * eta - epsilon_atom - sigma_l - sigma_r)

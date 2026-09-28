@@ -84,14 +84,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numpy.linalg import inv, solve
 from scipy.linalg import block_diag
-os.chdir(r"c:\coding\my_projects\thesis\fourterminal")
-import my_functions as myf
+os.chdir(r"c:\coding\my_projects\thesis\masterarbeit_v2\fourterminal")
+from my_functions import my_functions as myf 
 from dataclasses import replace
 import time 
+from IPython.display import display, Math, Pretty
+
 #%% --- CLASSES AND FUNCTIONS --- 
-# ----------------------------------------------------------------------
 #  index bookkeeping for the subspace S
-# ----------------------------------------------------------------------
 class _SubspaceIndex:
     """
     Site-level layout of S = {row 0} U {col 0} U {col nx-1}, ordered by
@@ -144,9 +144,7 @@ class _SubspaceIndex:
         return slice(int(self.offsets[iy]), int(self.offsets[iy + 1]))
 
 
-# ----------------------------------------------------------------------
-#  core: g0 = P A0^-1 P^dag  via a y-direction RGF
-# ----------------------------------------------------------------------
+#  core: g0 = P A0^-1 P^dag  via y-direction RGF
 def _g0_on_subspace(z, H_row, V, Sigma_B, sub):
     """
     Batched over energy.
@@ -220,9 +218,7 @@ def _g0_on_subspace(z, H_row, V, Sigma_B, sub):
     return g0
 
 
-# ----------------------------------------------------------------------
 #  main solver
-# ----------------------------------------------------------------------
 class RGFFourTerminal:
     """
     RGF + exact subspace-Dyson solver for FourTerminalJunction.
@@ -308,10 +304,10 @@ class RGFFourTerminal:
 
     def _make_top_ribbon(self, phi_lead):
         p = self.p
-        onsite_SC = myf.onsite_block(p.t_s, p.mu_s, delta=p.delta, phi=phi_lead, twod=True)
-        H_intra = myf.make_row_hamiltonian(p.nx, onsite_SC, myf.Vx(p.t_s))
-        H_inter = block_diag(*([myf.Vy(p.t_s)] * p.nx))
-        V_coupling = block_diag(*([myf.Vy(p.tc_top)] * p.nx))
+        onsite_SC = myf.onsite_block(p.t_s, p.mu_s, delta=p.delta, phi=phi_lead, Bz=p.Bz_s, Bxy=p.Bxy, theta_z=p.theta_z, alpha=p.alpha, beta=p.beta, twod=True)
+        H_intra = myf.make_row_hamiltonian(p.nx, onsite_SC, myf.Vx(p.t_s, p.alpha, p.beta))
+        H_inter = block_diag(*([myf.Vy(p.t_s, p.alpha, p.beta)] * p.nx))
+        V_coupling = block_diag(*([myf.Vy(p.tc_top, p.alpha, p.beta)] * p.nx))
         return myf.Lead('ribbon_top', H_intra, H_inter, V_coupling, p, br=False)
 
     # ---------------- the expensive, phi-independent part ----------------
@@ -448,13 +444,13 @@ class RGFFourTerminal:
         return self.channels_at_phi(self.p.phi, side_name=side_name)
 #%% --- COMPARISON OF FAST_PHASE_SWEEP AND RGF --- 
 p = myf.Params(
-    nx=12, ny=30, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
-    delta=0.35, phi=np.pi / 4, tc_top=1.00, tc_bot=1.00, tc_barr=1.00,
-    eta=2e-5, kT=5e-6,
+    nx=30, ny=8, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
+    delta=0.35, phi=np.pi, tc_top=1.00, tc_bot=1.00, tc_barr=1.00, alpha = 0.2, beta = 0.0, Bz=0.4, Bxy=0.0, theta_z=0.00*np.pi, Bz_s=0.4,
+    eta=1e-5, kT=5e-6,
 )
 
 junction = myf.FourTerminalJunction(p)
-E_sweep = np.linspace(-1.5*p.delta, 1.5*p.delta, 121)
+E_sweep = np.linspace(-1.5*p.delta, 1.5*p.delta, 41)
 rgf = RGFFourTerminal(
     junction,
     E_sweep,
@@ -473,62 +469,148 @@ phi_test = 0.37
 t0 = time.perf_counter()
 fast = myf.FastPhaseSweep(junction, E_sweep, phi_ref=0.0)
 t_fast = time.perf_counter() - t0
-print(f"FastPhaseSweep setup: {t_fast:.4f} s")
+print(f'System size: nx={p.nx}, ny={p.ny}, N_E={len(E_sweep)}')
+print(f"FastPhaseSweep energy sweep: {t_fast:.4f} s")
 
 t0 = time.perf_counter()
 rgf = RGFFourTerminal(junction, E_sweep, phi_ref=0.0)
 t_rgf = time.perf_counter() - t0
 
 
-print(f"RGF setup:            {t_rgf:.4f} s")
-
+print(f"RGF enrgy sweep:            {t_rgf:.4f} s")
+print(f"Energy speedup: {t_fast:.1f}s / {t_rgf:.1f}s = {(t_fast)/(t_rgf):.2f}x")
 a = fast.channels_at_phi(phi_test, "left")
 b = rgf.channels_at_phi(phi_test, "left")
+print(f"Max rel. error at phi={phi_test:.3f}:")
 for key in a:
     print(
         key,
         np.max(np.abs(a[key] - b[key])),        #type: ignore
         np.max(np.abs(a[key] / b[key] - 1))     #type: ignore
     )
-# %%
-phi_vals = np.linspace(0.0, 2 * np.pi, 81)
-channels = rgf.channels_at_phi(phi_test)
-pT = myf.Params(
-    nx=8, ny=16, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
+t0 = time.perf_counter()
+for ph in np.linspace(0, 2*np.pi, 41):
+    fast.channels_at_phi(ph, "left")
+t_fast_phi = time.perf_counter() - t0
+
+t0 = time.perf_counter()
+for ph in np.linspace(0, 2*np.pi, 41):
+    rgf.channels_at_phi(ph, "left")
+t_rgf_phi = time.perf_counter() - t0
+
+print(f"per-phi: dense={1000*t_fast_phi/41:.1f} ms   rgf={1000*t_rgf_phi/41:.1f} ms")
+print(r"full $\phi$ sweep:" + f"dense={t_fast+t_fast_phi:.1f}s  rgf={t_rgf+t_rgf_phi:.1f}s")
+print(f"Phase speedup: {t_fast+t_fast_phi:.1f}s / {t_rgf+t_rgf_phi:.1f}s = {(t_fast+t_fast_phi)/(t_rgf+t_rgf_phi):.2f}x")
+# %% --- PHASE DEPENDENCE OF TRANSMISSION COEFFICIENTS ---
+p = myf.Params(
+    nx=80, ny=30, t_n=1.0, mu_n=1.00, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
     delta=0.35, phi=0.0, tc_top=1.00, tc_bot=1.00, tc_barr=1.00,
-    eta=2e-5, kT=2e-5,
+    alpha=-0.4, beta=0.0, Bz=0.0, Bxy=0.0, theta_z=0.00*np.pi, Bz_s=2.0,
+    eta=1e-5, kT=2e-3,
 )
 
-T_ee, T_eh, T_he, T_lar_eh, T_lar_he = [], [], [], [], []
 E_fixed = np.array([0.0])
-phi_vals_ext = np.linspace(0.0, 2 * np.pi, 81)
-t0 = time.perf_counter()
+phi_vals = np.linspace(0.0, 2 * np.pi, 201)
 
-for phi_val in phi_vals_ext:
-    p_phi = replace(pT, phi=phi_val)
-    junction_phi = myf.FourTerminalJunction(p_phi)
-    ch_left = junction_phi.channels(E_fixed)['right']
+# Initialize junction and RGF pre-solver once
+junction = myf.FourTerminalJunction(p)
+rgf_solver = RGFFourTerminal(junction, E_fixed, phi_ref=p.phi)
 
-    T_ee.append(ch_left['ee'])
-    T_eh.append(ch_left['eh_cross'])
-    T_he.append(ch_left['he_cross'])
-    T_lar_eh.append(ch_left['eh_local'])
-    T_lar_he.append(ch_left['he_local'])
-t_phase = time.perf_counter() - t0
-print(f't_phase = {t_phase:.4f} s')
+T_ee, T_eh, T_he, T_lar_eh = [], [], [], []
+
+for phi_val in phi_vals:
+    ch_right = rgf_solver.channels_at_phi(phi_val, side_name='right')
+
+    T_ee.append(ch_right['ee'])          # normal transmission (e -> e)
+    T_eh.append(ch_right['eh_cross'])      # CAR (e -> h)
+    T_he.append(ch_right['he_cross'])      # CAR (h -> e)
+    T_lar_eh.append(ch_right['eh_local'])  # LAR (e -> h local)
+
+T_th = np.array(T_ee) + np.array(T_he)
+
 fig, ax = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
-ax[0].plot(phi_vals_ext / np.pi, T_eh, label=r"$T_{eh}$ (CAR)")
+ax[0].plot(phi_vals / np.pi, np.array(T_he), label=r"$T_{he}$ (CAR)")
+ax[0].plot(phi_vals / np.pi, T_ee, label=r"$T_{ee}$ ")
 ax[0].set_title(fr'Transmissions at fixed E={E_fixed[0]:.2f} vs. $\phi$')
-ax[0].plot(phi_vals_ext / np.pi, T_he, label=r"$T_{he}$ (CAR)")
 ax[0].set_ylabel("Transmission")
 ax[0].legend()
 ax[0].grid(True)
 
-ax[1].plot(phi_vals_ext / np.pi, T_lar_eh, label=r"$T_{eh}$ (LAR)")
+ax[1].plot(phi_vals / np.pi, T_th, label=r"$T_{th}$")
 ax[1].set_xlabel(r"$\phi / \pi$")
 ax[1].set_ylabel("Transmission")
 ax[1].legend()
 ax[1].grid(True)
+
+plt.tight_layout()
+plt.show()
+# %% --- 2D CONTOUR MAP OF THERMAL CONDUCTANCE (T_th) ---
+p_base = myf.Params(
+    nx=60, ny=20, t_n=1.0, mu_n=0.0, t_c=1.00, mu_c=0.0, t_s=1.0, mu_s=0.0,
+    delta=0.35, phi=np.pi, tc_top=1.00, tc_bot=1.00, tc_barr=1.00,
+    alpha=0.4, beta=0.0, Bz=0.0, Bxy=0.0, theta_z=0.00*np.pi, Bz_s=0.0,
+    eta=1e-5, kT=1e-3,
+)
+
+E_fixed = np.array([0.0])  
+
+param1_name = 'Bz_s'                    
+param1_vals = np.linspace(-2.50, 2.0, 31) 
+
+param2_name = 'mu_s'                    
+param2_vals = np.linspace(-2.0, 2.0, 31) 
+
+param1_label = r"$B_{z,s}$"
+param2_label = r"$\mu_s$"
+param1_display = param1_vals
+param2_display = param2_vals
+
+T_th_grid = np.zeros((len(param2_vals), len(param1_vals)))
+
+if param1_name == 'phi' and param2_name != 'phi':
+    print("Param 1 is phase, using fast branch.")
+    for j, val2 in enumerate(param2_vals):
+        p_curr = replace(p_base, **{param2_name: val2})
+        solver = RGFFourTerminal(myf.FourTerminalJunction(p_curr), E_fixed, phi_ref=0.0)
+        for i, val1 in enumerate(param1_vals):
+            ch = solver.channels_at_phi(val1, side_name='right')
+            T_th_grid[j, i] = np.squeeze(ch['ee'] + ch['he_cross']) #type: ignore
+
+elif param2_name == 'phi' and param1_name != 'phi':
+    print("Param 2 is phase, using fast branch.")
+    for i, val1 in enumerate(param1_vals):
+        p_curr = replace(p_base, **{param1_name: val1})
+        solver = RGFFourTerminal(myf.FourTerminalJunction(p_curr), E_fixed, phi_ref=0.0)
+        for j, val2 in enumerate(param2_vals):
+            ch = solver.channels_at_phi(val2, side_name='right')
+            T_th_grid[j, i] = np.squeeze(ch['ee'] + ch['he_cross']) #type: ignore
+
+# General branch: Neither parameter is phase
+else:
+    print("Neither parameter is phase, using general branch.")
+    print(r"Computing $T_{th}$ for " + param1_label + r" and " + param2_label)
+    for j, val2 in enumerate(param2_vals):
+        for i, val1 in enumerate(param1_vals):
+            p_curr = replace(p_base, **{param1_name: val1, param2_name: val2})
+            solver = RGFFourTerminal(myf.FourTerminalJunction(p_curr), E_fixed, phi_ref=0.0)
+            ch = solver.channels_at_phi(p_curr.phi, side_name='right')
+            T_th_grid[j, i] = np.squeeze(ch['ee'] + ch['he_cross']) #type: ignore
+
+# 4. PLOT THE CONTOUR MAP
+fig, ax = plt.subplots(figsize=(8, 6))
+
+X, Y = np.meshgrid(param1_display, param2_display)
+contour = ax.contourf(X, Y, T_th_grid, levels=60, cmap='viridis')
+cbar = fig.colorbar(contour, ax=ax)
+cbar.set_label(r"Thermal Conductance $T_{th} = T_{ee} + T_{he}$", rotation=270, labelpad=20)
+
+# Overlay subtle structural contour lines
+ax.contour(X, Y, T_th_grid, levels=12, colors='k', linewidths=0.4, alpha=0.5)
+
+ax.set_xlabel(param1_label)
+ax.set_ylabel(param2_label)
+ax.set_title(f"Thermal Conductance $T_{{th}}$ ($E = {E_fixed[0]:.2f}$)")
+ax.grid(True, linestyle='--', alpha=0.3)
 
 plt.tight_layout()
 plt.show()

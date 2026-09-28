@@ -28,23 +28,23 @@ def get_transmissions(params, phi_array, E_fixed=0.0, LR='left', is_ribbon=True)
 # eta should be larger than the energy step size, to smooth out numerical integration
 
 p = myf.Params(
-    nx=10, ny=5, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
-    delta=0.35, phi=np.pi / 4, tc_top=1.00, tc_bot=1.00, tc_barr=1.00,
-    eta=2e-5, kT=2e-3,
+    nx=20, ny=40, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
+    delta=0.35, phi=np.pi , tc_top=1.00, tc_bot=1.00, tc_barr=1.00,
+    alpha = 0.2, beta = 0.0, Bz = 0.4, Bxy = 0.0, theta_z = 0.0,    eta=1e-4, kT=2e-3,
 )
 
-V_range = np.linspace(-1.5 * p.delta, 1.5 * p.delta, 121)
-E_sweep = np.linspace(-1.5 * p.delta, 1.5 * p.delta, 1001)
+V_range = np.linspace(-1.5 * p.delta, 1.5 * p.delta, 41)
+E_sweep = np.linspace(-1.5 * p.delta, 1.5 * p.delta, 41)
 
 print(f"Computing {len(E_sweep)} energy points for {p.nx} sites...")
 junction = myf.FourTerminalJunction(p)
-channel_sweeps = myf.FastPhaseSweep(junction, E_sweep=E_sweep, phi_ref=0.0).channels_at_phi(p.phi, 'left')
+channel_sweeps = myf.FastPhaseSweep(junction, E_sweep=E_sweep, phi_ref=0.0).channels_at_phi(p.phi)
 print("Finished compute.")
 myf.print_params(p)
 
 #%% --- CURRENTS (sym / anti bias) ---
 # channel_sweeps['left'/'right']['ee'] etc. are the transmission channels vs. E_sweep
-ch = channel_sweeps['left']
+ch = junction.channels(E_sweep, side_name="left")
 results = {'sym': {k: [] for k in ['EC', 'CAR', 'LAR', 'total']},
            'anti': {k: [] for k in ['EC', 'CAR', 'LAR', 'total']}}
 
@@ -145,12 +145,13 @@ myf.print_params(p)
 #%% --- PHASE-DEPENDENT TRANSMISSION AT FIXED ENERGY ---
 
 p = myf.Params(
-    nx=10, ny=5, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
-    delta=0.35, phi=np.pi / 4, tc_top=1.00, tc_bot=1.00, tc_barr=1.00,
-    eta=2e-5, kT=5e-6,
+    nx=10, ny=40, t_n=1.0, mu_n=0.5, t_c=1.00, mu_c=-0.1, t_s=1.0, mu_s=0.8,
+    delta=0.35, phi=np.pi, tc_top=1.00, tc_bot=1.00, tc_barr=1.00,
+    alpha=0.2, beta=0.0, Bz=0.4, Bxy=0.0, theta_z=0.0,
+    eta=1e-3, kT=5e-3,
 )
 
-phi_values = np.linspace(0, 2 * np.pi, 301)
+phi_values = np.linspace(0, 2 * np.pi, 41)
 E_fixed = -0.00
 dir = 'right'
 
@@ -221,14 +222,14 @@ myf.print_params(p)
 
 #%% --- PHASE / BIAS CONDUCTANCE MAP ---
 pc = myf.Params(
-    nx=10, ny=5, t_n=1.0, mu_n=1.50, t_c=1.0, mu_c=1.00, t_s=1.0, mu_s=1.0,
-    delta=0.35, phi=0.0, tc_top=1.0, tc_bot=1.0, tc_barr=1.0,
-    alpha=0.0, beta=0.0, Bz=0.0, Bxy=0.0, theta_z=0.0, eta=2e-5, kT=5e-2,
+    nx=10, ny=40, t_n=1.0, mu_n=1.50, t_c=1.0, mu_c=1.00, t_s=1.0, mu_s=1.0,
+    delta=0.35, phi=np.pi, tc_top=1.0, tc_bot=1.0, tc_barr=1.0,
+    alpha=0.0, beta=0.0, Bz=0.0, Bxy=0.0, theta_z=0.0, eta=1e-5, kT=5e-2,
 )
 
-phi_vals = np.linspace(-np.pi, np.pi, 101)
-V_bias_map = np.linspace(-2.5 * pc.delta, 2.5 * pc.delta, 101)
-dV_map = 1e-5
+phi_vals = np.linspace(-np.pi, np.pi, 41)
+V_bias_map = np.linspace(-2.5 * pc.delta, 2.5 * pc.delta, 41)
+dV_map = 1e-7
 
 junction0 = myf.FourTerminalJunction(pc)
 z1, _ = junction0._z_batches(E_sweep)
