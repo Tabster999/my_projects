@@ -1,0 +1,2606 @@
+diff --git a/thesis/4_terminal/.gitignore b/thesis/4_terminal/.gitignore
+index 12ba085..5fc3be5 100644
+--- a/thesis/4_terminal/.gitignore
++++ b/thesis/4_terminal/.gitignore
+@@ -73,3 +73,8 @@ results/
+ *.csv
+ *.h5
+ *.hdf5
++
++# generated results
++*.npz
++*.png
++!computations/*.md
+diff --git a/thesis/4_terminal/CLAUDE.md b/thesis/4_terminal/CLAUDE.md
+new file mode 100644
+index 0000000..c608fa7
+--- /dev/null
++++ b/thesis/4_terminal/CLAUDE.md
+@@ -0,0 +1,21 @@
++# Context for Claude Code — thesis/4_terminal
++
++Master's thesis code: NEGF transport through a four-terminal Josephson junction; goal is the half-integer
++thermal-conductance plateau (κ/κ₀ = 0.5 with G/G₀ = 0 at φ = π, Gresta et al., PRB 114, 125405) in a
++Rashba model. See README.md for structure and usage. The older `thesis/masterarbeit_v2/fourterminal/` is legacy.
++
++## Rules
++* Keep existing public names (Params fields, RGFFourTerminal.channels_at_phi, …); scripts depend on them.
++* After changing hamiltonians/leads/rgf/transport run `run_all()` and `tests/test_api.py`; all must pass.
++* Never let a failed lead solve pass silently (NaN is intended). Report `myf.leads.N_UNRELIABLE` in scans.
++* Computation returns arrays; plotting stays in the scripts.
++
++## Physics established so far (Rashba model)
++* Working point: nx=80, ny=12, Δ=0.35, α=1.2, tc=1.1, μ_c=−0.03, μ_n=1, μ_s≈0.15, B_z,s≈0.94, η=1e-5 →
++  κ=0.497 at k_BT=1e-3 with κ(φ=0)=0.003; connected T→0 plateau in (B_z,s, μ_s).
++* Plateau width: Majorana decay length ξ vs nx (`coherence_length`; nx ≳ 12ξ at T→0, ≳ 7ξ at k_BT=1e-3).
++  Larger Δ and α shorten ξ.
++* Plateau height: interface matching (tc ≈ 1.1–1.2, μ_n ≈ 1).
++* Phase contrast: the centre is depleted (no Dirac point), so the φ=0 gap decays exponentially with ny;
++  contrast is lost for ny > 12 (κ(0): 0.006 at ny=12, 0.45 at ny=20). No SOC/Zeeman/mass variant fixes this.
++* Dirac model reproduces the paper's Fig. 8 with μ_n ≈ 1 (unstated in the paper).
+diff --git a/thesis/4_terminal/README.md b/thesis/4_terminal/README.md
+new file mode 100644
+index 0000000..33da659
+--- /dev/null
++++ b/thesis/4_terminal/README.md
+@@ -0,0 +1,52 @@
++# 4_terminal — NEGF transport through a four-terminal Josephson junction
++
++Central `nx × ny` normal region, superconducting ribbons top/bottom (phase difference φ), normal leads
++left/right. BdG basis (c↑, c↓, c↓†, −c↑†). Two models share all geometry/lead/solver code:
++`model='rashba'` (2DEG, Rashba/Dresselhaus SOC, Zeeman, s-wave pairing; `Bz_s` = Zeeman in the ribbons)
++and `model='dirac'` (Gresta et al., PRB 114, 125405, Eq. 1).
++
++## Quick start
++```python
++import numpy as np, my_functions as myf
++p = myf.Params(model="rashba", nx=80, ny=12, mu_n=1.0, mu_c=-0.03, mu_s=0.15, delta=0.35,
++               tc_top=1.1, tc_bot=1.1, tc_barr=1.0, alpha=1.2, Bz_s=0.94, eta=1e-5)
++kappa, G = myf.linear_response(p, np.pi, kT=1e-3)            # thermal / electrical linear response
++T = myf.transmissions(p, np.linspace(-0.01, 0.01, 41))      # channel transmissions (dict of arrays)
++res = myf.scan(myf.ThermalPoint(p, kT=0.0, phis=(np.pi, 0.0)),
++               {"mu_s": [0.1, 0.2], "Bz_s": np.linspace(0.6, 1.4, 17)}, n_workers=8, save="scan.npz")
++```
++Everything returns arrays; plotting is left to you. Examples: `computations/01…06_*.py`.
++
++## Structure (`my_functions/`)
++| module | contents |
++|---|---|
++| `params.py` | `Params` (all settings; optional per-region `alpha_c/alpha_n/alpha_s`, `Bz_n`) |
++| `hamiltonians.py` | onsite/hopping blocks of both models, region handling |
++| `leads.py` | lead surface solutions: Sancho-Rubio → Newton → eigenmode fallback, residual-checked, cached |
++| `junction.py` | `FourTerminalJunction` (geometry; dense `channels()` as reference) |
++| `rgf.py` | `RGFFourTerminal` — the solver (`channels_at_phi`, `green_blocks`, `with_ribbons`) |
++| `fast_phase_sweep.py` | `FastPhaseSweep` — dense reference for small systems / checks |
++| `transport.py` | finite bias: `current`, `differential_conductance` (+ old names as wrappers); thermal: `linear_response_nodes_phs`, `thermal_from_channels_phs`, `thermal_error_phs` |
++| `compute.py` | one-call functions: `transmissions`, `linear_response`, `ldos`, `currents`, `conductances` |
++| `scans.py` | `scan` (parallel, resumable, any quantity), `ThermalPoint`; low level `thermal_point`, `thermal_scan`, `make_pool` |
++| `spectra.py` | `chern_number`, `ribbon_gap`, `coherence_length`, `edge_state_profile`, `junction_spectrum_kx`, `LocalGreen` |
++| `checks.py` | `run_all()` — physics and solver regression checks |
++
++## Numerics you should know
++* **Lead solver.** Sancho-Rubio loses accuracy at E ≈ 0 when the ribbons' edge gap is far below η (the
++  single-Majorana regime). Every lead solution is checked against its Dyson equation; failures are
++  Newton-refined, then replaced by the eigenmode solution, and set to **NaN** if still failing (never a
++  silently wrong number). Count: `myf.leads.N_UNRELIABLE`; threshold `myf.leads.ACCEPT_TOL` (1e-8).
++* **Thermal integral.** Trapezoid rule on a uniform grid in x = E/kT (step h = 0.5, |x| ≤ 16), negative
++  energies from particle-hole symmetry (33 energies). Accurate to ≲2e-3 where T(E) is smooth; sharp
++  resonances (φ = 0 above the minigap, open normal channels) may need h = 0.25. `linear_response(...,
++  error=True)` / `thermal_error_phs` give a free error estimate. (The former Gauss-Legendre rule was off
++  by up to 0.14 at φ = 0.)
++* **Speed.** In `scan`, put ribbon-only parameters (mu_s, Bz_s, delta, t_s, m0) last: each worker then
++  reuses its central solve. Sweeps of central parameters (mu_c, tc, …) reuse the cached leads.
++
++## Checks and tests
++```
++python -c "from my_functions.checks import run_all; run_all()"    # 19 checks, ~1 min
++python tests/test_api.py                                         # interface, scan, wrappers
++```
+diff --git a/thesis/4_terminal/computations/01_single_point.py b/thesis/4_terminal/computations/01_single_point.py
+new file mode 100644
+index 0000000..662b617
+--- /dev/null
++++ b/thesis/4_terminal/computations/01_single_point.py
+@@ -0,0 +1,36 @@
++"""One parameter point: diagnostics, linear response (T -> 0 and finite T), phase dependence, T(E)."""
++#%% --- IMPORTS ---
++import numpy as np
++import matplotlib.pyplot as plt
++try:
++    import my_functions as myf
++except ModuleNotFoundError:                     # not pip-installed: find the package by walking up
++    import sys
++    from pathlib import Path
++    _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
++    sys.path.insert(0, str(next(p for p in (_here, *_here.parents) if (p / "my_functions").is_dir())))
++    import my_functions as myf
++
++#%% --- PARAMETERS (Rashba working point) ---
++p = myf.Params(model="rashba", nx=80, ny=12, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=-0.03, t_s=1.0, mu_s=0.15,
++               delta=0.35, phi=np.pi, tc_top=1.1, tc_bot=1.1, tc_barr=1.0, alpha=1.2, Bz_s=0.94, eta=1e-5)
++kT = 1e-3
++
++#%% --- COMPUTE ---
++print(f"C = {myf.chern_number(p):+.0f}, edge gap = {myf.ribbon_gap(p, nk=61):.1e}, xi = {myf.coherence_length(p):.2f} sites")
++kappa0, G0 = myf.linear_response(p, np.pi, 0.0)
++kappa, G, err_k, err_G = myf.linear_response(p, np.pi, kT, error=True)
++print(f"T->0: kappa={kappa0:.4f} G={G0:+.4f} | kT={kT:g}: kappa={kappa:.4f}+-{err_k:.0e} G={G:+.4f}+-{err_G:.0e}")
++phis = np.linspace(0, 2 * np.pi, 121)
++kappa_phi, G_phi = myf.linear_response(p, phis, 0.0)            # all phases share one solver
++E = np.linspace(-0.01, 0.01, 81)
++T = myf.transmissions(p, E, np.pi)
++np.savez("single_point.npz", phis=phis, kappa_phi=kappa_phi, G_phi=G_phi, E=E, **T)
++
++#%% --- PLOT ---
++fig, ax = plt.subplots(1, 2, figsize=(11, 4))
++ax[0].plot(phis / np.pi, kappa_phi, label="kappa/kappa0"); ax[0].plot(phis / np.pi, G_phi, label="G/G0")
++ax[0].set_xlabel("phi / pi"); ax[0].legend()
++ax[1].plot(E, T["ee"] + T["he_cross"], label="T_ee + T_he"); ax[1].plot(E, T["ee"], label="T_ee"); ax[1].plot(E, T["he_cross"], label="T_he")
++ax[1].set_xlabel("E"); ax[1].legend()
++fig.suptitle(myf.param_title(p), fontsize=8); plt.tight_layout(); plt.show()
+diff --git a/thesis/4_terminal/computations/02_scan.py b/thesis/4_terminal/computations/02_scan.py
+new file mode 100644
+index 0000000..023b7f0
+--- /dev/null
++++ b/thesis/4_terminal/computations/02_scan.py
+@@ -0,0 +1,34 @@
++"""2D (or 1D) parameter scan of kappa and G: parallel, resumable, returns arrays. Ribbon parameters last."""
++#%% --- IMPORTS ---
++import numpy as np
++import matplotlib.pyplot as plt
++try:
++    import my_functions as myf
++except ModuleNotFoundError:                     # not pip-installed: find the package by walking up
++    import sys
++    from pathlib import Path
++    _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
++    sys.path.insert(0, str(next(p for p in (_here, *_here.parents) if (p / "my_functions").is_dir())))
++    import my_functions as myf
++
++#%% --- PARAMETERS ---
++p0 = myf.Params(model="rashba", nx=80, ny=12, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=-0.03, t_s=1.0, mu_s=0.15,
++               delta=0.35, phi=np.pi, tc_top=1.1, tc_bot=1.1, tc_barr=1.0, alpha=1.2, Bz_s=0.94, eta=1e-5)
++KT = 0.0                                   # 0: T -> 0; e.g. 1e-3 for finite temperature
++GRID = {"mu_s": np.linspace(-0.15, 0.55, 15), "Bz_s": np.linspace(0.6, 1.4, 17)}
++N_WORKERS = 1                              # e.g. 8 on a multi-core machine
++SAVE = f"scan_mu_Bz_KT{KT:g}.npz"          # rerun to continue an interrupted scan
++
++#%% --- COMPUTE ---
++if __name__ == "__main__":
++    res = myf.scan(myf.ThermalPoint(p0, KT, phis=(np.pi, 0.0)), GRID, n_workers=N_WORKERS, save=SAVE)
++    kappa, G, kappa_0 = res["values"][..., 0], res["values"][..., 1], res["values"][..., 2]   # (len(mu_s), len(Bz_s))
++    print(f"failed lead energies: {int(np.nansum(res['values'][..., -1]))}")
++
++#%% --- PLOT ---
++    mu, Bz = res["axes"]["mu_s"], res["axes"]["Bz_s"]
++    fig, ax = plt.subplots(1, 3, figsize=(15, 4))
++    for a, Z, t in zip(ax, (kappa, kappa_0, G), ("kappa/kappa0 (pi)", "kappa/kappa0 (0)", "G/G0 (pi)")):
++        im = a.pcolormesh(Bz, mu, Z, shading="nearest"); fig.colorbar(im, ax=a); a.set_title(t)
++        a.set_xlabel("Bz_s"); a.set_ylabel("mu_s")
++    fig.suptitle(myf.param_title(p0), fontsize=8); plt.tight_layout(); plt.show()
+diff --git a/thesis/4_terminal/computations/03_diagnostics.py b/thesis/4_terminal/computations/03_diagnostics.py
+new file mode 100644
+index 0000000..5fdfad2
+--- /dev/null
++++ b/thesis/4_terminal/computations/03_diagnostics.py
+@@ -0,0 +1,33 @@
++"""SC-ribbon diagnostics vs field: Chern number, Majorana decay length xi, edge gap; edge-state profile."""
++#%% --- IMPORTS ---
++from dataclasses import replace
++import numpy as np
++import matplotlib.pyplot as plt
++try:
++    import my_functions as myf
++except ModuleNotFoundError:                     # not pip-installed: find the package by walking up
++    import sys
++    from pathlib import Path
++    _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
++    sys.path.insert(0, str(next(p for p in (_here, *_here.parents) if (p / "my_functions").is_dir())))
++    import my_functions as myf
++
++#%% --- PARAMETERS ---
++p0 = myf.Params(model="rashba", nx=80, ny=12, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=-0.03, t_s=1.0, mu_s=0.15,
++               delta=0.35, phi=np.pi, tc_top=1.1, tc_bot=1.1, tc_barr=1.0, alpha=1.2, Bz_s=0.94, eta=1e-5)
++Bs = np.linspace(0.3, 1.6, 27)
++
++#%% --- COMPUTE ---
++C = np.array([myf.chern_number(replace(p0, Bz_s=b), N=40) for b in Bs])
++xi = np.array([myf.coherence_length(replace(p0, Bz_s=b)) for b in Bs])
++gap = np.array([myf.ribbon_gap(replace(p0, Bz_s=b), nk=41) for b in Bs])
++x, dens, xi_fit, _ = myf.edge_state_profile(replace(p0, nx=200))
++np.savez("diagnostics.npz", Bs=Bs, C=C, xi=xi, gap=gap, x=x, dens=dens)
++
++#%% --- PLOT ---
++fig, ax = plt.subplots(1, 3, figsize=(15, 4))
++ax[0].plot(Bs, C, "o-"); ax[0].set_ylabel("C")
++ax[1].plot(Bs, xi, "o-"); ax[1].axhline(p0.nx / 12, ls="--", c="gray"); ax[1].set_ylabel("xi (sites); dashed: nx/12")
++ax[2].semilogy(x, dens); ax[2].set_xlabel("x"); ax[2].set_title(f"edge state, xi = {xi_fit:.1f}")
++for a in ax[:2]: a.set_xlabel("Bz_s")
++plt.tight_layout(); plt.show()
+diff --git a/thesis/4_terminal/computations/04_ldos.py b/thesis/4_terminal/computations/04_ldos.py
+new file mode 100644
+index 0000000..3668426
+--- /dev/null
++++ b/thesis/4_terminal/computations/04_ldos.py
+@@ -0,0 +1,28 @@
++"""LDOS at E = 0 at phi = pi and phi = 0: where the Majorana channel lives."""
++#%% --- IMPORTS ---
++import numpy as np
++import matplotlib.pyplot as plt
++try:
++    import my_functions as myf
++except ModuleNotFoundError:                     # not pip-installed: find the package by walking up
++    import sys
++    from pathlib import Path
++    _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
++    sys.path.insert(0, str(next(p for p in (_here, *_here.parents) if (p / "my_functions").is_dir())))
++    import my_functions as myf
++
++#%% --- PARAMETERS ---
++p = myf.Params(model="rashba", nx=80, ny=12, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=-0.03, t_s=1.0, mu_s=0.15,
++               delta=0.35, phi=np.pi, tc_top=1.1, tc_bot=1.1, tc_barr=1.0, alpha=1.2, Bz_s=0.94, eta=1e-5)
++cols = list(range(0, p.nx, 2))
++
++#%% --- COMPUTE ---
++A = {phi: myf.ldos(p, [0.0], phi, cols)[0] for phi in (np.pi, 0.0)}      # (n_cols, ny) each
++np.savez("ldos.npz", cols=cols, A_pi=A[np.pi], A_0=A[0.0])
++
++#%% --- PLOT ---
++fig, ax = plt.subplots(1, 2, figsize=(12, 3.5))
++for a, (phi, M) in zip(ax, A.items()):
++    im = a.pcolormesh(cols, np.arange(p.ny), M.T, shading="nearest"); fig.colorbar(im, ax=a)
++    a.set_title(f"LDOS(E=0), phi = {phi/np.pi:.0f} pi"); a.set_xlabel("x"); a.set_ylabel("y")
++plt.tight_layout(); plt.show()
+diff --git a/thesis/4_terminal/computations/05_finite_bias.py b/thesis/4_terminal/computations/05_finite_bias.py
+new file mode 100644
+index 0000000..98e3b08
+--- /dev/null
++++ b/thesis/4_terminal/computations/05_finite_bias.py
+@@ -0,0 +1,32 @@
++"""Finite-bias transport of the left lead: current (EC/CAR/LAR) and differential conductances."""
++#%% --- IMPORTS ---
++import numpy as np
++import matplotlib.pyplot as plt
++try:
++    import my_functions as myf
++except ModuleNotFoundError:                     # not pip-installed: find the package by walking up
++    import sys
++    from pathlib import Path
++    _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
++    sys.path.insert(0, str(next(p for p in (_here, *_here.parents) if (p / "my_functions").is_dir())))
++    import my_functions as myf
++
++#%% --- PARAMETERS ---
++p = myf.Params(model="rashba", nx=40, ny=12, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=-0.03, t_s=1.0, mu_s=0.15,
++               delta=0.35, phi=np.pi, tc_top=1.1, tc_bot=1.1, tc_barr=1.0, alpha=1.2, Bz_s=0.94, eta=1e-5)
++kT = 2e-3
++E = np.linspace(-0.6, 0.6, 481)            # must cover the bias window plus a few kT
++V = np.linspace(-0.4, 0.4, 81)             # V_L = +V, V_R = -V
++
++#%% --- COMPUTE ---
++ch = myf.transmissions(p, E, np.pi, side="left")                 # once; reused for all biases
++I = myf.current(ch, E, V, -V, kT, parts=True)
++G_loc, G_nl = myf.differential_conductance(ch, E, V, -V, kT)
++np.savez("finite_bias.npz", V=V, G_loc=G_loc, G_nl=G_nl, **I)
++
++#%% --- PLOT ---
++fig, ax = plt.subplots(1, 2, figsize=(11, 4))
++for k in ("EC", "CAR", "LAR", "total"): ax[0].plot(V, I[k], label=k)
++ax[0].set_xlabel("V"); ax[0].set_ylabel("I_L [e/h]"); ax[0].legend()
++ax[1].plot(V, G_loc, label="dI_L/dV_L"); ax[1].plot(V, G_nl, label="dI_L/dV_R"); ax[1].set_xlabel("V"); ax[1].legend()
++plt.tight_layout(); plt.show()
+diff --git a/thesis/4_terminal/computations/06_fig8.py b/thesis/4_terminal/computations/06_fig8.py
+new file mode 100644
+index 0000000..1d4955c
+--- /dev/null
++++ b/thesis/4_terminal/computations/06_fig8.py
+@@ -0,0 +1,42 @@
++"""Fig. 8 (b,c,d) of Gresta et al.: kappa, G vs mu_c and vs the SC Zeeman field at two mu_s.
++MODEL = "dirac" reproduces the paper, MODEL = "rashba" gives the Rashba analogue."""
++#%% --- IMPORTS ---
++import numpy as np
++import matplotlib.pyplot as plt
++try:
++    import my_functions as myf
++except ModuleNotFoundError:                     # not pip-installed: find the package by walking up
++    import sys
++    from pathlib import Path
++    _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
++    sys.path.insert(0, str(next(p for p in (_here, *_here.parents) if (p / "my_functions").is_dir())))
++    import my_functions as myf
++
++#%% --- PARAMETERS ---
++MODEL, KT, N_WORKERS = "rashba", 0.0, 1
++if MODEL == "dirac":
++    p0 = myf.Params(model="dirac", nx=60, ny=20, t_n=1.0, t_c=1.0, t_s=1.0, mu_n=1.0, mu_c=0.0, delta=0.35, phi=np.pi,
++                    tc_top=1.0, tc_bot=1.0, tc_barr=1.0, m0=0.8, m0_c=0.8, m0_n=0.8, eta=1e-5)
++    PANELS = {"b": {"mu_s": [0.8], "Bz_s": [-2.0], "mu_c": np.linspace(0, 1, 101)},
++              "c": {"mu_s": [0.77], "Bz_s": np.linspace(-2.5, 2.0, 181)},
++              "d": {"mu_s": [0.27], "Bz_s": np.linspace(-2.5, 2.0, 181)}}
++else:
++    p0 = myf.Params(model="rashba", nx=80, ny=20, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=-0.02, t_s=1.0, delta=0.35, phi=np.pi,
++                    tc_top=1.0, tc_bot=1.0, tc_barr=1.0, alpha=1.2, eta=1e-5)
++    PANELS = {"b": {"mu_s": [0.15], "Bz_s": [0.94], "mu_c": np.linspace(-0.1, 0.5, 121)},
++              "c": {"mu_s": [0.15], "Bz_s": np.linspace(0.0, 1.6, 81)},
++              "d": {"mu_s": [0.40], "Bz_s": np.linspace(0.0, 1.6, 81)}}
++
++#%% --- COMPUTE ---
++if __name__ == "__main__":
++    f = myf.ThermalPoint(p0, KT, phis=(np.pi,))
++    res = {n: myf.scan(f, g, n_workers=N_WORKERS, save=f"fig8_{MODEL}_{n}_KT{KT:g}.npz") for n, g in PANELS.items()}
++
++#%% --- PLOT ---
++    fig, ax = plt.subplots(1, 3, figsize=(15, 4))
++    for a, (n, r) in zip(ax, res.items()):
++        key = list(PANELS[n])[-1]                       # the scanned axis
++        v = r["values"].reshape(-1, r["values"].shape[-1])
++        a.plot(r["axes"][key], v[:, 0], "b", label="kappa/kappa0"); a.plot(r["axes"][key], v[:, 1], "r", label="G/G0")
++        a.axhline(0.5, c="gray", ls=":"); a.set_xlabel(key); a.set_title(f"({n})")
++    ax[0].legend(); fig.suptitle(myf.param_title(p0), fontsize=8); plt.tight_layout(); plt.show()
+diff --git a/thesis/4_terminal/computations/fig8_rashba.py b/thesis/4_terminal/computations/fig8_rashba.py
+deleted file mode 100644
+index 0636dc7..0000000
+--- a/thesis/4_terminal/computations/fig8_rashba.py
++++ /dev/null
+@@ -1,190 +0,0 @@
+-"""
+-fig8_rashba.py -- Fig. 8 of Gresta et al. in the RASHBA model, at the working point found
+-                  for half-integer quantization (kappa/kappa0 = 0.5 with G/G0 = 0 at phi = pi).
+-
+-  (a) kappa/kappa0 vs (Bz_s, mu_s)        at the working-point mu_c
+-  (b) kappa/kappa0 and G/G0 vs mu_c       at the working-point (Bz_s, mu_s)
+-  (c) ... vs Bz_s                          at the working-point mu_s
+-  (d) ... vs mu_s                          at the working-point Bz_s
+-
+-KT = 0 evaluates the T -> 0 limit (kappa/kappa0 = T_th(E=0)); KT > 0 integrates Eqs. (7)-(8)
+-with the 16-node Gauss rule of myf.linear_response_nodes, evaluated at only its 8 positive
+-energies (myf.linear_response_nodes_phs: T_ee(-E) = T_hh(E), T_he(-E) = T_eh(E)).
+-
+-Speed (myf.thermal_scan): points run in N_WORKERS parallel processes, and a worker reuses
+-its central RGF solve while only ribbon parameters change (all of panel (a) and (c)), so
+-those points cost one ribbon decimation each.
+-
+-Requirements for the plateau (all checkable before running, see the printout):
+-  * ribbons topological:            myf.chern_number(p) != 0
+-  * edge modes not gapped by width: myf.ribbon_gap(p) << eta (KT = 0) or << kT (KT > 0)
+-  * centre below its first subband: mu_c inside the confinement window
+-
+-The map is resumable: results/fig8r_<panel>_KT<KT>.npz is saved after every row, so rerun
+-the script (or set MAX_SECONDS) until it finishes.
+-Switching p_base to the Dirac parameters of the paper reproduces the Dirac version.
+-"""
+-#%% --- IMPORTS ---
+-import time
+-from pathlib import Path
+-from dataclasses import replace
+-import numpy as np
+-import matplotlib.pyplot as plt
+-
+-try:
+-    import my_functions as myf
+-except ModuleNotFoundError:
+-    import sys
+-    _start = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+-    _root = next(p for p in (_start, *_start.parents) if (p / "my_functions" / "__init__.py").is_file())
+-    sys.path.insert(0, str(_root))
+-    import my_functions as myf
+-
+-#%% --- PARAMETERS (Rashba working point) ---
+-p_base = myf.Params(
+-    model='rashba', nx=85, ny=20, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=-0.05, t_s=1.0, mu_s=0.05,
+-    delta=0.25, phi=np.pi, tc_top=1.0, tc_bot=1.0, tc_barr=1.0,
+-    alpha=1.2, Bz=0.0, Bxy=0.0, Bz_s=0.7, eta=2e-5, kT = 0.0       # nx 120 -> 80, Bz_s 0.7 -> 0.6, eta 1e-5 -> 1e-6
+-)
+-KT = 0.0                     # 0 -> T -> 0 limit; e.g. 1e-3 -> finite temperature (8 energies/point)
+-MAX_SECONDS = None             # e.g. 250 to stop the map early and resume on the next run
+-N_WORKERS = None               # parallel processes (None -> all cores, 1 -> serial, for debugging)
+-param1_name = 'Bz_s'                          # x-axis
+-param1_vals = np.linspace(0.50, 2.20, 31)
+-param2_name = 'mu_s'                          # y-axis
+-param2_vals = np.linspace(-0.05, 0.4, 31)
+-param1_label = r"$B_{z,s}$"
+-param2_label = r"$\mu_s$"
+-PANELS = {   # name: (x-parameter, x-values, y-parameter or None, y-values)
+-    'b': ('mu_c', np.linspace(-0.06, 0.05, 41), None, None),
+-    'c': ('Bz_s', np.linspace(0.50, 2.00, 41), None, None),
+-    'd': ('t_c', np.linspace(0.5, 2.0, 41), None, None),
+-    'a': (param1_name, param1_vals, param2_name, param2_vals),
+-}
+-out = Path("results"); out.mkdir(exist_ok=True)
+-E_nodes, w_th, w_el = myf.linear_response_nodes_phs(KT, n=16)
+-
+-if __name__ == "__main__":      # not re-run by the spawned worker processes
+-    print(f"working point: C = {myf.chern_number(p_base):+.2f}, ribbon edge gap = {myf.ribbon_gap(p_base, nk=61):.1e}, "
+-          f"eta = {p_base.eta:g}" + (f", kT = {KT:g}" if KT else " (T -> 0)"))
+-#%% --- COMPUTE (resumable) ---
+-POOL = None
+-N_UNRELIABLE = 0
+-
+-def points(plist):
+-    """Rows [kappa(phi), G(phi), kappa(0), G(0)] for a list of Params (parallel, see myf.thermal_scan)."""
+-    global POOL, N_UNRELIABLE
+-    if POOL is None and N_WORKERS != 1:
+-        POOL = myf.make_pool(N_WORKERS)
+-    rows, n_bad = myf.thermal_scan(plist, E_nodes, w_th, w_el, phis=(p_base.phi, 0.0), side='right',
+-                                   n_workers=N_WORKERS, pool=POOL)
+-    N_UNRELIABLE += n_bad
+-    return rows
+-
+-def point(p):
+-    """(kappa/kappa0, G/G0) at phi = p.phi, and the same at phi = 0 (single point, this process)."""
+-    return myf.thermal_point(p, E_nodes, w_th, w_el, phis=(p.phi, 0.0), side='right')[0]
+-
+-def compute(name):
+-    f = out / f"fig8r_{name}_KT{KT:g}.npz"
+-    n1, v1, n2, v2 = PANELS[name]
+-    if f.exists():
+-        d = np.load(f)
+-        if d['done'].all():
+-            return d['data'], d['done']
+-        data, done = d['data'].copy(), d['done'].copy()
+-    else:
+-        shape = (len(v1), 4) if n2 is None else (len(v2), len(v1), 4)
+-        data, done = np.full(shape, np.nan), np.zeros(shape[:-1][0] if n2 is None else len(v2), dtype=bool)
+-    t0 = time.perf_counter()
+-    if n2 is None:                                   # 1D scan
+-        todo = np.flatnonzero(~done)
+-        if len(todo):
+-            data[todo] = points([replace(p_base, **{n1: v1[i]}) for i in todo])
+-            done[todo] = True
+-            np.savez(f, data=data, done=done)
+-    else:                                            # 2D map, row by row
+-        for j, b in enumerate(v2):
+-            if done[j]:
+-                continue
+-            if MAX_SECONDS is not None and time.perf_counter() - t0 > MAX_SECONDS:
+-                break
+-            data[j] = points([replace(p_base, **{n1: a, n2: b}) for a in v1])
+-            done[j] = True
+-            np.savez(f, data=data, done=done)
+-            time_min = (time.perf_counter() - t0) // 60
+-            time_sec = (time.perf_counter() - t0) % 60
+-            print(f"  panel a: row {done.sum()}/{len(v2)} ({n2}={b:+.3f}), {time_min:.0f} min {time_sec:.0f} s, "
+-                  f"unreliable lead energies: {N_UNRELIABLE}")
+-    return data, done
+-
+-if __name__ == "__main__":
+-    results = {}
+-    for name in PANELS:                              # cheap panels first, map last
+-        results[name], done = compute(name)
+-        print(f"panel {name}: {'done' if done.all() else 'INCOMPLETE - rerun to continue'}")
+-    if POOL is not None:
+-        POOL.shutdown()
+-        POOL = None
+-
+-#%% --- PLOT ---
+-def plot_fig8_rashba(results):
+-    fig, axs = plt.subplots(2, 2, figsize=(12, 8))
+-    _, v1, _, v2 = PANELS['a']
+-    d = results['a']
+-    im = axs[0, 0].pcolormesh(v1, v2, d[:, :, 0], cmap='inferno', vmin=0, vmax=1.2, shading='nearest')
+-    fig.colorbar(im, ax=axs[0, 0]).set_label(r"$\kappa/\kappa_0$")
+-    axs[0, 0].contour(v1, v2, np.abs(d[:, :, 0] - 0.5) < 0.05, levels=[0.5], colors='cyan', linewidths=1)
+-    axs[0, 0].set_xlabel(r"$B_{z,s}$"); axs[0, 0].set_ylabel(r"$\mu_s$")
+-    axs[0, 0].set_title(r"(a) $\kappa/\kappa_0$ (cyan: within 0.05 of 0.5)", fontsize=10)
+-    for ax, name, lab in ((axs[0, 1], 'b', r"$\mu_c$"), (axs[1, 0], 'c', r"$B_{z,s}$"), (axs[1, 1], 'd', r"$\mu_s$")):
+-        x, r = PANELS[name][1], results[name]
+-        ax.plot(x, r[:, 0], '-', color='tab:blue', label=r'$\kappa/\kappa_0$, $\phi=\pi$')
+-        ax.plot(x, r[:, 2], ':', color='tab:cyan', label=r'$\kappa/\kappa_0$, $\phi=0$')
+-        ax.plot(x, r[:, 1], '-', color='tab:red', label=r'$G/G_0$, $\phi=\pi$')
+-        ax.axhline(0.5, color='gray', lw=0.6, ls=':'); ax.axhline(0, color='gray', lw=0.6)
+-        ax.set_xlabel(lab); ax.set_title(f"({name}) scan of {lab}", fontsize=10); ax.legend(fontsize=7)
+-    fig.suptitle(myf.param_title(p_base, extra=("T -> 0 limit (E = 0)" if KT == 0 else f"$k_BT$ = {KT:g}")), fontsize=8, y=0.995)
+-    plt.tight_layout(rect=[0, 0, 1, 0.93]) #type: ignore
+-    fig.savefig(out / f"fig8_rashba_KT{KT:g}.png", dpi=130)
+-    return fig
+-
+-if __name__ == "__main__":
+-    plot_fig8_rashba(results)
+-    plt.show()
+-# %%
+-which = 'p2' # From contourplot: x-axis is p1, y-axis is p2
+-
+-t1, t2 = 1.2, 0.2  # fixed value for either param1 or param2
+-
+-T_th_grid = results['a'][:, :, 0]
+-T_el_grid = results['a'][:, :, 1]
+-i, j = np.argmin(np.abs(param1_vals - t1)), np.argmin(np.abs(param2_vals - t2))
+-if which == 'p1':
+-    fig, ax = plt.subplots(1, 2, figsize=(13, 4.8))
+-    ax[0].plot(param2_vals, T_th_grid[:, i], label=f"{param1_name} = {param1_vals[i]:.3f}")
+-    ax[1].plot(param2_vals, T_el_grid[:, i], label=f"{param1_name} = {param1_vals[i]:.3f}")
+-    ax[0].axhline(0.5, color='gray', lw=1.0, ls='--', label=r'$\kappa/\kappa_0$ = 0.5')
+-
+-    ax[0].set_xlabel(param2_label)
+-    ax[1].set_xlabel(param2_label)
+-    fig.suptitle(f"Line cuts at {param1_label} = {t1:.3f}")
+-
+-elif which == 'p2':
+-    fig, ax = plt.subplots(1, 2, figsize=(13, 4.8))
+-    ax[0].plot(param1_vals, T_th_grid[j], label=f"{param2_name} = {param2_vals[j]:.3f}")
+-    ax[1].plot(param1_vals, T_el_grid[j], label=f"{param2_name} = {param2_vals[j]:.3f}")
+-    ax[0].set_xlabel(param1_label)
+-    ax[0].axhline(0.5, color='gray', lw=1.0, ls='--', label=r'$\kappa/\kappa_0$ = 0.5')
+-    ax[1].set_xlabel(param1_label)
+-    fig.suptitle(f"Line cuts at {param2_label} = {t2:.3f}")
+-
+-ax[0].grid(alpha=0.5)
+-ax[1].grid(alpha=0.5)
+-ax[0].set_ylabel(r"$\kappa/\kappa_0$")
+-ax[1].set_ylabel(r"$G/G_0$")
+-ax[0].legend()
+-ax[1].legend()
+-plt.tight_layout()
+-plt.show()
+-# %%
+diff --git a/thesis/4_terminal/computations/main.py b/thesis/4_terminal/computations/main.py
+deleted file mode 100644
+index 357ae78..0000000
+--- a/thesis/4_terminal/computations/main.py
++++ /dev/null
+@@ -1,111 +0,0 @@
+-#%% --- IMPORTS ---
+-import time
+-from dataclasses import replace
+-
+-import numpy as np
+-import matplotlib.pyplot as plt
+-
+-try:
+-    import my_functions as myf
+-except ModuleNotFoundError:   # not pip-installed -> find <parent_folder>/my_functions by walking up
+-    import sys
+-    from pathlib import Path
+-    _start = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+-    _root = next(p for p in (_start, *_start.parents) if (p / "my_functions" / "__init__.py").is_file())
+-    sys.path.insert(0, str(_root))
+-    import my_functions as myf
+-
+-#%% --- COMPARISON OF FAST_PHASE_SWEEP AND RGF ---
+-p = myf.Params(
+-    model='rashba',
+-    nx=12, ny=6, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
+-    delta=0.35, phi=np.pi, tc_top=1.00, tc_bot=1.00, tc_barr=1.00, alpha=0.2, beta=0.0,
+-    Bz=0.4, Bxy=0.0, theta_z=0.00*np.pi, Bz_s=0.4,
+-    eta=1e-5, kT=5e-6,
+-)
+-
+-junction = myf.FourTerminalJunction(p)
+-E_sweep = np.linspace(-1.5*p.delta, 1.5*p.delta, 41)
+-
+-phi_test = 0.37
+-t0 = time.perf_counter()
+-fast = myf.FastPhaseSweep(junction, E_sweep, phi_ref=0.0)
+-t_fast = time.perf_counter() - t0
+-print(f'System size: nx={p.nx}, ny={p.ny}, N_E={len(E_sweep)}')
+-print(f"FastPhaseSweep energy sweep: {t_fast:.4f} s")
+-
+-t0 = time.perf_counter()
+-rgf = myf.RGFFourTerminal(junction, E_sweep, phi_ref=0.0)
+-t_rgf = time.perf_counter() - t0
+-
+-print(f"RGF energy sweep:            {t_rgf:.4f} s")
+-print(f"Energy speedup: {t_fast:.1f}s / {t_rgf:.1f}s = {(t_fast)/(t_rgf):.2f}x")
+-a = fast.channels_at_phi(phi_test, "left")
+-b = rgf.channels_at_phi(phi_test, "left")
+-print(f"Max abs. error at phi={phi_test:.3f}:")
+-for key in a:
+-    print(f"  {key:9s} {np.max(np.abs(a[key] - b[key])):.2e}")   # type: ignore
+-
+-t0 = time.perf_counter()
+-for ph in np.linspace(0, 2*np.pi, 41):
+-    fast.channels_at_phi(ph, "left")
+-t_fast_phi = time.perf_counter() - t0
+-
+-t0 = time.perf_counter()
+-for ph in np.linspace(0, 2*np.pi, 41):
+-    rgf.channels_at_phi(ph, "left")
+-t_rgf_phi = time.perf_counter() - t0
+-
+-print(f"per-phi: dense={1000*t_fast_phi/41:.1f} ms   rgf={1000*t_rgf_phi/41:.1f} ms")
+-print(f"full phi sweep: dense={t_fast+t_fast_phi:.1f}s  rgf={t_rgf+t_rgf_phi:.1f}s")
+-print(f"Phase speedup: {(t_fast+t_fast_phi)/(t_rgf+t_rgf_phi):.2f}x")
+-
+-# %% --- PHASE DEPENDENCE OF TRANSMISSION COEFFICIENTS ---
+-p = myf.Params(
+-    model='rashba',
+-    nx=80, ny=30, t_n=1.0, mu_n=1.00, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
+-    delta=0.35, phi=0.0, tc_top=1.00, tc_bot=1.00, tc_barr=1.00,
+-    alpha=-0.4, beta=0.0, Bz=0.0, Bxy=0.0, theta_z=0.00*np.pi, Bz_s=2.0,
+-    eta=1e-5, kT=2e-3,
+-)
+-
+-E_fixed = np.array([0.0])
+-phi_vals = np.linspace(0.0, 2 * np.pi, 201)
+-
+-junction = myf.FourTerminalJunction(p)
+-rgf_solver = myf.RGFFourTerminal(junction, E_fixed, phi_ref=p.phi)
+-
+-T_ee, T_eh, T_he, T_lar_eh = [], [], [], []
+-for phi_val in phi_vals:
+-    ch_right = rgf_solver.channels_at_phi(phi_val, side_name='right')
+-    T_ee.append(ch_right['ee'])            # normal transmission (e -> e)
+-    T_eh.append(ch_right['eh_cross'])      # CAR (h -> e)
+-    T_he.append(ch_right['he_cross'])      # CAR (e -> h)
+-    T_lar_eh.append(ch_right['eh_local'])  # LAR
+-
+-T_th = np.array(T_ee) + np.array(T_he)
+-
+-fig, ax = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+-ax[0].plot(phi_vals / np.pi, np.array(T_he), label=r"$T_{he}$ (CAR)")
+-ax[0].plot(phi_vals / np.pi, T_ee, label=r"$T_{ee}$ ")
+-ax[0].set_title(fr'Transmissions at fixed E={E_fixed[0]:.2f} vs. $\phi$')
+-ax[0].set_ylabel("Transmission")
+-ax[0].legend()
+-ax[0].grid(True)
+-
+-ax[1].plot(phi_vals / np.pi, T_th, label=r"$T_{th}$")
+-ax[1].set_xlabel(r"$\phi / \pi$")
+-ax[1].set_ylabel("Transmission")
+-ax[1].legend()
+-ax[1].grid(True)
+-
+-plt.tight_layout()
+-plt.show()
+-
+-# %% --- DENSE REFERENCE CHECK (small system: dense inverse vs RGF) ---
+-p_small = replace(p, nx=8, ny=5, phi=0.83)
+-E_small = np.linspace(-0.5, 0.5, 11)
+-dense = myf.FourTerminalJunction(p_small).channels(E_small, side_name='right')
+-rgf_small = myf.RGFFourTerminal(myf.FourTerminalJunction(p_small), E_small).channels_at_phi(p_small.phi, 'right')
+-print("max |dense - RGF| per channel:", {k: f"{np.max(np.abs(dense[k] - rgf_small[k])):.1e}" for k in dense})
+-# %%
+diff --git a/thesis/4_terminal/computations/map_working_point.py b/thesis/4_terminal/computations/map_working_point.py
+deleted file mode 100644
+index 63393b4..0000000
+--- a/thesis/4_terminal/computations/map_working_point.py
++++ /dev/null
+@@ -1,72 +0,0 @@
+-"""
+-map_working_point.py -- kappa/kappa0 and G/G0 at E = 0 over (Bz_s, mu_s) at the Rashba
+-working point.  Resumable: finished rows are stored in results/, rerun to continue.
+-Set MAX_SECONDS to stop after a while and continue later.
+-"""
+-#%% --- IMPORTS ---
+-import time
+-from pathlib import Path
+-from dataclasses import replace
+-import numpy as np
+-import matplotlib.pyplot as plt
+-
+-try:
+-    import my_functions as myf
+-except ModuleNotFoundError:
+-    import sys
+-    _start = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+-    _root = next(p for p in (_start, *_start.parents) if (p / "my_functions" / "__init__.py").is_file())
+-    sys.path.insert(0, str(_root))
+-    import my_functions as myf
+-from my_functions import leads
+-
+-#%% --- PARAMETERS ---
+-p_base = myf.Params(
+-    model='rashba', nx=60, ny=20, t_n=1.0, mu_n=0.5, t_c=1.0, mu_c=-0.01, t_s=1.0, mu_s=0.05,
+-    delta=0.25, phi=np.pi, tc_top=1.2, tc_bot=1.2, tc_barr=1.0,
+-    alpha=0.8, Bz=0.0, Bxy=0.0, Bz_s=0.6, eta=1e-6,
+-)
+-Bz_vals = np.linspace(0.30, 1.00, 36)          # x axis
+-mu_vals = np.linspace(-0.20, 0.40, 31)         # y axis
+-MAX_SECONDS = 250                               # e.g. 250 to stop and resume later
+-
+-out = Path("results"); out.mkdir(exist_ok=True)
+-f_map = out / f"map_Bz_mu_nx{p_base.nx}_ny{p_base.ny}.npz"
+-
+-#%% --- COMPUTE (resumable) ---
+-if f_map.exists():
+-    d = np.load(f_map)
+-    T_pi, T_0, G_pi, done = d['T_pi'].copy(), d['T_0'].copy(), d['G_pi'].copy(), d['done'].copy()
+-else:
+-    T_pi, T_0, G_pi = (np.full((len(mu_vals), len(Bz_vals)), np.nan) for _ in range(3))
+-    done = np.zeros(len(mu_vals), dtype=bool)
+-t0 = time.perf_counter()
+-for j, mu in enumerate(mu_vals):
+-    if done[j]:
+-        continue
+-    if MAX_SECONDS is not None and time.perf_counter() - t0 > MAX_SECONDS:
+-        break
+-    for i, Bz in enumerate(Bz_vals):
+-        rgf = myf.RGFFourTerminal(myf.FourTerminalJunction(replace(p_base, Bz_s=Bz, mu_s=mu)), [0.0])
+-        a, b = rgf.channels_at_phi(np.pi, 'right'), rgf.channels_at_phi(0.0, 'right')
+-        T_pi[j, i] = a['ee'][0] + a['he_cross'][0]
+-        G_pi[j, i] = a['ee'][0] - a['he_cross'][0]
+-        T_0[j, i] = b['ee'][0] + b['he_cross'][0]
+-    done[j] = True
+-    np.savez(f_map, T_pi=T_pi, T_0=T_0, G_pi=G_pi, done=done, Bz_vals=Bz_vals, mu_vals=mu_vals)
+-    print(f"row {done.sum()}/{len(mu_vals)} (mu_s={mu:+.3f}) done, {time.perf_counter()-t0:.0f} s, "
+-          f"unreliable lead energies so far: {leads.N_UNRELIABLE}")
+-
+-#%% --- PLOT ---
+-if done.all():
+-    fig, ax = plt.subplots(1, 3, figsize=(16, 4.4))
+-    for a_, Z, ttl, kw in ((ax[0], T_pi, r"$\kappa/\kappa_0$ at $\phi=\pi$", dict(cmap='inferno', vmin=0, vmax=1.2)),
+-                           (ax[1], T_0, r"$\kappa/\kappa_0$ at $\phi=0$", dict(cmap='inferno', vmin=0, vmax=1.2)),
+-                           (ax[2], G_pi, r"$G/G_0$ at $\phi=\pi$", dict(cmap='RdBu_r', vmin=-0.5, vmax=0.5))):
+-        im = a_.pcolormesh(Bz_vals, mu_vals, Z, shading='nearest', **kw)
+-        fig.colorbar(im, ax=a_)
+-        a_.set_title(ttl); a_.set_xlabel(r"$B_{z,s}$"); a_.set_ylabel(r"$\mu_s$")
+-    ax[0].contour(Bz_vals, mu_vals, np.abs(T_pi - 0.5) < 0.05, levels=[0.5], colors='cyan', linewidths=1.2)
+-    fig.suptitle(myf.param_title(p_base, extra=r"E = 0, cyan: $|\kappa/\kappa_0-0.5|<0.05$"), fontsize=8, y=0.995)
+-    plt.tight_layout(rect=[0, 0, 1, 0.97]); plt.savefig(f_map.with_suffix('.png'), dpi=130); plt.show()
+-# %%
+diff --git a/thesis/4_terminal/computations/thermal_map.py b/thesis/4_terminal/computations/thermal_map.py
+deleted file mode 100644
+index af9e7c0..0000000
+--- a/thesis/4_terminal/computations/thermal_map.py
++++ /dev/null
+@@ -1,175 +0,0 @@
+-#%% --- IMPORTS ---
+-import time
+-from pathlib import Path
+-from dataclasses import replace
+-import numpy as np
+-import matplotlib.pyplot as plt
+-from matplotlib.colors import LogNorm
+-
+-try:
+-    import my_functions as myf
+-except ModuleNotFoundError:  
+-    import sys
+-    _start = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+-    _root = next(p for p in (_start, *_start.parents) if (p / "my_functions" / "__init__.py").is_file())
+-    sys.path.insert(0, str(_root))
+-    import my_functions as myf
+-from my_functions import leads
+-
+-#%% --- PARAMETERS ---
+-p_base = myf.Params(
+-    model='rashba', nx=80, ny=10, t_n=1.0, mu_n=0.5, t_c=1.0, mu_c=-0.01, t_s=1.0, mu_s=0.05,
+-    delta=0.25, phi=np.pi, tc_top=1.2, tc_bot=1.2, tc_barr=1.0, 
+-    alpha=0.8,
+-    Bz=0.0, Bxy=0.0, Bz_s=1.2, m0=0.8, m0_c=0.8, m0_n=0.8, eta=1e-4, kT=2e-3
+-)
+-E_fixed = np.array([0.0])
+-
+-param1_name = 'Bz_s'                          # x-axis
+-param1_vals = np.linspace(2.0, 4.0, 41)
+-param2_name = 'mu_s'                          # y-axis
+-param2_vals = np.linspace(0.0, 2.0, 41)
+-param1_label = r"$B_{z,s}$"
+-param2_label = r"$\mu_s$"
+-
+-out_file = Path("results") / f"thermal_map_{param1_name}_{param2_name}.npz"
+-out_file.parent.mkdir(exist_ok=True)
+-
+-#%% --- COMPUTE T_th AND T_el ON THE GRID ---
+-T_th_grid = np.zeros((len(param2_vals), len(param1_vals)))
+-T_el_grid = np.zeros_like(T_th_grid)
+-unreliable = np.zeros(T_th_grid.shape, dtype=bool)
+-
+-def store(j, i, ch, n_bad_before):
+-    T_th_grid[j, i] = ch['ee'][0] + ch['he_cross'][0]      # kappa / kappa0
+-    T_el_grid[j, i] = ch['ee'][0] - ch['he_cross'][0]      # G / G0
+-    unreliable[j, i] = leads.N_UNRELIABLE > n_bad_before
+-t0 = time.perf_counter()
+-for j, val2 in enumerate(param2_vals):
+-    if param1_name == 'phi':                         
+-        n_bad = leads.N_UNRELIABLE
+-        solver = myf.RGFFourTerminal(myf.FourTerminalJunction(replace(p_base, **{param2_name: val2})), E_fixed)
+-        for i, val1 in enumerate(param1_vals):
+-            store(j, i, solver.channels_at_phi(val1, side_name='right'), n_bad)
+-    else:
+-        for i, val1 in enumerate(param1_vals):
+-            p_curr = replace(p_base, **{param1_name: val1, param2_name: val2})
+-            n_bad = leads.N_UNRELIABLE
+-            solver = myf.RGFFourTerminal(myf.FourTerminalJunction(p_curr), E_fixed)
+-            store(j, i, solver.channels_at_phi(p_curr.phi, side_name='right'), n_bad)
+-    np.savez(out_file, T_th=T_th_grid, T_el=T_el_grid, unreliable=unreliable, rows_done=j + 1,
+-             param1_vals=param1_vals, param2_vals=param2_vals)       # saved after every row
+-    print(f"row {j + 1}/{len(param2_vals)} done ({time.perf_counter() - t0:.0f} s), "
+-          f"unreliable points so far: {unreliable.sum()}")
+-
+-#%% --- PLOT ---
+-fig, ax = plt.subplots(1, 2, figsize=(13, 4.8))
+-X, Y = np.meshgrid(param1_vals, param2_vals)
+-
+-c0 = ax[0].contourf(X, Y, T_th_grid, levels=50, cmap='inferno')
+-c_aux = ax[0].contour(X, Y, T_th_grid, levels=[0.5], colors='black', linewidths=1.5, linestyles='--')
+-print("Contour at T_th = 0.5:")
+-print(f"For     {param1_name}           {param2_name}")
+-for segment in c_aux.allsegs[0]:
+-    for p1, p2 in segment:
+-        
+-        print(f"    {p1:12.6f}   {p2:12.6f}")
+-fig.colorbar(c0, ax=ax[0]).set_label(r"$\kappa/\kappa_0 = T_{ee} + T_{he}$")
+-ax[0].set_title(f"Thermal conductance ($E = {E_fixed[0]:.2f}$)")
+-lim = max(abs(T_el_grid.min()), abs(T_el_grid.max()), 1e-6)
+-c1 = ax[1].contourf(X, Y, T_el_grid, levels=50, cmap='RdBu_r')
+-fig.colorbar(c1, ax=ax[1]).set_label(r"$G/G_0 = T_{ee} - T_{he}$")
+-ax[1].set_title("Nonlocal electrical conductance")
+-
+-for a in ax:
+-    a.plot(X[unreliable], Y[unreliable], 'x', color='cyan', ms=4, label='lead GF unreliable')
+-    a.set_xlabel(param1_label)
+-    a.set_ylabel(param2_label)
+-if unreliable.any():
+-    ax[0].legend(loc='lower right', fontsize=8)
+-plt.tight_layout()
+-plt.savefig(out_file.with_suffix(".png"), dpi=150)
+-plt.show()
+-# %% --- PLOT T_th AND T_el LINE CUTS ---
+-which = 'p1' # From contourplot: x-axis is p1, y-axis is p2
+-
+-t1, t2 = 1.2, -0.2  # fixed value for either param1 or param2
+-
+-i, j = np.argmin(np.abs(param1_vals - t1)), np.argmin(np.abs(param2_vals - t2))
+-if which == 'p1':
+-    fig, ax = plt.subplots(1, 2, figsize=(13, 4.8))
+-    ax[0].plot(param2_vals, T_th_grid[:, i], label=f"{param1_name} = {param1_vals[i]:.3f}")
+-    ax[1].plot(param2_vals, T_el_grid[:, i], label=f"{param1_name} = {param1_vals[i]:.3f}")
+-    ax[0].axhline(0.5, color='gray', lw=1.0, ls='--', label=r'$\kappa/\kappa_0$ = 0.5')
+-
+-    ax[0].set_xlabel(param2_label)
+-    ax[1].set_xlabel(param2_label)
+-    fig.suptitle(f"Line cuts at {param1_label} = {t1:.3f}")
+-
+-elif which == 'p2':
+-    fig, ax = plt.subplots(1, 2, figsize=(13, 4.8))
+-    ax[0].plot(param1_vals, T_th_grid[j], label=f"{param2_name} = {param2_vals[j]:.3f}")
+-    ax[1].plot(param1_vals, T_el_grid[j], label=f"{param2_name} = {param2_vals[j]:.3f}")
+-    ax[0].set_xlabel(param1_label)
+-    ax[0].axhline(0.5, color='gray', lw=1.0, ls='--', label=r'$\kappa/\kappa_0$ = 0.5')
+-    ax[1].set_xlabel(param1_label)
+-    fig.suptitle(f"Line cuts at {param2_label} = {t2:.3f}")
+-
+-ax[0].grid(alpha=0.5)
+-ax[1].grid(alpha=0.5)
+-ax[0].set_ylabel(r"$\kappa/\kappa_0$")
+-ax[1].set_ylabel(r"$G/G_0$")
+-ax[0].legend()
+-ax[1].legend()
+-plt.tight_layout()
+-plt.show()
+-#%% --- DIAGNOSTICS 1: SC-RIBBON TOPOLOGY ON THE MAP GRID ---
+-# Bulk Chern number of the SC ribbons on a coarse version of the map grid, with the
+-# topological phase boundaries drawn over T_th.  Only meaningful if param1/param2
+-# change the ribbons (Bz_s, mu_s, alpha, beta, delta, t_s, Bxy, theta_z, m0).
+-
+-step = 2                                            # use every 2nd grid point (Chern: ~0.05 s per point)
+-p1_c, p2_c = param1_vals[::step], param2_vals[::step]
+-C_grid = np.array([[myf.chern_number(replace(p_base, **{param1_name: v1, param2_name: v2}))
+-                    for v1 in p1_c] for v2 in p2_c])
+-print("Chern numbers found on the grid:", sorted(set(np.rint(C_grid).astype(int).ravel())))
+-
+-fig, ax = plt.subplots(1, 2, figsize=(13, 4.8))
+-im0 = ax[0].pcolormesh(param1_vals, param2_vals, T_th_grid, cmap='inferno', shading='nearest')
+-ax[0].contour(p1_c, p2_c, C_grid, levels=[-2.5, -1.5, -0.5, 0.5, 1.5, 2.5], colors='cyan', linewidths=1)
+-fig.colorbar(im0, ax=ax[0]).set_label(r"$\kappa/\kappa_0$")
+-ax[0].set_title("T_th (no interpolation) + topological phase boundaries (cyan)")
+-im1 = ax[1].pcolormesh(p1_c, p2_c, np.rint(C_grid), cmap='RdBu_r', vmin=-2.5, vmax=2.5, shading='nearest')
+-fig.colorbar(im1, ax=ax[1], ticks=[-2, -1, 0, 1, 2]).set_label(r"Chern number $\mathcal{C}$ of the SC ribbons")
+-ax[1].set_title("Bulk topology of the SC ribbons")
+-for a in ax:
+-    a.set_xlabel(param1_label)
+-    a.set_ylabel(param2_label)
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- DIAGNOSTICS 2: ONE PARAMETER POINT (topology, ribbon edge gap, junction spectrum) ---
+-p_diag = replace(p_base, **{param1_name: 2.5, param2_name: 2.2})     # <- point to inspect
+-
+-C = myf.chern_number(p_diag)
+-gap = myf.ribbon_gap(p_diag)                        # ~1-2 s at nx = 40
+-print(f"{param1_name} = {getattr(p_diag, param1_name)}, {param2_name} = {getattr(p_diag, param2_name)}:")
+-print(f"  Chern number of the SC ribbons : {C:+.2f}   ({'topological' if abs(C) > 0.5 else 'trivial'})")
+-print(f"  ribbon gap at E=0 (width nx={p_diag.nx}) : {gap:.1e}   "
+-      f"({'edge modes propagate' if gap < 10 * p_diag.eta else 'edge modes gapped by the finite width'})")
+-
+-# junction spectrum with periodic boundary conditions in x (no normal leads); eta only broadens the lines
+-kx_vals = np.linspace(-np.pi, np.pi, 181)
+-E_vals = np.linspace(-1.0, 1.0, 201) * p_diag.delta
+-A = myf.junction_spectrum_kx(replace(p_diag, eta=2e-3), kx_vals, E_vals)     # ~10-30 s
+-
+-fig, ax = plt.subplots(figsize=(6, 4.5))
+-ax.pcolormesh(kx_vals / np.pi, E_vals / p_diag.delta, A, norm=LogNorm(vmin=A.max() * 1e-3, vmax=A.max()),
+-              cmap='inferno', shading='nearest')
+-ax.axhline(0, color='cyan', lw=0.7, ls='--')
+-ax.set_xlabel(r"$k_x a/\pi$")
+-ax.set_ylabel(r"$E/\Delta$")
+-ax.set_title(f"Junction spectrum, PBC in x, $\\phi$ = {p_diag.phi / np.pi:.2f}$\\pi$  (lines crossing E=0 carry heat)")
+-plt.tight_layout()
+-plt.show()
+-# %%
+\ No newline at end of file
+diff --git a/thesis/4_terminal/my_functions/__init__.py b/thesis/4_terminal/my_functions/__init__.py
+index 7048906..67490ff 100644
+--- a/thesis/4_terminal/my_functions/__init__.py
++++ b/thesis/4_terminal/my_functions/__init__.py
+@@ -17,30 +17,30 @@ hamiltonians     : onsite/hopping blocks of both models, lattice assembly
+ leads            : Lead (Sancho-Rubio surface GF, self-consistency check + Newton refinement)
+ junction         : FourTerminalJunction (geometry, leads, dense channels() reference)
+ rgf              : RGFFourTerminal (fast, robust; use this for large systems and maps)
+-fast_phase_sweep : FastPhaseSweep (dense, cheap phase updates; small systems)
+-transport        : Fermi functions, currents, conductances, linear-response nodes
+-scans            : fast parallel (kappa, G) parameter scans (PHS-halved energies, central-solve reuse)
+-spectra          : bulk Chern number, SC-ribbon gap, junction spectrum with PBC in x
+-plotting, analysis : helpers
++fast_phase_sweep : FastPhaseSweep (dense reference solver for small systems / checks)
++transport        : finite-bias current/conductances; thermal linear response (trapezoid, PHS-halved)
++scans            : scan (general parallel, resumable scans), ThermalPoint, thermal_point/thermal_scan
++compute          : one-call functions returning arrays: transmissions, linear_response, ldos, currents, conductances
++spectra          : Chern number, SC-ribbon edge gap, Majorana decay length, junction spectrum, LDOS
++plotting         : param_title (parameter string for figure titles)
+ """
+ 
+ from .params import Params
+ from .hamiltonians import (
+     onsite_block, Vx, Vy, dirac_onsite_block, dirac_Vx, dirac_Vy,
+-    model_onsite, model_hop, make_row_hamiltonian, get_2d_hamiltonian, flat_site_idx,
++    model_onsite, model_hop, region_alpha, bond_alpha, make_row_hamiltonian, get_2d_hamiltonian, flat_site_idx,
+ )
+ from .leads import Lead
+ from .junction import FourTerminalJunction
+ from .rgf import RGFFourTerminal, central_fingerprint
+ from .fast_phase_sweep import FastPhaseSweep
+ from .transport import (
+-    f_electron, f_hole, dc_current_channels, other_name, conductance_matrix,
+-    partial_G_vectorized, eval_I_total, total_dIdV_map, linear_response_nodes, kappa_nodes, kappa_from_channels,
+-    linear_response_nodes_phs, thermal_from_channels_phs,
++    f_electron, f_hole, current, differential_conductance,
++    dc_current_channels, other_name, conductance_matrix, partial_G_vectorized, eval_I_total, total_dIdV_map,
++    linear_response_nodes, linear_response_nodes_phs, thermal_from_channels_phs, thermal_error_phs,
+ )
++from .spectra import (chern_number, junction_spectrum_kx, ribbon_gap, LocalGreen,
++                      edge_state_profile, coherence_length)
++from .scans import scan, ThermalPoint, thermal_point, thermal_scan, make_pool
++from .compute import transmissions, linear_response, ldos, currents, conductances
+ from .plotting import style_axis, print_params, param_title
+-from .scans import thermal_point, thermal_scan, make_pool
+-from .spectra import chern_number, junction_spectrum_kx, ribbon_gap
+-from .analysis import (
+-    compute_phase_bias_maps, summarize_map, scan_grid, plot_grid_thumbnails, plot_summary_trends,
+-)
+diff --git a/thesis/4_terminal/my_functions/analysis.py b/thesis/4_terminal/my_functions/analysis.py
+deleted file mode 100644
+index 5f97442..0000000
+--- a/thesis/4_terminal/my_functions/analysis.py
++++ /dev/null
+@@ -1,108 +0,0 @@
+-"""Higher-level scans built on top of FourTerminalJunction.channels()."""
+-
+-from dataclasses import replace
+-
+-import numpy as np
+-import matplotlib.colors as mcolors
+-import matplotlib.pyplot as plt
+-from tqdm import tqdm
+-from .fast_phase_sweep import FastPhaseSweep
+-from .junction import FourTerminalJunction
+-from .transport import partial_G_vectorized
+-from .plotting import style_axis
+-
+-def compute_phase_bias_maps(pc, E_sweep, phi_vals, V_bias_map, dV_map=1e-5, side='left', scheme='sym'):
+-    """For one parameter instance pc, sweep phi and return G_LL/G_LR(phi, V) maps."""
+-    junction0 = FourTerminalJunction(pc)
+-    G_LL_map = np.empty((len(phi_vals), len(V_bias_map)))
+-    G_LR_map = np.empty_like(G_LL_map)
+-
+-    fps = FastPhaseSweep(junction0, E_sweep, phi_ref=0.0)
+-    for i, phi in enumerate(phi_vals):
+-        ch = fps.channels_at_phi(phi, side_name=side)
+-        G_LL_map[i], G_LR_map[i] = partial_G_vectorized(
+-            ch, E_sweep, V_bias_map, dV_map, pc.kT, scheme=scheme
+-        )
+-
+-    return G_LL_map, G_LR_map
+-
+-
+-def summarize_map(G_LL_map, G_LR_map):
+-    """
+-    Summarize the non-local conductance map.
+-    Positive peak G_LR indicates CAR dominates, negative indicates EC dominates.
+-    """
+-    flat_GLR = G_LR_map.flatten()
+-    max_idx = np.argmax(np.abs(flat_GLR))
+-    peak_GLR = flat_GLR[max_idx]
+-
+-    return {
+-        'mean_GLR': np.mean(G_LR_map),
+-        'peak_GLR': peak_GLR,
+-        'peak_GLL': np.max(np.abs(G_LL_map)),
+-    }
+-
+-
+-def scan_grid(base_params, name1, vals1, name2, vals2, E_sweep, phi_vals, V_bias_map, dV_map=1e-5, side='left', scheme='sym'):
+-    """2D parameter scan over (name1, name2); returns an object array of per-cell results."""
+-    results = np.empty((len(vals1), len(vals2)), dtype=object)
+-    for i, v1 in enumerate(tqdm(vals1, desc=f'{name1} sweep')):
+-        for j, v2 in enumerate(vals2):
+-            pc = replace(base_params, **{name1: v1, name2: v2})
+-            G_LL_map, G_LR_map = compute_phase_bias_maps(pc, E_sweep, phi_vals, V_bias_map, dV_map, side, scheme)
+-            results[i, j] = {
+-                'G_LL_map': G_LL_map,
+-                'G_LR_map': G_LR_map,
+-                'summary': summarize_map(G_LL_map, G_LR_map),
+-            }
+-    return results
+-
+-
+-def plot_grid_thumbnails(results, name1, vals1, name2, vals2, phi_vals, V_bias_map, delta):
+-    """Grid of small contour plots of the non-local conductance G_LR, one per (v1, v2) cell."""
+-    n1, n2 = len(vals1), len(vals2)
+-    fig, axs = plt.subplots(n1, n2, figsize=(2.6 * n2, 2.4 * n1), squeeze=False)
+-
+-    for i in range(n1):
+-        for j in range(n2):
+-            ax = axs[i, j]
+-            G_LR = results[i, j]['G_LR_map']
+-
+-            vmax = np.max(np.abs(G_LR))
+-            if vmax == 0:
+-                vmax = 1e-10  # avoid a singular norm
+-
+-            norm = mcolors.TwoSlopeNorm(vcenter=0, vmin=-vmax, vmax=vmax)
+-            ax.contourf(phi_vals / np.pi, V_bias_map / delta, G_LR.T, levels=40,
+-                        cmap='RdBu_r', norm=norm)
+-            ax.set_xticks([])
+-            ax.set_yticks([])
+-            if i == 0:
+-                ax.set_title(f'{name2}={vals2[j]:.2g}', fontsize=9)
+-            if j == 0:
+-                ax.set_ylabel(f'{name1}={vals1[i]:.2g}', fontsize=9)
+-
+-    fig.suptitle(r'Non-local Conductance $G_{LR}$ across ' + f'{name1} x {name2} \n(Red = CAR, Blue = EC)', y=1.05)
+-    plt.tight_layout()
+-    return fig, axs
+-
+-
+-def plot_summary_trends(results, name1, vals1, name2, vals2):
+-    """Line plot of peak G_LR vs. name1, tracking the EC <-> CAR transition."""
+-    fig, ax = plt.subplots(figsize=(7, 5))
+-
+-    for j, v2 in enumerate(vals2):
+-        peak_glr = [results[i, j]['summary']['peak_GLR'] for i in range(len(vals1))]
+-        ax.plot(vals1, peak_glr, marker='o', label=f'{name2}={v2:.2g}')
+-    ax.set_xlabel(name1)
+-    ax.set_ylabel(r'Peak Non-local Conductance $G_{LR}$ ($e^2/h$)')
+-    ax.axhline(0.0, color='k', linestyle='--', alpha=0.7)
+-    ylim = ax.get_ylim()
+-    ax.text(vals1[0], 0.15 * abs(ylim[1] - ylim[0]), 'CAR Dominates ($G_{LR} > 0$)',
+-            color='tab:red', fontsize=10, va='bottom')
+-    ax.text(vals1[0], -0.15 * abs(ylim[1] - ylim[0]), 'EC Dominates ($G_{LR} < 0$)',
+-            color='tab:blue', fontsize=10, va='top')
+-    ax.legend()
+-    style_axis(ax, r'Mechanism Tuning via $G_{LR}$')
+-    plt.tight_layout()
+-    return fig, ax
+diff --git a/thesis/4_terminal/my_functions/checks.py b/thesis/4_terminal/my_functions/checks.py
+index 0859e5b..38ce04c 100644
+--- a/thesis/4_terminal/my_functions/checks.py
++++ b/thesis/4_terminal/my_functions/checks.py
+@@ -1,168 +1,112 @@
+ """
+-Physics regression checks. Run after any change to the Hamiltonian / lead code:
++Physics and solver regression checks.  Run after any change to the Hamiltonian, lead or solver code:
+ 
+     from my_functions.checks import run_all
+-    run_all()
++    run_all()                      # ~1 minute; every line should say PASS
+ 
+-Every number printed should be at round-off level (or match the stated expectation).
++1. H_C is Hermitian and particle-hole symmetric (both models, SOC + Zeeman + per-region SOC)
++2. RGF == dense junction.channels == FastPhaseSweep (Caroli transmissions, both leads, several phases)
++3. particle-hole symmetry of the transmissions: T_ee(-E) = T_hh(E), T_he(-E) = T_eh(E)
++4. clean normal wire: integer transmission, no Andreev processes
++5. lead solver: eigenmode fallback == Sancho-Rubio where healthy; the known E = 0 failure is repaired
+ """
+-
+-import numpy as np
+-from numpy.linalg import inv
+ from dataclasses import replace
++import numpy as np
+ 
+ from .params import Params
+ from .junction import FourTerminalJunction
++from .rgf import RGFFourTerminal
+ from .fast_phase_sweep import FastPhaseSweep
+-from .hamiltonians import onsite_block, Vx, Vy, lattice_hamiltonian, block_repeat, flat_site_idx, SY
+-from .transport import current, conductance, energy_grid
+-
+-SOC = dict(alpha=0.3, beta=-0.12, Bz=0.3, Bxy=0.2, theta_z=0.4)   # alpha -/+ beta both nonzero
+-
+-
+-def _G_small(J, E, S, keys):
+-    A = (E + 1j * J.p.eta) * np.eye(J.dim) - J.H_C
+-    for k in keys:
+-        A[np.ix_(J.idx[k], J.idx[k])] -= S[k]
+-    return inv(A)
+-
+-
+-def partition_x(k=3, E=0.13):
+-    """Move k N-lead cells into the centre, re-attach the same Sigma_L/R further out -> G_C unchanged.
+-    (No barrier: every x-bond, including the lead/centre one, is Vx(t_n) = Vx(t_c) here.)"""
+-    p = Params(nx=4, ny=3, mu_n=0.8, mu_c=0.5, eta=1e-6, **SOC)
+-    J = FourTerminalJunction(p)
+-    S = {kk: v[0] for kk, v in J.self_energies(np.array([E])).items()}
+-    Gs = _G_small(J, E, S, 'LR')
+-    NX = p.nx + 2 * k
+-    H = lattice_hamiltonian(NX, p.ny, onsite_block(p.t_n, p.mu_n, alpha=p.alpha, beta=p.beta, twod=True),
+-                            Vx(p.t_n, p.alpha, p.beta), Vy(p.t_n, p.alpha, p.beta))
+-    cen = [ix + NX * iy for iy in range(p.ny) for ix in range(k, k + p.nx)]
+-    onsC = onsite_block(p.t_c, p.mu_c, Bz=p.Bz, Bxy=p.Bxy, theta_z=p.theta_z, alpha=p.alpha, beta=p.beta, twod=True)
+-    for s in cen:
+-        H[4 * s:4 * s + 4, 4 * s:4 * s + 4] = onsC
+-    A = (E + 1j * p.eta) * np.eye(len(H)) - H
+-    iL = flat_site_idx([NX * iy for iy in range(p.ny)])
+-    iR = flat_site_idx([NX - 1 + NX * iy for iy in range(p.ny)])
+-    A[np.ix_(iL, iL)] -= S['L']
+-    A[np.ix_(iR, iR)] -= S['R']
+-    ic = flat_site_idx(cen)
+-    return np.max(np.abs(inv(A)[np.ix_(ic, ic)] - Gs))
+-
+-
+-def partition_y(sc_leads, k=3, E=0.05):
+-    """Same in y: move k SC-lead rows into the centre, re-attach Sigma_T/B further out."""
+-    p = Params(nx=4, ny=3, mu_c=0.5, mu_s=0.9, delta=0.3, phi=0.7, eta=1e-6, **SOC)
+-    J = FourTerminalJunction(p, sc_leads)
+-    S = {kk: v[0] for kk, v in J.self_energies(np.array([E])).items()}
+-    Gs = _G_small(J, E, S, 'TB')
+-    twod = sc_leads == 'ribbon'
+-    hx_sc = Vx(p.t_s, p.alpha, p.beta) if twod else None
+-    row = {lab: lattice_hamiltonian(p.nx, 1, onsite_block(p.t_s, p.mu_s, delta=p.delta, phi=ph, twod=twod), hop_x=hx_sc)
+-           for lab, ph in (('T', p.phi), ('B', 0.0))}
+-    row['C'] = lattice_hamiltonian(p.nx, 1, onsite_block(p.t_c, p.mu_c, Bz=p.Bz, Bxy=p.Bxy, theta_z=p.theta_z,
+-                                                         alpha=p.alpha, beta=p.beta, twod=True),
+-                                   hop_x=Vx(p.t_c, p.alpha, p.beta))
+-    labels = ['T'] * k + ['C'] * p.ny + ['B'] * k
+-    m, n = 4 * p.nx, len(labels)
+-    V = block_repeat(Vy(1.0, p.alpha, p.beta), p.nx)          # all y-bonds have t = 1 here
+-    H = np.zeros((n * m, n * m), dtype=complex)
+-    for r, lab in enumerate(labels):
+-        H[r * m:(r + 1) * m, r * m:(r + 1) * m] = row[lab]
+-        if r < n - 1:
+-            H[r * m:(r + 1) * m, (r + 1) * m:(r + 2) * m] = V
+-            H[(r + 1) * m:(r + 2) * m, r * m:(r + 1) * m] = V.conj().T
+-    A = (E + 1j * p.eta) * np.eye(n * m) - H
+-    A[:m, :m] -= S['T']
+-    A[-m:, -m:] -= S['B']
+-    ic = np.arange(k * m, (k + p.ny) * m)
+-    return np.max(np.abs(inv(A)[np.ix_(ic, ic)] - Gs))
+-
+-
+-def particle_hole_and_fast_sweep():
+-    """PHS: T_ee(E) = T_hh(-E) etc.;  FastPhaseSweep == direct solve at other phases.  With disorder."""
+-    rng = np.random.default_rng(3)
+-    p = Params(nx=7, ny=5, mu_n=1.2, mu_c=0.9, mu_s=1.1, delta=0.3, phi=0.9, eta=1e-7, **SOC)
+-    J = FourTerminalJunction(p)
+-    dis = rng.normal(0, 0.3, p.nx * p.ny)
+-    for s, w in enumerate(dis):
+-        J.H_C[4 * s:4 * s + 4, 4 * s:4 * s + 4] += w * np.diag([1, 1, -1, -1])
+-    E = np.linspace(-0.4, 0.4, 9)                      # symmetric: E[::-1] = -E
+-    ch = J.channels(E)
+-    phs = max(np.max(np.abs(ch[s][a] - ch[s][b][::-1]))
+-              for s in ch for a, b in (('ee', 'hh'), ('eh_cross', 'he_cross'), ('eh_local', 'he_local')))
+-    fps, dfs = FastPhaseSweep(J, E), 0.0
+-    for phi in (0.3, 2.0, -2.5):
+-        Jp = FourTerminalJunction(replace(p, phi=phi))
+-        Jp.H_C = J.H_C
+-        c1, c2 = Jp.channels(E), fps.channels_at_phi(phi)
+-        dfs = max(dfs, max(np.max(np.abs(c1[s][k] - c2[s][k])) for s in c1 for k in c1[s]))
+-    return phs, dfs
++from . import leads
++
++CASES = {
++    'rashba': Params(model='rashba', nx=10, ny=6, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=0.3, t_s=1.0, mu_s=0.15, delta=0.35,
++                     tc_top=1.1, tc_bot=0.9, tc_barr=1.0, alpha=1.2, beta=-0.2, Bz=0.1, Bxy=0.05, theta_z=0.4, Bz_s=0.94, eta=1e-5),
++    'rashba, per-region SOC': Params(model='rashba', nx=10, ny=6, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=0.3, t_s=1.0, mu_s=0.15,
++                     delta=0.35, tc_top=1.1, tc_bot=1.1, tc_barr=1.0, alpha=1.2, alpha_c=0.6, alpha_n=0.0, Bz=0.1, Bz_n=0.0,
++                     Bz_s=0.94, eta=1e-5),
++    'dirac': Params(model='dirac', nx=10, ny=6, t_n=1.0, mu_n=0.5, t_c=1.0, mu_c=0.1, t_s=1.0, mu_s=0.77, delta=0.35,
++                    tc_top=1.0, tc_bot=1.0, tc_barr=1.0, Bz_s=-0.3, m0=0.8, m0_c=0.8, m0_n=0.8, eta=1e-5),
++}
++E = np.array([-0.2, -0.03, 0.0, 0.04, 0.25])
++_RESULTS = []
++
++
++def _report(name, value, tol):
++    ok = bool(np.isfinite(value) and value < tol)
++    _RESULTS.append(ok)
++    print(f"[{'PASS' if ok else 'FAIL'}] {name:62s} {value:.1e}  (tol {tol:.0e})")
++    return ok
+ 
+ 
+ def hermiticity_and_phs_of_H():
+-    p = Params(nx=4, ny=3, mu_c=0.4, **SOC)
+-    H = FourTerminalJunction(p).H_C
+-    P = np.kron(np.eye(p.nx * p.ny), np.kron(SY, SY))       # tau_y sigma_y per site
+-    return np.max(np.abs(H - H.conj().T)), np.max(np.abs(P @ H.conj() @ P.conj().T + H))
++    U4 = np.kron(np.array([[0, -1j], [1j, 0]]), np.array([[0, -1j], [1j, 0]]))      # tau_y sigma_y (then K)
++    for name, p in CASES.items():
++        H = FourTerminalJunction(replace(p, phi=1.1)).H_C
++        U = np.kron(np.eye(H.shape[0] // 4), U4)
++        _report(f"H_C Hermitian ({name})", np.abs(H - H.conj().T).max(), 1e-12)
++        _report(f"H_C particle-hole symmetric ({name})", np.abs(U @ H.conj() @ U.conj().T + H).max(), 1e-12)
++
++
++def solvers_agree():
++    for name, p in CASES.items():
++        worst_d, worst_f = 0.0, 0.0
++        rgf = RGFFourTerminal(FourTerminalJunction(p), E)
++        fps = FastPhaseSweep(FourTerminalJunction(p), E)
++        for phi in (0.0, 1.3, np.pi):
++            dense = {s: FourTerminalJunction(replace(p, phi=phi)).channels(E, side_name=s) for s in ('left', 'right')}
++            for s in ('left', 'right'):
++                r, f = rgf.channels_at_phi(phi, s), fps.channels_at_phi(phi, s)
++                worst_d = max(worst_d, max(np.abs(np.asarray(dense[s][k]) - np.asarray(r[k])).max() for k in r))
++                worst_f = max(worst_f, max(np.abs(np.asarray(f[k]) - np.asarray(r[k])).max() for k in r))
++        _report(f"RGF == dense channels ({name})", worst_d, 1e-8)
++        _report(f"RGF == FastPhaseSweep ({name})", worst_f, 1e-8)
++
++
++def particle_hole_of_transmissions():
++    Ep = np.array([3e-4, 2.7e-3, 0.03, 0.2])
++    for name, p in CASES.items():
++        r = RGFFourTerminal(FourTerminalJunction(p), np.concatenate([Ep, -Ep]))
++        worst = 0.0
++        for phi in (0.0, 1.1, np.pi):
++            c, n = r.channels_at_phi(phi, 'right'), len(Ep)
++            worst = max(worst, np.abs(c['ee'][n:] - c['hh'][:n]).max(), np.abs(c['he_cross'][n:] - c['eh_cross'][:n]).max())
++        _report(f"T_ee(-E) = T_hh(E), T_he(-E) = T_eh(E) ({name})", worst, 1e-9)
+ 
+ 
+ def clean_wire():
+-    """Centre = N-lead material, SC leads cut off by hand: T quantised, G_LL = T."""
+-    p = Params(nx=6, ny=3, mu_n=2.2, mu_c=2.2, eta=1e-9, kT=0.01, **{**SOC, 'Bz': 0.0, 'Bxy': 0.0})
+-    E = energy_grid(0.1, p.kT, 801)
+-    J = FourTerminalJunction(p)
+-    for lead in (J.sc_top, J.sc_bot):          # test-only: remove the SC/centre bond
+-        lead.V_coupling = np.zeros_like(lead.V_coupling)
+-    ch = J.channels(E, side='left')
+-    G_loc, G_nl = conductance(ch, E, 0.0, 0.0, p.kT)
+-    return ch['ee'][len(E) // 2], G_loc['total'], G_nl['total']
+-
+-
+-def analytic_vs_fd():
+-    p = Params(nx=6, ny=2, mu_n=3., mu_c=3., mu_s=3., delta=0.3,
+-               alpha=0.2, Bz=0.2, eta=1e-6, kT=0.01)
+-    E = energy_grid(0.15, p.kT, 801)
+-    ch = FourTerminalJunction(p).channels(E, side='left')
+-    V, h = np.linspace(-0.12, 0.12, 5), 1e-6
+-    G_loc, G_nl = conductance(ch, E, V, 0.3 * V, p.kT)
+-    fd_loc = (current(ch, E, V + h, 0.3 * V, p.kT)['total'] - current(ch, E, V - h, 0.3 * V, p.kT)['total']) / (2 * h)
+-    fd_nl = (current(ch, E, V, 0.3 * V + h, p.kT)['total'] - current(ch, E, V, 0.3 * V - h, p.kT)['total']) / (2 * h)
+-    return np.max(np.abs(G_loc['total'] - fd_loc)), np.max(np.abs(G_nl['total'] - fd_nl))
+-
+-
+-def ldos_consistency():
+-    """LDOS: full-inverse path == column path == fast phase sweep, and it is non-negative."""
+-    p = Params(nx=5, ny=4, mu_n=1.2, mu_c=0.9, mu_s=1.1, delta=0.3, phi=0.9, eta=1e-4, **SOC)
+-    J = FourTerminalJunction(p)
+-    E = np.linspace(-0.4, 0.4, 7)
+-    full = J.ldos(E)                                           # (N_E, ny, nx)
+-    sites = [J.site(2, 1), J.site(0, 3), J.site(4, 0)]
+-    cols = J.ldos(E, sites)
+-    d_paths = max(np.max(np.abs(full[:, s // p.nx, s % p.nx] - cols[:, k])) for k, s in enumerate(sites))
+-    fps = FastPhaseSweep(J, E, probe_sites=sites)
+-    d_fast = 0.0
+-    for phi in (0.3, 2.0):
+-        d_fast = max(d_fast, np.max(np.abs(FourTerminalJunction(replace(p, phi=phi)).ldos(E, sites)
+-                                           - fps.ldos_at_phi(phi))))
+-    T, rho = J.channels_and_ldos(E, sites)
+-    T_ref = J.channels(E)
+-    d_comb = max(np.max(np.abs(rho - cols)),
+-                 max(np.max(np.abs(T[s][k] - T_ref[s][k])) for s in T for k in T[s]))
+-    return max(d_paths, d_comb), d_fast, full.min()
++    # SC ribbons fully decoupled: tc = 0 AND alpha = 0 (a Rashba bond keeps its SOC part even at t = 0)
++    p = Params(model='rashba', nx=8, ny=5, t_n=1.0, mu_n=0.8, t_c=1.0, mu_c=0.8, t_s=1.0, mu_s=0.5, delta=0.3,
++               tc_top=0.0, tc_bot=0.0, tc_barr=1.0, alpha=0.0, Bz=0.2, eta=1e-9)
++    # energies chosen away from the subband thresholds (-0.73, -0.33, 0.0, 0.4 for these parameters)
++    c = RGFFourTerminal(FourTerminalJunction(p), np.array([-0.1, 0.13, 0.25])).channels_at_phi(0.0, 'right')
++    T = np.asarray(c['ee'])
++    _report("clean wire: T_ee integer", np.abs(T - np.round(T)).max(), 1e-6)
++    _report("clean wire: no Andreev (T_he + R_eh)", np.abs(c['he_cross']).max() + np.abs(c['eh_local']).max(), 1e-6)
++
++
++def lead_solver():
++    p = Params(model='rashba', nx=80, ny=12, t_n=1.0, mu_n=0.5, t_c=1.0, mu_c=0.05, t_s=1.0, mu_s=0.30, delta=0.5,
++               tc_top=1.55, tc_bot=1.55, tc_barr=1.0, alpha=1.6, Bz_s=1.45, eta=1e-6)
++    top = FourTerminalJunction(p).ribbon_top
++    H0, V = top.H_onsite, top.V_hop
++    M = H0.shape[0]
++    z = (3e-3 + 1j * p.eta) * np.eye(M)[None]
++    ep, em = leads.sancho_rubio(H0, V, z, p.max_iter, p.tol)
++    d = max(np.abs(leads.eigenmode_eps(H0, V, z[0, 0, 0]) - ep[0]).max(),
++            np.abs(leads.eigenmode_eps(H0, V.conj().T, z[0, 0, 0]) - em[0]).max())
++    _report("eigenmode fallback == Sancho-Rubio (healthy energy)", d, 1e-9)
++    z0 = (0.0 + 1j * p.eta) * np.eye(M)[None]
++    cache, leads.CACHE_ENABLED = leads.CACHE_ENABLED, False
++    e_plus, e_minus = leads.surface_eps_pair(H0, V, z0, p)
++    leads.CACHE_ENABLED = cache
++    _report("known E = 0 failure repaired (lead residual)",
++            max(leads.residual(H0, V, z0, e_plus)[0], leads.residual(H0, V.conj().T, z0, e_minus)[0]), leads.ACCEPT_TOL)
+ 
+ 
+ def run_all():
+-    herm, phs_H = hermiticity_and_phs_of_H()
+-    print(f"H_C Hermitian / particle-hole symmetric        : {herm:.1e} / {phs_H:.1e}")
+-    print(f"partition invariance, N leads (x)              : {partition_x():.1e}")
+-    print(f"partition invariance, SC ribbons (y)           : {partition_y('ribbon'):.1e}")
+-    print(f"partition invariance, SC chains (y)            : {partition_y('chain'):.1e}")
+-    phs, dfs = particle_hole_and_fast_sweep()
+-    print(f"T(E) vs T(-E) particle-hole relations          : {phs:.1e}")
+-    print(f"FastPhaseSweep vs direct solve                 : {dfs:.1e}")
+-    T0, Gl, Gn = clean_wire()
+-    print(f"clean SOC wire: T_ee(0), G_LL, G_LR            : {T0:.6f}, {Gl:.6f}, {Gn:.6f}   (expect 4, 4, -4)")
+-    print("analytic conductance vs finite differences     : {:.1e}, {:.1e}".format(*analytic_vs_fd()))
+-    d_paths, d_fast, rho_min = ldos_consistency()
+-    print(f"LDOS full inv. vs columns vs combined / fast   : {d_paths:.1e} / {d_fast:.1e}   (min LDOS {rho_min:.2e} >= 0)")
++    _RESULTS.clear()
++    for f in (hermiticity_and_phs_of_H, solvers_agree, particle_hole_of_transmissions, clean_wire, lead_solver):
++        f()
++    print(f"\n{sum(_RESULTS)}/{len(_RESULTS)} checks passed")
++    return all(_RESULTS)
+diff --git a/thesis/4_terminal/my_functions/compute.py b/thesis/4_terminal/my_functions/compute.py
+new file mode 100644
+index 0000000..1964329
+--- /dev/null
++++ b/thesis/4_terminal/my_functions/compute.py
+@@ -0,0 +1,66 @@
++"""
++One-call functions that return arrays (no plotting).  Each builds the junction and the RGF solver for
++the given Params, evaluates, and returns numpy arrays / dicts; plot them however you like.
++
++    T = myf.transmissions(p, E, phi)               # dict: 'ee', 'he_cross', 'hh', 'eh_cross', 'eh_local', 'he_local'
++    kappa, G = myf.linear_response(p, phi, kT)     # thermal / electrical linear response (kT = 0: T -> 0)
++    A = myf.ldos(p, E, phi, cols)                  # local density of states, shape (n_E, n_cols, ny)
++    I = myf.currents(p, E, V_out, V_in, kT, phi)   # finite-bias current [e/h]
++    G_loc, G_nl = myf.conductances(p, E, V_out, V_in, kT, phi)   # differential conductances [e^2/h]
++
++`phi` may be a number or an array (all phases share one solver, so extra phases are cheap); with an
++array the results gain a leading phase axis.  For many parameter points use scans.scan.
++"""
++import numpy as np
++from .junction import FourTerminalJunction
++from .rgf import RGFFourTerminal
++from .spectra import LocalGreen
++from .transport import (current, differential_conductance, linear_response_nodes_phs,
++                        thermal_from_channels_phs, thermal_error_phs)
++
++
++def _phases(phi):
++    return np.atleast_1d(np.asarray(phi, float)), np.ndim(phi) == 0
++
++
++def transmissions(p, E, phi=np.pi, side='right'):
++    """Channel transmissions of lead `side` at energies E: dict of arrays (n_E) or (n_phi, n_E)."""
++    phis, scalar = _phases(phi)
++    r = RGFFourTerminal(FourTerminalJunction(p), np.atleast_1d(np.asarray(E, float)))
++    rows = [r.channels_at_phi(ph, side) for ph in phis]
++    out = {k: np.array([np.asarray(c[k]) for c in rows]) for k in rows[0]}
++    return {k: v[0] for k, v in out.items()} if scalar else out
++
++
++def linear_response(p, phi=np.pi, kT=0.0, side='right', h=0.5, x_max=16.0, error=False):
++    """
++    (kappa/kappa0, G/G0) at temperature kT (kT = 0: T -> 0) for one phase or an array of phases.
++    error=True returns (kappa, G, err_kappa, err_G) with the free error estimate of thermal_error_phs.
++    """
++    phis, scalar = _phases(phi)
++    E, w_th, w_el = linear_response_nodes_phs(kT, h, x_max)
++    r = RGFFourTerminal(FourTerminalJunction(p), E)
++    res = []
++    for ph in phis:
++        ch = r.channels_at_phi(ph, side)
++        k, g = thermal_from_channels_phs(ch, w_th, w_el)
++        res.append((k, g, *thermal_error_phs(ch, kT, h, x_max)) if error else (k, g))
++    res = np.array(res)
++    return tuple(res[0]) if scalar else tuple(res.T)
++
++
++def ldos(p, E, phi=np.pi, cols=None):
++    """LDOS (electron + hole) at energies E on columns `cols` (default: all), shape (n_E, n_cols, ny)."""
++    cols = list(range(p.nx)) if cols is None else list(cols)
++    e, h = LocalGreen(FourTerminalJunction(p), np.atleast_1d(np.asarray(E, float)), cols=cols).ldos(phi)
++    return e + h
++
++
++def currents(p, E, V_out, V_in, kT, phi=np.pi, side='left', parts=False):
++    """Finite-bias current into lead `side` [e/h]; the grid E must cover the bias window plus a few kT."""
++    return current(transmissions(p, E, phi, side), np.asarray(E, float), V_out, V_in, kT, parts=parts)
++
++
++def conductances(p, E, V_out, V_in, kT, phi=np.pi, side='left', dV=1e-5):
++    """(dI/dV_out, dI/dV_in) of lead `side` [e^2/h] at the bias point(s)."""
++    return differential_conductance(transmissions(p, E, phi, side), np.asarray(E, float), V_out, V_in, kT, dV)
+diff --git a/thesis/4_terminal/my_functions/hamiltonians.py b/thesis/4_terminal/my_functions/hamiltonians.py
+index 4ad1ee8..02022e7 100644
+--- a/thesis/4_terminal/my_functions/hamiltonians.py
++++ b/thesis/4_terminal/my_functions/hamiltonians.py
+@@ -125,12 +125,24 @@ def dirac_Vy(t, m0):
+ # =============================================================================
+ # Model dispatch: the ONLY place that knows which model is active
+ # =============================================================================
++def region_alpha(p, region):
++    """Rashba coupling of region 'c', 'n' or 's' (per-region override or the global alpha)."""
++    a = {'c': p.alpha_c, 'n': p.alpha_n, 's': p.alpha_s}[region]
++    return p.alpha if a is None else a
++
++
++def bond_alpha(p, ra, rb):
++    """Rashba coupling on a bond joining two regions (arithmetic mean, as for the Wilson mass)."""
++    return 0.5 * (region_alpha(p, ra) + region_alpha(p, rb))
++
++
+ def region_params(p, region):
+     """Physical parameters of region 'c' (central), 'n' (normal leads) or 's' (SC ribbons)."""
+     if region == 'c':
+         return dict(t=p.t_c, mu=p.mu_c, delta=0.0, Bz=p.Bz, Bxy=p.Bxy, theta_z=p.theta_z, m0=p.m0_c)
+     if region == 'n':
+-        return dict(t=p.t_n, mu=p.mu_n, delta=0.0, Bz=p.Bz, Bxy=p.Bxy, theta_z=p.theta_z_n, m0=p.m0_n)
++        return dict(t=p.t_n, mu=p.mu_n, delta=0.0, Bz=p.Bz if p.Bz_n is None else p.Bz_n, Bxy=p.Bxy,
++                    theta_z=p.theta_z_n, m0=p.m0_n)
+     if region == 's':
+         return dict(t=p.t_s, mu=p.mu_s, delta=p.delta, Bz=p.Bz_s, Bxy=p.Bxy, theta_z=p.theta_z, m0=p.m0)
+     raise ValueError(f"unknown region {region!r}")
+@@ -142,18 +154,19 @@ def model_onsite(p, region, phi=0.0, twod=True, **override):
+     r.update(override)
+     if p.model == 'rashba':
+         return onsite_block(r['t'], r['mu'], delta=r['delta'], phi=phi, Bz=r['Bz'], Bxy=r['Bxy'],
+-                            theta_z=r['theta_z'], alpha=p.alpha, beta=p.beta, twod=twod)
++                            theta_z=r['theta_z'], alpha=region_alpha(p, region), beta=p.beta, twod=twod)
+     return dirac_onsite_block(r['mu'], r['m0'], delta=r['delta'], phi=phi, Bz=r['Bz'], Bxy=r['Bxy'],
+                               theta_z=r['theta_z'], twod=twod)
+ 
+ 
+-def model_hop(p, direction, t, m0):
++def model_hop(p, direction, t, m0, alpha=None):
+     """
+     Hopping block H_{j,j+1} along `direction` ('x' or 'y') with amplitude t.
+     m0 is the Wilson mass of the bond (ignored by the Rashba model).
+     """
+     if p.model == 'rashba':
+-        return Vx(t, p.alpha, p.beta) if direction == 'x' else Vy(t, p.alpha, p.beta)
++        a = p.alpha if alpha is None else alpha
++        return Vx(t, a, p.beta) if direction == 'x' else Vy(t, a, p.beta)
+     return dirac_Vx(t, m0) if direction == 'x' else dirac_Vy(t, m0)
+ 
+ 
+diff --git a/thesis/4_terminal/my_functions/junction.py b/thesis/4_terminal/my_functions/junction.py
+index ddb8652..761b78e 100644
+--- a/thesis/4_terminal/my_functions/junction.py
++++ b/thesis/4_terminal/my_functions/junction.py
+@@ -4,7 +4,7 @@ import numpy as np
+ from numpy.linalg import inv
+ from scipy.linalg import block_diag
+ 
+-from .hamiltonians import (model_onsite, model_hop, bond_m0, make_row_hamiltonian,
++from .hamiltonians import (model_onsite, model_hop, region_alpha, bond_alpha, bond_m0, make_row_hamiltonian,
+                            get_2d_hamiltonian, flat_site_idx)
+ from .leads import Lead
+ 
+@@ -30,15 +30,15 @@ class FourTerminalJunction:
+ 
+         # --- central region: store the blocks; the dense H_C is built only on demand ---
+         self.onsite_C = model_onsite(p, 'c')
+-        self.Vx_C = model_hop(p, 'x', p.t_c, p.m0_c)
+-        self.Vy_C = model_hop(p, 'y', p.t_c, p.m0_c)
++        self.Vx_C = model_hop(p, 'x', p.t_c, p.m0_c, alpha=region_alpha(p, 'c'))
++        self.Vy_C = model_hop(p, 'y', p.t_c, p.m0_c, alpha=region_alpha(p, 'c'))
+         self._H_C = None
+ 
+         # --- normal leads: one lead cell = a column of ny sites chained along y ---
+         onsite_N = model_onsite(p, 'n')
+-        H_layer_N = make_row_hamiltonian(ny, onsite_N, model_hop(p, 'y', p.t_n, p.m0_n))
+-        V_n = block_diag(*[model_hop(p, 'x', p.t_n, p.m0_n)] * ny)                        # H_{x,x+1} inside the N leads
+-        V_b = block_diag(*[model_hop(p, 'x', p.tc_barr, bond_m0(p.m0_n, p.m0_c))] * ny)  # H_{x,x+1} across the barrier bond
++        H_layer_N = make_row_hamiltonian(ny, onsite_N, model_hop(p, 'y', p.t_n, p.m0_n, alpha=region_alpha(p, 'n')))
++        V_n = block_diag(*[model_hop(p, 'x', p.t_n, p.m0_n, alpha=region_alpha(p, 'n'))] * ny)                        # H_{x,x+1} inside the N leads
++        V_b = block_diag(*[model_hop(p, 'x', p.tc_barr, bond_m0(p.m0_n, p.m0_c), alpha=bond_alpha(p, 'n', 'c'))] * ny)  # H_{x,x+1} across the barrier bond
+ 
+         # Left lead, cells x = -1, -2, ...: outward hop H_{-1,-2} = V_n^dag, coupling H_{-1,0} = V_b
+         self.lead_L = Lead('L', H_layer_N, V_n, V_b, p, br=False, dual=True)
+@@ -81,18 +81,18 @@ class FourTerminalJunction:
+         """
+         p = self.p
+         onsite_SC = model_onsite(p, 's', phi=phi_lead)
+-        H_intra = make_row_hamiltonian(p.nx, onsite_SC, model_hop(p, 'x', p.t_s, p.m0))
+-        V_s = block_diag(*([model_hop(p, 'y', p.t_s, p.m0)] * p.nx))                     # H_{y,y+1} inside ribbon
+-        V_c = block_diag(*([model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c))] * p.nx))       # H_{y,y+1} ribbon<->centre bond
++        H_intra = make_row_hamiltonian(p.nx, onsite_SC, model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')))
++        V_s = block_diag(*([model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))] * p.nx))                     # H_{y,y+1} inside ribbon
++        V_c = block_diag(*([model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))] * p.nx))       # H_{y,y+1} ribbon<->centre bond
+         name = 'sc_bot' if is_bot else 'sc_top'
+         return Lead(name, H_intra, V_s, V_c, p, br=is_bot, dual=not is_bot)
+ 
+     def _make_single_chain(self, phi_lead, is_bot=False):
+         p = self.p
+         onsite_sc = model_onsite(p, 's', phi=phi_lead, twod=False, Bxy=0.0, theta_z=0.0)
+-        hop_y = model_hop(p, 'y', p.t_s, p.m0)                                   # H_{y,y+1}
++        hop_y = model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))                                   # H_{y,y+1}
+         tc = p.tc_bot if is_bot else p.tc_top
+-        hop_c = model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c))                     # H_{y,y+1} across the bond
++        hop_c = model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))                     # H_{y,y+1} across the bond
+         name = 'sc_bot' if is_bot else 'sc_top'
+         return Lead(name, onsite_sc, hop_y, hop_c, p, br=is_bot, dual=not is_bot)
+ 
+diff --git a/thesis/4_terminal/my_functions/leads.py b/thesis/4_terminal/my_functions/leads.py
+index 683b38c..ed5a29c 100644
+--- a/thesis/4_terminal/my_functions/leads.py
++++ b/thesis/4_terminal/my_functions/leads.py
+@@ -13,11 +13,36 @@ and, if the relative residual is too large, refined by Newton steps on that equa
+ counted in N_UNRELIABLE and reported with a warning.
+ """
+ 
++import hashlib
+ import warnings
++from collections import OrderedDict
+ import numpy as np
+ from numpy.linalg import inv, norm
+ 
+ N_UNRELIABLE = 0          # number of lead energies that failed the self-consistency check
++ACCEPT_TOL = 1e-8         # max. relative Dyson residual for a lead solution to be accepted
++
++# Cache of lead solutions: sweeps of central-region parameters (mu_c, tc, tc_barr, ny, phi, ...)
++# leave the leads unchanged.  The key contains everything the solution depends on; cached arrays
++# are read-only; a cached failure (NaN) is counted again on every reuse.
++CACHE_ENABLED = True
++CACHE_MAX_BYTES = 1.5e9   # per process; LRU eviction beyond this
++CACHE_STATS = {"hits": 0, "misses": 0}
++_CACHE = OrderedDict()
++
++
++def clear_cache():
++    _CACHE.clear()
++    CACHE_STATS.update(hits=0, misses=0)
++
++
++def _cache_key(H_onsite, V_plus, zs, p, need):
++    h = hashlib.sha1()
++    for a in (H_onsite, V_plus, zs):
++        a = np.ascontiguousarray(a)
++        h.update(str((a.shape, a.dtype)).encode()); h.update(a.tobytes())
++    h.update(repr((p.max_iter, p.tol, p.lead_refine, tuple(need), ACCEPT_TOL)).encode())
++    return h.hexdigest()
+ 
+ 
+ def sancho_rubio(H_onsite, V_plus, z_batch, max_iter=100, tol=1e-14):
+@@ -95,14 +120,41 @@ def newton_refine(H_onsite, V_out, z, eps, tol=1e-12, max_steps=8):
+     return best, best_res
+ 
+ 
++def eigenmode_eps(H_onsite, V_out, z):
++    """
++    Non-iterative surface onsite eps = H0 + V_out F from the lead's decaying Bloch modes
++    ((z - H0 - lam V_out - V_out^dag / lam) u = 0, the M modes with smallest |lam|, F = U diag(lam) U^-1).
++    Used as a fallback where Sancho-Rubio + Newton fail (at E ~ 0 when the ribbon edge gap << eta).
++    """
++    import scipy.linalg as sl
++    M = H_onsite.shape[0]
++    I, O = np.eye(M), np.zeros((M, M))
++    lam, X = sl.eig(np.block([[O, I], [V_out.conj().T, -(z * I - H_onsite)]]), np.block([[I, O], [O, -V_out]]))
++    order = np.argsort(np.abs(lam))[:M]
++    U = X[:M, order]
++    return H_onsite + V_out @ (U @ np.diag(lam[order]) @ np.linalg.inv(U))
++
++
+ def surface_eps_pair(H_onsite, V_plus, z_batch, p, name="lead", need=(True, True)):
+     """
+-    Sancho-Rubio surface onsite (eps_plus, eps_minus), checked and, if needed, Newton-refined.
++    Sancho-Rubio surface onsite (eps_plus, eps_minus), checked against the Dyson equation; failures
++    are Newton-refined, then replaced by the eigenmode solution, and set to NaN if still failing.
+     need = which orientations to check (the other one is returned unchecked).
+     """
+     global N_UNRELIABLE
+-    pair = list(sancho_rubio(H_onsite, V_plus, z_batch, p.max_iter, p.tol))
+     zs = np.einsum('nii->n', z_batch) / H_onsite.shape[0]
++    if CACHE_ENABLED:
++        key = _cache_key(H_onsite, V_plus, zs, p, need)
++        if key in _CACHE:
++            _CACHE.move_to_end(key); CACHE_STATS["hits"] += 1
++            hit = _CACHE[key]
++            n_bad = sum(int(np.isnan(a).any(axis=(1, 2)).sum()) for a in hit)
++            if n_bad:
++                N_UNRELIABLE += n_bad
++                warnings.warn("cached lead solution contains failed (NaN) energies; counted in N_UNRELIABLE.")
++            return hit
++        CACHE_STATS["misses"] += 1
++    pair = list(sancho_rubio(H_onsite, V_plus, z_batch, p.max_iter, p.tol))
+     for k, V_out in enumerate((V_plus, V_plus.conj().T)):
+         if not need[k]:
+             continue
+@@ -110,11 +162,27 @@ def surface_eps_pair(H_onsite, V_plus, z_batch, p, name="lead", need=(True, True
+         for n in np.flatnonzero(res > 1e-10):
+             if p.lead_refine:
+                 pair[k][n], res[n] = newton_refine(H_onsite, V_out, zs[n], pair[k][n])
+-        bad = res > 1e-8
++        for n in np.flatnonzero(res > ACCEPT_TOL):       # still failing: eigenmode solution
++            try:
++                with np.errstate(all='ignore'):
++                    cand = eigenmode_eps(H_onsite, V_out, zs[n])
++                    r_c = residual(H_onsite, V_out, z_batch[n:n+1], cand[None])[0]
++                if np.isfinite(r_c) and r_c < res[n]:
++                    pair[k][n], res[n] = cand, r_c
++            except (np.linalg.LinAlgError, ValueError):
++                pass
++        bad = res > ACCEPT_TOL
+         if bad.any():
+             N_UNRELIABLE += int(bad.sum())
+-            warnings.warn("Sancho-Rubio surface GF not self-consistent at some energies "
+-                          "(counted in my_functions.leads.N_UNRELIABLE); results there are unreliable.")
++            pair[k][bad] = np.nan                          # never hand on a wrong lead as data
++            warnings.warn("lead surface GF not self-consistent at some energies even after Newton and the "
++                          "eigenmode fallback (counted in my_functions.leads.N_UNRELIABLE); set to NaN.")
++    if CACHE_ENABLED:
++        for a in pair:
++            a.setflags(write=False)
++        _CACHE[key] = (pair[0], pair[1])
++        while len(_CACHE) > 1 and sum(a.nbytes + b.nbytes for a, b in _CACHE.values()) > CACHE_MAX_BYTES:
++            _CACHE.popitem(last=False)
+     return pair[0], pair[1]
+ 
+ 
+diff --git a/thesis/4_terminal/my_functions/params.py b/thesis/4_terminal/my_functions/params.py
+index 4491f88..8925712 100644
+--- a/thesis/4_terminal/my_functions/params.py
++++ b/thesis/4_terminal/my_functions/params.py
+@@ -44,6 +44,11 @@ class Params:
+     theta_z: float = 0.0    # in-plane Zeeman angle, central region + SC ribbons
+     theta_z_n: float = 0.0  # in-plane Zeeman angle, normal leads
+     Bz_s: float = 0.0       # out-of-plane Zeeman in SC ribbons (= Z in Gresta et al.)
++    # optional per-region overrides (None = use the global value above)
++    alpha_c: float = None   # Rashba in the central region
++    alpha_n: float = None   # Rashba in the normal leads
++    alpha_s: float = None   # Rashba in the SC ribbons
++    Bz_n: float = None      # out-of-plane Zeeman in the normal leads (default: Bz)
+ 
+     # --- Wilson masses (model='dirac' only); paper: all 0.8, appendix: m0_c = m0_n = 0 ---
+     m0: float = 0.8         # SC ribbons
+diff --git a/thesis/4_terminal/my_functions/scans.py b/thesis/4_terminal/my_functions/scans.py
+index 9f8f1f3..5db3e7e 100644
+--- a/thesis/4_terminal/my_functions/scans.py
++++ b/thesis/4_terminal/my_functions/scans.py
+@@ -1,6 +1,16 @@
+ """
+-Fast (kappa, G) parameter scans: particle-hole-halved energies, reuse of the central
+-RGF solve across ribbon-only parameter changes, and parallel worker processes.
++Parameter scans.
++
++scan(func, grid, n_workers, save) is the general tool: it evaluates func(**point) on a parameter grid,
++in parallel worker processes (one BLAS thread each), resumable via `save`, and returns arrays.
++ThermalPoint is the ready-made point function for (kappa, G): it reuses each worker's central RGF solve
++when only ribbon parameters change, so put ribbon parameters (mu_s, Bz_s, delta, t_s, m0) LAST in the grid.
++
++    f = myf.ThermalPoint(p0, kT=1e-3, phis=(np.pi, 0.0))
++    res = myf.scan(f, {'mu_s': [0.15, 0.4], 'Bz_s': np.linspace(0.4, 1.6, 25)}, n_workers=8, save='scan.npz')
++    res['values'][..., 0]   # kappa(pi)   (columns: kappa, G per phase, then the number of failed lead energies)
++
++The lower-level thermal_point / thermal_scan below are what ThermalPoint and scan are built on:
+ 
+     E, w_th, w_el = myf.linear_response_nodes_phs(kT, n=16)
+     rows = myf.thermal_scan(param_list, E, w_th, w_el, phis=(np.pi, 0.0), n_workers=8)
+@@ -19,7 +29,8 @@ import numpy as np
+ from . import leads
+ from .junction import FourTerminalJunction
+ from .rgf import RGFFourTerminal, central_fingerprint
+-from .transport import thermal_from_channels_phs
++from dataclasses import replace
++from .transport import thermal_from_channels_phs, linear_response_nodes_phs
+ 
+ _CACHE = {}          # per process: {'fp': fingerprint, 'rgf': RGFFourTerminal}
+ 
+@@ -92,3 +103,75 @@ def make_pool(n_workers=None):
+         os.environ.setdefault(var, "1")     # read by freshly spawned workers before numpy loads
+     return ProcessPoolExecutor(max_workers=n_workers or os.cpu_count(),
+                                mp_context=mp.get_context('spawn'), initializer=_init_worker)
++
++
++# =============================================================================
++#  general scans
++# =============================================================================
++class ThermalPoint:
++    """
++    Picklable point function for scan(): for parameters **kw it evaluates replace(p0, **kw) and returns
++    [kappa(phi_0), G(phi_0), kappa(phi_1), G(phi_1), ..., n_failed_lead_energies] at temperature kT
++    (kT = 0: T -> 0), reusing the worker's central solve across ribbon-only changes.
++    """
++    def __init__(self, p0, kT=0.0, phis=(np.pi,), side='right', h=0.5, x_max=16.0):
++        self.p0, self.phis, self.side = p0, tuple(np.atleast_1d(phis)), side
++        self.E, self.w_th, self.w_el = linear_response_nodes_phs(kT, h, x_max)
++
++    def __call__(self, **kw):
++        vals, n_bad = thermal_point(replace(self.p0, **kw), self.E, self.w_th, self.w_el, self.phis, self.side)
++        return np.append(vals, n_bad)
++
++
++def _call(args):
++    func, kw = args
++    return func(**kw)
++
++
++def scan(func, grid, n_workers=1, save=None, pool=None):
++    """
++    Evaluate func(**point) on every point of the grid {name: values, ...} (outer product; the LAST
++    parameter varies fastest) and return {'values': array (*grid shape, *result shape), 'done', 'axes'}.
++
++    n_workers > 1 (or a pool from make_pool) runs points in parallel; neighbouring points go to the same
++    worker, so a ThermalPoint reuses its central solve along the last axis.  func must then be picklable
++    (module level, or a ThermalPoint), and scripts need the `if __name__ == "__main__":` guard.
++    save='file.npz' stores the results after every point; rerunning with the same grid skips finished points.
++    """
++    import itertools
++    names = list(grid)
++    axes = [np.atleast_1d(np.asarray(grid[n])) for n in names]
++    shape = tuple(len(a) for a in axes)
++    values, done = None, np.zeros(shape, bool)
++    if save and os.path.exists(save):
++        d = np.load(save, allow_pickle=False)
++        if list(d['names']) != names or any(not np.array_equal(d[f'axis_{n}'], a) for n, a in zip(names, axes)):
++            raise ValueError(f"{save} belongs to a different grid; delete it or choose another file")
++        values, done = d['values'].copy(), d['done'].copy()
++
++    def store(ix, r):
++        nonlocal values
++        r = np.asarray(r, float)
++        if values is None:
++            values = np.full(shape + r.shape, np.nan)
++        values[ix], done[ix] = r, True
++        if save:
++            os.makedirs(os.path.dirname(os.path.abspath(save)), exist_ok=True)
++            np.savez(save, values=values, done=done, names=np.array(names), **{f'axis_{n}': a for n, a in zip(names, axes)})
++
++    todo = [ix for ix in itertools.product(*[range(n) for n in shape]) if not done[ix]]
++    jobs = [(func, {n: axes[k][ix[k]].item() for k, n in enumerate(names)}) for ix in todo]
++    if (n_workers or 1) == 1 and pool is None:
++        for ix, job in zip(todo, jobs):
++            store(ix, _call(job))
++    else:
++        own = pool is None
++        pool = pool or make_pool(n_workers)
++        chunk = max(1, -(-len(jobs) // getattr(pool, '_max_workers', n_workers or 1)))
++        try:
++            for ix, r in zip(todo, pool.map(_call, jobs, chunksize=chunk)):
++                store(ix, r)
++        finally:
++            if own:
++                pool.shutdown()
++    return {'values': values, 'done': done, 'axes': dict(zip(names, axes))}
+diff --git a/thesis/4_terminal/my_functions/spectra.py b/thesis/4_terminal/my_functions/spectra.py
+index 5c0b889..c912b27 100644
+--- a/thesis/4_terminal/my_functions/spectra.py
++++ b/thesis/4_terminal/my_functions/spectra.py
+@@ -2,7 +2,7 @@
+ 
+ import numpy as np
+ 
+-from .hamiltonians import model_onsite, model_hop, bond_m0, make_row_hamiltonian
++from .hamiltonians import model_onsite, model_hop, region_alpha, bond_alpha, bond_m0, make_row_hamiltonian
+ from .leads import Lead
+ 
+ 
+@@ -12,7 +12,7 @@ def chern_number(p, N=48):
+     Fukui-Hatsugai lattice method on an N x N k-grid.  Uses t_s, mu_s, delta, Bz_s, ... of p.
+     """
+     o = model_onsite(p, 's')
+-    X, Y = model_hop(p, 'x', p.t_s, p.m0), model_hop(p, 'y', p.t_s, p.m0)
++    X, Y = model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')), model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))
+     k = np.linspace(-np.pi, np.pi, N, endpoint=False)
+     KX, KY = np.meshgrid(k, k, indexing='ij')
+     ex, ey = np.exp(1j * KX)[..., None, None], np.exp(1j * KY)[..., None, None]
+@@ -33,10 +33,10 @@ def junction_spectrum_kx(p, kx_vals, E_vals):
+     z = np.asarray(E_vals) + 1j * p.eta
+     z4 = z[:, None, None] * np.eye(4)[None]
+     zC = z[:, None, None] * np.eye(4 * ny)[None]
+-    VxC, VyC = model_hop(p, 'x', p.t_c, p.m0_c), model_hop(p, 'y', p.t_c, p.m0_c)
+-    VxS, VyS = model_hop(p, 'x', p.t_s, p.m0), model_hop(p, 'y', p.t_s, p.m0)
+-    VcT = model_hop(p, 'y', p.tc_top, bond_m0(p.m0, p.m0_c))
+-    VcB = model_hop(p, 'y', p.tc_bot, bond_m0(p.m0, p.m0_c))
++    VxC, VyC = model_hop(p, 'x', p.t_c, p.m0_c, alpha=region_alpha(p, 'c')), model_hop(p, 'y', p.t_c, p.m0_c, alpha=region_alpha(p, 'c'))
++    VxS, VyS = model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')), model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))
++    VcT = model_hop(p, 'y', p.tc_top, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))
++    VcB = model_hop(p, 'y', p.tc_bot, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))
+     A = np.zeros((len(z), len(kx_vals)))
+     for n, k in enumerate(kx_vals):
+         bloch = lambda h0, Vx: h0 + Vx * np.exp(1j * k) + Vx.conj().T * np.exp(-1j * k)
+@@ -59,8 +59,8 @@ def ribbon_gap(p, nk=301):
+     """
+     from numpy.linalg import eigvalsh
+     from scipy.linalg import block_diag
+-    H0 = make_row_hamiltonian(p.nx, model_onsite(p, 's'), model_hop(p, 'x', p.t_s, p.m0))
+-    V = block_diag(*[model_hop(p, 'y', p.t_s, p.m0)] * p.nx)
++    H0 = make_row_hamiltonian(p.nx, model_onsite(p, 's'), model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')))
++    V = block_diag(*[model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))] * p.nx)
+     return min(np.min(np.abs(eigvalsh(H0 + V * np.exp(1j * k) + V.conj().T * np.exp(-1j * k))))
+                for k in np.linspace(0, np.pi, nk))
+ 
+@@ -145,3 +145,43 @@ class LocalGreen:
+         G_diag = self.g0_MM + np.einsum('nij,nji->ni', self.Lft, np.linalg.solve(K, self.Rgt))
+         A = (-G_diag.imag / np.pi).reshape(len(G_diag), len(self.cols), self.ny, 4)
+         return A[..., :2].sum(-1), A[..., 2:].sum(-1)
++
++
++def edge_state_profile(p, k_y=0.0, n_states=2):
++    """
++    Site-resolved weight |psi(x)|^2 of the SC ribbon's n_states lowest states across its width
++    (the two Majorana edge states in the topological phase), and their decay length.
++    Returns (x, density, xi, energies); xi from |psi|^2 ~ exp(-2x/xi) between the left edge and
++    the profile minimum (np.nan if too few points).  Use a wide ribbon, e.g. replace(p, nx=200).
++    """
++    from numpy.linalg import eigh
++    from scipy.linalg import block_diag
++    H0 = make_row_hamiltonian(p.nx, model_onsite(p, 's'), model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')))
++    V = block_diag(*[model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))] * p.nx)
++    w, v = eigh(H0 + V * np.exp(1j * k_y) + V.conj().T * np.exp(-1j * k_y))
++    idx = np.argsort(np.abs(w))[:n_states]
++    dens = sum((np.abs(v[:, i])**2).reshape(p.nx, 4).sum(1) for i in idx)
++    x = np.arange(p.nx)
++    xmin = int(np.argmin(dens[:p.nx // 2 + 1]))
++    sel = (x >= 2) & (x <= max(6, xmin - 3)) & (dens > 1e-15)
++    xi = -2 / np.polyfit(x[sel], np.log(dens[sel]), 1)[0] if sel.sum() > 3 else np.nan
++    return x, dens, xi, w[idx]
++
++
++def coherence_length(p, k_y=0.0):
++    """
++    Majorana decay length xi of the SC ribbon material [sites]: the slowest evanescent solution
++    of the bulk BdG equation at E = 0 (transfer-matrix eigenvalue lambda, xi = -1/ln|lambda|).
++    Sets the edge-overlap gap ribbon_gap ~ exp(-nx/xi); rule of thumb nx >~ 12 xi at T -> 0
++    (eta = 1e-6) and >~ 7 xi at kT = 1e-3.  Diverges at topological transitions.
++    Not the BCS hbar v_F/(pi Delta), which is several times shorter here.
++    """
++    import scipy.linalg as sl
++    Vy = model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))
++    Vx = model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's'))
++    H0 = model_onsite(p, 's') + Vy * np.exp(1j * k_y) + Vy.conj().T * np.exp(-1j * k_y)
++    M = len(H0)
++    I, O = np.eye(M), np.zeros((M, M))
++    lam = sl.eig(np.block([[O, I], [-Vx.conj().T, -H0]]), np.block([[I, O], [O, Vx]]), right=False)
++    inside = np.abs(lam[np.abs(lam) < 1 - 1e-12])
++    return -1 / np.log(inside.max()) if inside.size else np.inf
+diff --git a/thesis/4_terminal/my_functions/transport.py b/thesis/4_terminal/my_functions/transport.py
+index 2dcba84..1a10afe 100644
+--- a/thesis/4_terminal/my_functions/transport.py
++++ b/thesis/4_terminal/my_functions/transport.py
+@@ -19,14 +19,23 @@ Known limitation: quasiparticle transfer from lead i into the grounded SC
+ ribbons is not included.  The NON-LOCAL conductance dI_i/dV_j is exact (those
+ terms don't depend on V_j); the LOCAL conductance dI_i/dV_i misses them above
+ the gap, and below it whenever the ribbons carry propagating edge modes.
++
++Linear response in temperature: kappa/kappa0 = Int dx (3/pi^2) x^2/(4cosh^2(x/2)) T_th(x kT),
++G/G0 = Int dx 1/(4cosh^2(x/2)) T_el(x kT), x = E/kT, both kernels integrate to 1 (kT -> 0 gives
++T_th(0), T_el(0)).  Evaluated with the trapezoid rule on a uniform grid (step h, |x| <= x_max),
++negative energies from particle-hole symmetry.  h = 0.5 is accurate to <~2e-3 where T(E) is smooth
++on the kT scale; sharp resonances (e.g. at phi = 0 above the minigap, or open normal channels) can
++need h = 0.25 -- check with thermal_error_phs, which is free.  (The previous Gauss-Legendre rule was
++off by up to 0.14 at phi = 0 for exactly that reason.)
+ """
+ 
++import warnings
+ import numpy as np
+ 
+-# np.trapezoid is NumPy >= 2.0; np.trapz is its NumPy 1.x name
+-_trapezoid = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
++_trapezoid = np.trapezoid if hasattr(np, "trapezoid") else np.trapz     # NumPy 1.x name
+ 
+ 
++# ============================ Fermi functions ============================
+ def f_electron(E, mu, kT):
+     if kT == 0:
+         return np.where(E < mu, 1.0, np.where(E == mu, 0.5, 0.0))
+@@ -39,168 +48,132 @@ def f_hole(E, mu, kT):
+     return 1.0 / (1.0 + np.exp(np.clip((E + mu) / kT, -1000, 1000)))
+ 
+ 
+-def _current_terms(ch, f_oe, f_oh, f_ie, f_ih):
+-    """EC, CAR and LAR integrands for lead 'out' (channels ch of that side), incl. the 1/2."""
+-    EC = 0.5 * (ch['ee'] * (f_oe - f_ie) - ch['hh'] * (f_oh - f_ih))
+-    CAR = 0.5 * (ch['eh_cross'] * (f_oe - f_ih) - ch['he_cross'] * (f_oh - f_ie))
+-    LAR = 0.5 * (ch['eh_local'] + ch['he_local']) * (f_oe - f_oh)
+-    return EC, CAR, LAR
++# ============================ finite bias: one core ============================
++def current(ch, E, V_out, V_in, kT, parts=False):
++    """
++    DC current into lead 'out' [e/h] from its channels `ch` on the energy grid E, for bias V_out on
++    that lead and V_in on the other normal lead (scalars or equal-shape arrays; result has that shape).
++    parts=True returns {'EC', 'CAR', 'LAR', 'total'}.
++    """
++    Vo, Vi = np.broadcast_arrays(np.asarray(V_out, float), np.asarray(V_in, float))
++    Vo, Vi = Vo[..., None], Vi[..., None]
++    fo_e, fo_h, fi_e, fi_h = f_electron(E, Vo, kT), f_hole(E, Vo, kT), f_electron(E, Vi, kT), f_hole(E, Vi, kT)
++    EC = 0.5 * (ch['ee'] * (fo_e - fi_e) - ch['hh'] * (fo_h - fi_h))
++    CAR = 0.5 * (ch['eh_cross'] * (fo_e - fi_h) - ch['he_cross'] * (fo_h - fi_e))
++    LAR = 0.5 * (ch['eh_local'] + ch['he_local']) * (fo_e - fo_h)
++    I = {k: _trapezoid(v, E, axis=-1) for k, v in (('EC', EC), ('CAR', CAR), ('LAR', LAR))}
++    I['total'] = I['EC'] + I['CAR'] + I['LAR']
++    return I if parts else I['total']
+ 
+ 
+-def dc_current_channels(ch, E_sweep, bias, kT, out_name, in_name):
+-    """Integrate the EC/CAR/LAR channel contributions into a DC current for one lead [e/h]."""
+-    mu_out, mu_in = bias[out_name], bias[in_name]
+-    EC, CAR, LAR = _current_terms(ch,
+-                                  f_electron(E_sweep, mu_out, kT), f_hole(E_sweep, mu_out, kT),
+-                                  f_electron(E_sweep, mu_in, kT), f_hole(E_sweep, mu_in, kT))
+-    I_EC, I_CAR, I_LAR = (_trapezoid(x, E_sweep) for x in (EC, CAR, LAR))
+-    return {'EC': I_EC, 'CAR': I_CAR, 'LAR': I_LAR, 'total': I_EC + I_CAR + I_LAR}
++def differential_conductance(ch, E, V_out, V_in, kT, dV=1e-5):
++    """(dI_out/dV_out, dI_out/dV_in) [e^2/h] at the bias point(s), central differences."""
++    G_loc = (current(ch, E, np.add(V_out, dV), V_in, kT) - current(ch, E, np.subtract(V_out, dV), V_in, kT)) / (2 * dV)
++    G_nl = (current(ch, E, V_out, np.add(V_in, dV), kT) - current(ch, E, V_out, np.subtract(V_in, dV), kT)) / (2 * dV)
++    return G_loc, G_nl
+ 
+ 
++# ---- the previous finite-bias functions, kept as thin wrappers ----
+ def other_name(name):
+     return 'right' if name == 'left' else 'left'
+ 
+ 
++def dc_current_channels(ch, E_sweep, bias, kT, out_name, in_name):
++    """Current into `out_name` for a bias dict {'left': V_L, 'right': V_R}, split into EC/CAR/LAR [e/h]."""
++    return current(ch, E_sweep, bias[out_name], bias[in_name], kT, parts=True)
++
++
++def eval_I_total(ch, E, VL, VR, kT):
++    """Total current into the lead of `ch` for bias arrays VL (that lead) and VR (other lead) [e/h]."""
++    return current(ch, E, np.squeeze(VL), np.squeeze(VR), kT)
++
++
+ def conductance_matrix(bias0, leads, channel_sweeps, E_sweep, kT, dV=1e-5):
+-    """Differential conductance matrix G_ij = dI_i/dV_j [e^2/h] via central differences."""
++    """G_ij = dI_i/dV_j [e^2/h] around the bias dict bias0; channel_sweeps[i] = channels of lead i."""
+     G = {}
+     for i in leads:
+-        ch_i, in_name = channel_sweeps[i], other_name(i)
++        loc, nl = differential_conductance(channel_sweeps[i], E_sweep, bias0[i], bias0[other_name(i)], kT, dV)
+         for j in leads:
+-            bp, bm = bias0.copy(), bias0.copy()
+-            bp[j] += dV
+-            bm[j] -= dV
+-            rp = dc_current_channels(ch_i, E_sweep, bp, kT, i, in_name)
+-            rm = dc_current_channels(ch_i, E_sweep, bm, kT, i, in_name)
+-            G[(i, j)] = (rp['total'] - rm['total']) / (2 * dV)
++            G[(i, j)] = loc if j == i else nl
+     return G
+ 
+ 
+-def eval_I_total(ch, E, VL, VR, kT):
+-    """Vectorized total left-lead current I_L(V_L, V_R) [e/h] for arrays of bias points."""
+-    EC, CAR, LAR = _current_terms({k: v[None, :] for k, v in ch.items()},
+-                                  f_electron(E[None, :], VL, kT), f_hole(E[None, :], VL, kT),
+-                                  f_electron(E[None, :], VR, kT), f_hole(E[None, :], VR, kT))
+-    return _trapezoid(EC + CAR + LAR, E, axis=1)
++def partial_G_vectorized(ch, E, V, dV, kT, scheme="sym"):
++    """dI_L/dV_L and dI_L/dV_R [e^2/h] along V_R = +V ('sym') or V_R = -V ('anti')."""
++    if scheme not in ("sym", "anti"):
++        raise ValueError(f"Invalid scheme: {scheme}. Must be 'sym' or 'anti'")
++    V = np.asarray(V, float)
++    return differential_conductance(ch, E, V, V if scheme == "sym" else -V, kT, dV)
+ 
+ 
+-def partial_G_vectorized(ch, E, V, dV, kT, scheme="sym"):
+-    """
+-    Partial conductances G_LL = dI_L/dV_L and G_LR = dI_L/dV_R [e^2/h], evaluated
+-    around a bias baseline set by `scheme` ('sym': V_R = +V, 'anti': V_R = -V).
+-    """
+-    V = V[:, None]
+-    if scheme == "sym":
+-        VR_base = V
+-    elif scheme == "anti":
+-        VR_base = -V
+-    else:
++def total_dIdV_map(ch, E, V, dV, kT, scheme):
++    """Total derivative dI_L/dV along V_R = +V ('sym') or V_R = -V ('anti') [e^2/h]."""
++    if scheme not in ("sym", "anti"):
+         raise ValueError(f"Invalid scheme: {scheme}. Must be 'sym' or 'anti'")
++    s, V = (1 if scheme == "sym" else -1), np.asarray(V, float)
++    return (current(ch, E, V + dV, s * (V + dV), kT) - current(ch, E, V - dV, s * (V - dV), kT)) / (2 * dV)
+ 
+-    def I_eval(VL, VR):
+-        return eval_I_total(ch, E, VL, VR, kT)
+ 
+-    G_LL = (I_eval(V + dV, VR_base) - I_eval(V - dV, VR_base)) / (2 * dV)
+-    G_LR = (I_eval(V, VR_base + dV) - I_eval(V, VR_base - dV)) / (2 * dV)
+-    return G_LL, G_LR
++# ============================ linear response in temperature ============================
++def _kernels(x):
++    w = 1.0 / (4.0 * np.cosh(x / 2) ** 2)
++    return (3 / np.pi**2) * x**2 * w, w
+ 
+ 
+-def total_dIdV_map(ch, E, V, dV, kT, scheme):
+-    """
+-    Direct derivative of I_L along the actual bias line — 'sym': V_R=+V,
+-    'anti': V_R=-V — evaluated at the correct point for each scheme.
+-    """
+-    V = V[:, None]
+-    if scheme == "sym":
+-        sign = 1
+-    elif scheme == "anti":
+-        sign = -1
+-    else:
+-        raise ValueError(f"Invalid scheme: {scheme}. Must be 'sym' or 'anti'")
+-    Ip = eval_I_total(ch, E, V + dV, sign * (V + dV), kT)
+-    Im = eval_I_total(ch, E, V - dV, sign * (V - dV), kT)
+-    return (Ip - Im) / (2 * dV)
+-
+-
+-# =============================================================================
+-# Thermal conductance: kappa/kappa0 = (3/pi^2) Int de (e/kT)^2 (-df/de) T_th(e)
+-# with T_th = T_ee + T_he.  The weight integrates to 1, so as T -> 0 it collapses
+-# onto e = 0 and kappa/kappa0 -> T_th(0)  (the T -> 0 limit used in the maps).
+-# At finite T the weight peaks at |e| ~ 2.4 kT, so E = 0 itself is NOT sampled.
+-# =============================================================================
+-def linear_response_nodes(kT, n=16, x_max=10.0):
++def _ignored_n(n):
++    if n is not None:
++        warnings.warn("`n` is ignored: the thermal integral now uses the trapezoid rule (set its step with h).",
++                      stacklevel=3)
++
++
++def linear_response_nodes(kT, h=0.5, x_max=16.0, n=None):
+     """
+-    Energies and weights of the linear-response integrals at temperature kT:
+- 
+-        kappa/kappa0 = sum_i w_th[i] * T_th(E_i),     T_th = T_ee + T_he
+-        G/G0         = sum_i w_el[i] * T_el(E_i),     T_el = T_ee - T_he
+- 
+-    (Gauss-Legendre on x = E/kT; thermal weight (3/pi^2) x^2/(4cosh^2(x/2)), electrical
+-    weight 1/(4cosh^2(x/2)); both integrate to 1.)  The thermal weight peaks at
+-    |E| ~ 2.4 kT, so E = 0 itself is not sampled at finite temperature.
+-    kT = 0 returns the T -> 0 rule: one node at E = 0 with both weights 1, i.e.
+-    kappa/kappa0 = T_th(0) and G/G0 = T_el(0).
+- 
+-    Convergence (checked against a dense-grid integration of a junction with structure
+-    in T_th on the scale 0.007):
+-      n      : n = 6 / 8 / 12 are off by 0.2 / 0.09 / 0.01; from n = 16 the result is
+-               converged to <~ 2e-3.  n = 16 is a good default, n = 24 is safe.
+-      x_max  : the kernel holds 71% / 92% / 98.3% / 99.7% of its weight inside
+-               |x| < 4 / 6 / 8 / 10, so small x_max biases kappa low.  x_max = 10-12 is
+-               optimal; going beyond ~15 at FIXED n makes it worse again, because the
+-               nodes then resolve the peak at |x| ~ 2.4 less well.
+-    Two things the quadrature cannot fix:
+-      * features of T_th narrower than the node spacing ~ 2 x_max kT / n are missed
+-        (e.g. the SC-ribbon edge-overlap gap: keep kT >> that gap);
+-      * the transmission must be available up to |E| ~ x_max * kT, which for large kT
+-        reaches well beyond the superconducting gap.
++    Symmetric energy grid and trapezoid weights: kappa/kappa0 = sum(w_th * (T_ee + T_he)),
++    G/G0 = sum(w_el * (T_ee - T_he)) with channels computed at E (both signs).
++    Prefer linear_response_nodes_phs (half the energies).  kT = 0: E = [0], weights 1.
+     """
++    _ignored_n(n)
+     if kT == 0:
+         return np.zeros(1), np.ones(1), np.ones(1)
+-    x, w = np.polynomial.legendre.leggauss(n)
+-    x, w = x * x_max, w * x_max
+-    kernel = w / (4 * np.cosh(x / 2)**2)
+-    return x * kT, (3 / np.pi**2) * kernel * x**2, kernel
+- 
+- 
+-def linear_response_nodes_phs(kT, n=16, x_max=10.0):
+-    """
+-    Half the energies of linear_response_nodes, using particle-hole symmetry.
+-
+-    BdG gives T_ee(-E) = T_hh(E) and T_he(-E) = T_eh(E) (exact, checked to 1e-12 with
+-    Rashba, in-plane and out-of-plane Zeeman at arbitrary phi), and the Gauss rule is
+-    symmetric, so only the n/2 nodes E > 0 are needed:
++    x = np.arange(-x_max, x_max + h / 2, h)
++    W_th, W_el = _kernels(x)
++    w = np.full(len(x), h); w[0] = w[-1] = h / 2
++    return x * kT, W_th * w, W_el * w
+ 
+-        kappa/kappa0 = sum_i w_th[i] * (T_ee + T_he + T_hh + T_eh)(E_i)
+-        G/G0         = sum_i w_el[i] * (T_ee - T_he + T_hh - T_eh)(E_i)
+ 
+-    (use thermal_from_channels_phs).  Weights are those of linear_response_nodes at the
+-    same nodes.  kT = 0 returns the single node E = 0 with weights 1/2, so the same sums
+-    give T_th(0) and T_el(0).  n must be even (an odd rule has a node at E = 0).
++def linear_response_nodes_phs(kT, h=0.5, x_max=16.0, n=None):
+     """
++    Energies E >= 0 and weights for thermal_from_channels_phs: the trapezoid rule of
++    linear_response_nodes folded onto E >= 0 with particle-hole symmetry
++    (T_ee(-E) = T_hh(E), T_he(-E) = T_eh(E), exact).  33 energies with the defaults.
++    kT = 0 returns E = [0] with weights 1/2 (the same sums then give T_th(0), T_el(0)).
++    """
++    _ignored_n(n)
+     if kT == 0:
+         return np.zeros(1), np.full(1, 0.5), np.full(1, 0.5)
+-    if n % 2:
+-        raise ValueError("n must be even for the particle-hole-symmetric rule")
+-    E, w_th, w_el = linear_response_nodes(kT, n, x_max)
+-    pos = E > 0
+-    return E[pos], w_th[pos], w_el[pos]
++    x = np.arange(0.0, x_max + h / 2, h)
++    W_th, W_el = _kernels(x)
++    fold = np.full(len(x), h); fold[0] = fold[-1] = h / 2
++    return x * kT, W_th * fold, W_el * fold
+ 
+ 
+ def thermal_from_channels_phs(ch, w_th, w_el):
+-    """(kappa/kappa0, G/G0) from channels at the nodes of linear_response_nodes_phs."""
++    """(kappa/kappa0, G/G0) from channels at the energies of linear_response_nodes_phs."""
+     ee, hh = np.asarray(ch['ee']), np.asarray(ch['hh'])
+     he, eh = np.asarray(ch['he_cross']), np.asarray(ch['eh_cross'])
+     return float(np.dot(w_th, ee + he + hh + eh)), float(np.dot(w_el, ee - he + hh - eh))
+ 
+ 
+-def kappa_nodes(kT, n=16, x_max=10.0):
+-    """Energies and thermal weights only (see linear_response_nodes)."""
+-    E, w_th, _ = linear_response_nodes(kT, n, x_max)
+-    return E, w_th
+- 
+- 
+-def kappa_from_channels(ch, weights):
+-    """kappa/kappa0 from channels evaluated at the energies of linear_response_nodes."""
+-    return float(np.dot(weights, np.asarray(ch['ee']) + np.asarray(ch['he_cross'])))
+-
++def thermal_error_phs(ch, kT, h=0.5, x_max=16.0):
++    """
++    Conservative error estimates (err_kappa, err_G) of thermal_from_channels_phs, from the same
++    channels on the step-2h sub-grid (free: no extra energies).  If too large, halve h.
++    """
++    if kT == 0:
++        return 0.0, 0.0
++    _, wt, we = linear_response_nodes_phs(kT, h, x_max)
++    _, wt2, we2 = linear_response_nodes_phs(kT, 2 * h, x_max)
++    sub = {k: np.asarray(v)[::2] for k, v in ch.items()}
++    k1, g1 = thermal_from_channels_phs(ch, wt, we)
++    k2, g2 = thermal_from_channels_phs(sub, wt2, we2)
++    return abs(k1 - k2), abs(g1 - g2)
+diff --git a/thesis/4_terminal/run_four_terminal.py b/thesis/4_terminal/run_four_terminal.py
+deleted file mode 100644
+index 660f15f..0000000
+--- a/thesis/4_terminal/run_four_terminal.py
++++ /dev/null
+@@ -1,216 +0,0 @@
+-#%% --- IMPORTS ---
+-import os
+-import numpy as np
+-import matplotlib.pyplot as plt
+-os.chdir(r"c:\coding\my_projects\thesis\fourterminal")
+-import my_functions as myf
+-
+-SCHEMES = [('sym', r'Symmetric bias ($\mu_L = \mu_R = +V$)'),
+-           ('anti', r'Antisymmetric bias ($\mu_L = +V,\ \mu_R = -V$)')]
+-
+-
+-def mark_gap(ax, delta):
+-    ax.axvline(-delta, color='gray', linestyle=':')
+-    ax.axvline(delta, color='gray', linestyle=':')
+-
+-
+-#%% --- BUILD JUNCTION & CHANNELS ---
+-# E only has to resolve T(E); the thermal window is refined automatically in current()/conductance().
+-p = myf.Params(
+-    nx=20, ny=40, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
+-    delta=0.35, phi=np.pi,
+-    alpha=0.2, beta=0.0, Bz=0.4, Bxy=0.0, theta_z=0.0, eta=1e-4, kT=2e-3,
+-)
+-V_range = np.linspace(-1.5 * p.delta, 1.5 * p.delta, 41)
+-E_sweep = myf.energy_grid(V_range.max(), p.kT, 41)
+-
+-print(f"Computing {len(E_sweep)} energies for {p.nx} x {p.ny} sites...")
+-junction = myf.FourTerminalJunction(p)
+-ch = junction.channels(E_sweep)          # {'left': {...}, 'right': {...}}, arrays over E_sweep
+-print("Finished.")
+-myf.print_params(p)
+-
+-#%% --- CURRENTS (sym / anti bias) ---
+-fig, axes = plt.subplots(1, 2, figsize=(13, 4), sharex=True)
+-for ax, (scheme, title) in zip(axes, SCHEMES):
+-    VL, VR = myf.bias_line(V_range, scheme)
+-    I = myf.current(ch['left'], E_sweep, VL, VR, p.kT)
+-    for key in ('EC', 'CAR', 'LAR'):
+-        ax.plot(V_range, I[key], linewidth=2, label=rf'$I_{{\rm {key}}}$')
+-    ax.plot(V_range, I['total'], linewidth=2, color='k', linestyle='--', alpha=.5, label=r'$I_{\rm total}$')
+-    mark_gap(ax, p.delta)
+-    ax.set_xlabel(r'$V_{\rm bias}$')
+-    ax.grid(alpha=0.5)
+-    ax.legend(loc='upper left')
+-    myf.style_axis(ax, f"Currents - {title}")
+-axes[0].set_ylabel(r'Current ($e/h$ units)')
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- CONDUCTANCES (analytic dI/dV) ---
+-# G[scheme]['LL'] = dI_L/dV_L, ['LR'] = dI_L/dV_R, ['RR'], ['RL'] likewise; each {'EC','CAR','LAR','total'}
+-G = {}
+-for scheme, _ in SCHEMES:
+-    VL, VR = myf.bias_line(V_range, scheme)
+-    G_LL, G_LR = myf.conductance(ch['left'], E_sweep, VL, VR, p.kT)
+-    G_RR, G_RL = myf.conductance(ch['right'], E_sweep, VR, VL, p.kT)
+-    G[scheme] = {'LL': G_LL, 'LR': G_LR, 'RR': G_RR, 'RL': G_RL}
+-
+-fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharex=True)
+-for col, (scheme, title) in enumerate(SCHEMES):
+-    s = 1 if scheme == 'sym' else -1
+-    G_LL, G_LR = G[scheme]['LL'], G[scheme]['LR']
+-    # dI_L/dV along the bias line = G_LL +/- G_LR (chain rule), channel by channel
+-    ax = axes[0, col]
+-    for key in ('EC', 'CAR', 'LAR'):
+-        ax.plot(V_range, G_LL[key] + s * G_LR[key], linewidth=2, label=rf'$G_{{\rm {key}}}$')
+-    ax.plot(V_range, G_LL['total'] + s * G_LR['total'], linewidth=2, color='k', linestyle='--', alpha=.5,
+-            label=r'$G_{\rm total}$')
+-    mark_gap(ax, p.delta)
+-    ax.grid(alpha=0.3)
+-    ax.legend(loc='upper right')
+-    myf.style_axis(ax, title)
+-
+-    ax = axes[1, col]
+-    ax.plot(V_range, G_LL['total'], linewidth=2, color='tab:green', alpha=.7, label=r'$G_{LL}$')
+-    ax.plot(V_range, G_LR['total'], linewidth=2, color='tab:gray', alpha=.7, label=r'$G_{LR}$')
+-    ax.plot(V_range, G_LL['total'] + s * G_LR['total'], linewidth=2, color='tab:orange', alpha=.5,
+-            label=r'$G_{LL}+G_{LR}$' if s > 0 else r'$G_{LL}-G_{LR}$')
+-    mark_gap(ax, p.delta)
+-    ax.set_xlabel(r'$V_{\rm bias}$')
+-    ax.grid(alpha=0.5)
+-    ax.legend(loc='upper right')
+-    myf.style_axis(ax, 'Local and non-local conductance')
+-axes[0, 0].set_ylabel(r'$dI_L/dV_{\rm bias}$ ($e^2/h$)')
+-axes[1, 0].set_ylabel(r'Differential conductance ($e^2/h$)')
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- SYMMETRIZATION TEST (uses p / G from above) ---
+-G_LL, G_LR = G['sym']['LL']['total'], G['sym']['LR']['total']
+-even = lambda x: 0.5 * (x + x[::-1])      # V_range is symmetric around 0
+-odd = lambda x: 0.5 * (x - x[::-1])
+-
+-fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+-axes[0].plot(V_range, even(G_LL), linewidth=2, label=r'$G_{LL}^S$')
+-axes[0].plot(V_range, even(G_LR), linewidth=2, label=r'$G_{LR}^S$')
+-myf.style_axis(axes[0], 'Symmetric bias: even parts')
+-axes[1].plot(V_range, odd(G_LL), linewidth=2, label=r'$G_{LL}^A$')
+-axes[1].plot(V_range, odd(G_LR), linewidth=2, label=r'$G_{LR}^A$')
+-axes[1].plot(V_range, odd(G_LL) + odd(G_LR), linewidth=2, label=r'$G_{LL}^A+G_{LR}^A$')
+-myf.style_axis(axes[1], 'Symmetric bias: odd parts')
+-for ax in axes:
+-    ax.axhline(0, color='k', linestyle='--', linewidth=1)
+-    ax.set_xlabel(r'$V_{\rm bias}$')
+-    ax.grid(alpha=0.5)
+-    ax.legend()
+-plt.tight_layout()
+-plt.show()
+-myf.print_params(p)
+-
+-#%% --- PHASE-DEPENDENT TRANSMISSION AT FIXED ENERGY ---
+-p_phi = myf.Params(
+-    nx=10, ny=40, t_n=1.0, mu_n=0.5, t_c=1.00, mu_c=-0.1, t_s=1.0, mu_s=0.8,
+-    delta=0.35, phi=np.pi,
+-    alpha=0.2, beta=0.0, Bz=0.4, Bxy=0.0, theta_z=0.0, eta=1e-3, kT=5e-3,
+-)
+-phi_values = np.linspace(0, 2 * np.pi, 41)
+-E_fixed, side = 0.0, 'right'
+-
+-T_phi = myf.transmissions_vs_phi(myf.FourTerminalJunction(p_phi), phi_values, E_fixed, side=side)
+-fig, axes = myf.plot_channels_vs_phi(phi_values, T_phi)
+-fig.suptitle(fr'Transmission channels at fixed $E={E_fixed:.2f}$, lead={side}')
+-plt.tight_layout()
+-plt.show()
+-myf.print_params(p_phi)
+-
+-#%% --- PHASE / BIAS CONDUCTANCE MAP ---
+-pc = myf.Params(
+-    nx=10, ny=40, t_n=1.0, mu_n=1.50, t_c=1.0, mu_c=1.00, t_s=1.0, mu_s=1.0,
+-    delta=0.35, phi=np.pi,
+-    alpha=0.0, beta=0.0, Bz=0.0, Bxy=0.0, theta_z=0.0, eta=1e-5, kT=5e-2,
+-)
+-phi_vals = np.linspace(-np.pi, np.pi, 41)
+-V_bias_map = np.linspace(-2.5 * pc.delta, 2.5 * pc.delta, 41)
+-E_map = myf.energy_grid(V_bias_map.max(), pc.kT, 81)
+-
+-T_map = myf.transmissions_vs_phi(myf.FourTerminalJunction(pc), phi_vals, E_map, side='left')  # (N_phi, N_E)
+-maps = {}
+-for scheme, _ in SCHEMES:
+-    VL, VR = myf.bias_line(V_bias_map, scheme)
+-    maps[scheme] = myf.conductance(T_map, E_map, VL, VR, pc.kT)          # (G_LL, G_LR), (N_phi, N_V)
+-
+-panels = [
+-    (maps['sym'][0]['total'], r"$G_{LL}=\partial I_L/\partial V_L$ (symmetric baseline)"),
+-    (maps['sym'][1]['total'], r"$G_{LR}=\partial I_L/\partial V_R$ (symmetric baseline)"),
+-    (maps['anti'][0]['total'], r"$G_{LL}=\partial I_L/\partial V_L$ (antisymmetric baseline)"),
+-    (maps['anti'][1]['total'], r"$G_{LR}=\partial I_L/\partial V_R$ (antisymmetric baseline)"),
+-    (maps['sym'][0]['total'] + maps['sym'][1]['total'], r"$dI_L/dV$ along symmetric line"),
+-    (maps['anti'][0]['total'] - maps['anti'][1]['total'], r"$dI_L/dV$ along antisymmetric line"),
+-]
+-fig, axs = plt.subplots(3, 2, figsize=(16, 12))
+-for ax, (Gmap, title) in zip(axs.flat, panels):
+-    cf = ax.contourf(phi_vals / np.pi, V_bias_map / pc.delta, Gmap.T, levels=100, cmap="inferno")
+-    fig.colorbar(cf, ax=ax, label=r"$e^2/h$")
+-    ax.set_xlabel(r"$\phi/\pi$")
+-    ax.set_ylabel(r"$V_{\rm bias}/\Delta$")
+-    myf.style_axis(ax, title)
+-plt.tight_layout()
+-plt.show()
+-myf.print_params(pc)
+-
+-#%% --- PARAMETER SCAN ---
+-base = myf.Params(nx=7, ny=1, t_n=1.0, mu_n=1.50, t_c=1.0, mu_c=1.0, t_s=1.0, mu_s=1.0,
+-                  delta=0.35, eta=1e-4, kT=5e-2)
+-phi_vals_scan = np.linspace(-np.pi, np.pi, 21)
+-V_bias_scan = np.linspace(-1.1 * base.delta, 1.1 * base.delta, 31)
+-E_scan = myf.energy_grid(V_bias_scan.max(), base.kT, 61)
+-
+-var1_name, var1_vals = 'mu_s', np.array([0.0, 1.0])
+-var2_name, var2_vals = 't_c', np.array([0.4, 0.9])
+-# G_LR(phi, V) along the symmetric line for every (var1, var2) -> shape (N1, N2, N_phi, N_V)
+-G_LR_maps = myf.sweep(base, lambda j: myf.phase_bias_map(j, E_scan, phi_vals_scan, V_bias_scan, 'sym')[1]['total'],
+-                      **{var1_name: var1_vals, var2_name: var2_vals})
+-
+-myf.plot_grid_thumbnails(G_LR_maps, var1_name, var1_vals, var2_name, var2_vals, phi_vals_scan, V_bias_scan, base.delta)
+-myf.plot_summary_trends(G_LR_maps, var1_name, var1_vals, var2_name, var2_vals)
+-plt.show()
+-
+-#%% --- PHASE-DEPENDENT TRANSMISSION, EXTENDED (finer phi) ---
+-pT = myf.Params(
+-    nx=20, ny=10, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
+-    delta=0.35, phi=0.0, eta=2e-5, kT=2e-5,
+-)
+-E_fixed = 0.0
+-phi_vals_ext = np.linspace(0.0, 2 * np.pi, 81)
+-T_ext = myf.transmissions_vs_phi(myf.FourTerminalJunction(pT), phi_vals_ext, E_fixed, side='right')
+-
+-fig, ax = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+-ax[0].plot(phi_vals_ext / np.pi, T_ext['eh_cross'], label=r"$T_{eh}$ (CAR)")
+-ax[0].plot(phi_vals_ext / np.pi, T_ext['he_cross'], label=r"$T_{he}$ (CAR)")
+-ax[0].set_title(fr'Transmissions at fixed E={E_fixed:.2f} vs. $\phi$ (lead=right)')
+-ax[1].plot(phi_vals_ext / np.pi, T_ext['eh_local'], label=r"$T_{eh}$ (LAR)")
+-ax[1].set_xlabel(r"$\phi / \pi$")
+-for a in ax:
+-    a.set_ylabel("Transmission")
+-    a.legend()
+-    a.grid(True)
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- 2D SC RIBBONS vs. 1D SC CHAINS ---
+-p_1d2d = myf.Params(
+-    nx=10, ny=5, t_n=1.0, mu_n=1.50, t_c=1.00, mu_c=1.0, t_s=1.0, mu_s=1.0,
+-    delta=0.35, phi=np.pi / 4, eta=2e-5, kT=5e-6,
+-)
+-phi_values = np.linspace(0, 2 * np.pi, 301)
+-E_fixed, side = 0.0, 'left'
+-
+-T_ribbon = myf.transmissions_vs_phi(myf.FourTerminalJunction(p_1d2d, 'ribbon'), phi_values, E_fixed, side=side)
+-T_chain = myf.transmissions_vs_phi(myf.FourTerminalJunction(p_1d2d, 'chain'), phi_values, E_fixed, side=side)
+-fig, axes = myf.plot_channels_vs_phi(phi_values, T_ribbon, label='(2D ribbon)')
+-myf.plot_channels_vs_phi(phi_values, T_chain, axes=axes, label='(1D chains)', linestyle='--')
+-fig.suptitle(fr'Ribbon vs. chain leads at fixed $E={E_fixed:.2f}$, lead={side}')
+-plt.tight_layout()
+-plt.show()
+-# %%
+diff --git a/thesis/4_terminal/run_transport_ldos.py b/thesis/4_terminal/run_transport_ldos.py
+deleted file mode 100644
+index cedba29..0000000
+--- a/thesis/4_terminal/run_transport_ldos.py
++++ /dev/null
+@@ -1,178 +0,0 @@
+-#%% --- IMPORTS ---
+-import os
+-import numpy as np
+-import matplotlib.pyplot as plt
+-os.chdir(r"c:\coding\my_projects\thesis\fourterminal")
+-import my_functions as myf
+-
+-SCHEMES = [('sym', r'Symmetric bias ($V_L = V_R = V$)'),
+-           ('anti', r'Antisymmetric bias ($V_L = -V_R = V$)')]
+-CHANNEL_STYLE = [('EC', 'tab:blue'), ('CAR', 'tab:red'), ('LAR', 'tab:green')]
+-
+-
+-def mark_gap(ax, delta, vertical=True):
+-    line = ax.axvline if vertical else ax.axhline
+-    for s in (-1, 1):
+-        line(s * delta, color='gray', linestyle=':', linewidth=1)
+-
+-
+-#%% --- PARAMETERS & JUNCTION ---
+-# All four leads are attached without a barrier (lead/centre bond = the lead's own hopping).
+-p = myf.Params(
+-    nx=10, ny=20, t_n=1.0, mu_n=1.5, t_c=1.0, mu_c=1.0, t_s=1.0, mu_s=1.0,
+-    delta=0.35, phi=np.pi,
+-    alpha=0.2, beta=0.0, Bz=0.2, Bxy=0.0, theta_z=0.0, eta=1e-4, kT=5e-3,
+-)
+-V = np.linspace(-1.5 * p.delta, 1.5 * p.delta, 61)       # bias values
+-E = myf.energy_grid(V.max(), p.kT, 121)                   # covers |V| + 8 kT; must resolve T(E)
+-
+-junction = myf.FourTerminalJunction(p)
+-probes = {                                                # LDOS probe sites (ix, iy); iy = 0 borders the top SC
+-    'centre': junction.site(p.nx // 2, p.ny // 2),
+-    'next to L lead': junction.site(0, p.ny // 2),
+-    'next to top SC': junction.site(p.nx // 2, 0),
+-}
+-centre = probes['centre']
+-myf.print_params(p)
+-
+-#%% --- TRANSMISSION COEFFICIENTS vs ENERGY ---
+-ch = junction.channels(E)                                 # {'left': {...}, 'right': {...}}
+-fig, axes = myf.plot_channels(E / p.delta, ch['left'], r'$E/\Delta$', label='(into L)')
+-myf.plot_channels(E / p.delta, ch['right'], r'$E/\Delta$', axes=axes, label='(into R)', linestyle='--')
+-for ax in axes.flat:
+-    mark_gap(ax, 1.0)
+-fig.suptitle(fr'Transmission channels, $\phi = {p.phi / np.pi:.2g}\pi$')
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- TRANSMISSION COEFFICIENTS vs PHASE (fixed energy) ---
+-phi_vals = np.linspace(0, 2 * np.pi, 81)
+-E_fixed = 0.0
+-T_phi = myf.transmissions_vs_phi(junction, phi_vals, E_fixed, side='left')
+-fig, axes = myf.plot_channels_vs_phi(phi_vals, T_phi)
+-fig.suptitle(fr'Transmission channels into L at $E = {E_fixed:.2f}$')
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- CONDUCTANCE (local / non-local, channel-resolved) ---
+-# With bias-independent T(E), G_LL depends only on V_L and G_LR only on V_R. The bias line only
+-# matters for the total derivative along it: dI_L/dV = G_LL(V) + G_LR(V) (sym), G_LL(V) - G_LR(-V) (anti).
+-G_sym = myf.conductance(ch['left'], E, *myf.bias_line(V, 'sym'), p.kT)     # (G_LL, G_LR) at V_L = V_R = V
+-G_anti = myf.conductance(ch['left'], E, *myf.bias_line(V, 'anti'), p.kT)   # at V_L = V, V_R = -V
+-panels = [
+-    (G_sym[0], r'$G_{LL} = \partial I_L/\partial V_L$ vs. $V_L$'),
+-    (G_sym[1], r'$G_{LR} = \partial I_L/\partial V_R$ vs. $V_R$'),
+-    ({k: G_sym[0][k] + G_sym[1][k] for k in G_sym[0]}, 'Total $dI_L/dV$, ' + SCHEMES[0][1]),
+-    ({k: G_anti[0][k] - G_anti[1][k] for k in G_anti[0]}, 'Total $dI_L/dV$, ' + SCHEMES[1][1]),
+-]
+-fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharex=True)
+-for ax, (G, title) in zip(axes.flat, panels):
+-    for key, color in CHANNEL_STYLE:
+-        ax.plot(V / p.delta, G[key], linewidth=2, color=color, label=key)
+-    ax.plot(V / p.delta, G['total'], linewidth=2, color='k', linestyle='--', alpha=.6, label='total')
+-    ax.axhline(0, color='k', linewidth=0.5)
+-    mark_gap(ax, 1.0)
+-    ax.grid(alpha=0.3)
+-    ax.legend(loc='upper right', fontsize=8)
+-    myf.style_axis(ax, title)
+-for ax in axes[1, :]:
+-    ax.set_xlabel(r'$V/\Delta$')
+-for ax in axes[:, 0]:
+-    ax.set_ylabel(r'Conductance ($e^2/h$)')
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- LDOS: energy dependence at probe sites ---
+-rho = junction.ldos(E, sites=list(probes.values()))       # (N_E, n_probes)
+-fig, ax = plt.subplots(figsize=(8, 4.5))
+-for k, name in enumerate(probes):
+-    ax.plot(E / p.delta, rho[:, k], linewidth=2, label=name)
+-mark_gap(ax, 1.0)
+-ax.set_xlabel(r'$E/\Delta$')
+-ax.set_ylabel(r'LDOS $\rho(\mathbf{r}, E)$ (1/t)')
+-ax.legend()
+-ax.grid(alpha=0.3)
+-myf.style_axis(ax, 'Electron LDOS at probe sites')
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- LDOS: real-space maps ---
+-E_real = np.array([0.0, 0.5 * p.delta])
+-rho_xy = junction.ldos(E_real)                            # (N_E, ny, nx), full inverse
+-fig, axes = plt.subplots(1, len(E_real), figsize=(6 * len(E_real), 5))
+-for ax, Ek, r in zip(np.atleast_1d(axes), E_real, rho_xy):
+-    myf.plot_map(ax, np.arange(p.nx), np.arange(p.ny), r.T, r'$i_x$', r'$i_y$',
+-                 fr'LDOS at $E = {Ek / p.delta:.2g}\Delta$', 'LDOS (1/t)')
+-    ax.invert_yaxis()                                     # top SC (iy = 0) on top
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- LDOS: phase dependence at the centre ---
+-rho_phi = myf.ldos_vs_phi(junction, phi_vals, E, sites=[centre])[:, :, 0]    # (N_phi, N_E)
+-fig, ax = plt.subplots(figsize=(8, 5))
+-myf.plot_map(ax, phi_vals / np.pi, E / p.delta, rho_phi, r'$\phi/\pi$', r'$E/\Delta$',
+-             'LDOS at the centre vs. phase', 'LDOS (1/t)')
+-mark_gap(ax, 1.0, vertical=False)
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- 2D MAPS: one parameter vs. bias (conductance) ---
+-mu_vals = np.linspace(0.0, 2.0, 21)
+-
+-
+-def G_sym(j):
+-    G_loc, G_nl = myf.bias_conductance(j, E, V, 'sym', side='left')
+-    return {'G_LL': G_loc['total'], 'G_LR': G_nl['total']}
+-
+-
+-res_mu = myf.sweep(p, G_sym, mu_c=mu_vals)                # dict of (N_mu, N_V)
+-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+-myf.plot_map(axes[0], mu_vals, V / p.delta, res_mu['G_LL'], r'$\mu_c$', r'$V/\Delta$',
+-             r'$G_{LL}$ (symmetric bias)', r'$e^2/h$')
+-myf.plot_map(axes[1], mu_vals, V / p.delta, res_mu['G_LR'], r'$\mu_c$', r'$V/\Delta$',
+-             r'$G_{LR}$ (symmetric bias; red = CAR, blue = EC)', r'$e^2/h$', diverging=True)
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- 2D MAPS: one parameter vs. energy (transmissions + LDOS) ---
+-Bz_vals = np.linspace(0.0, 0.6, 21)
+-
+-
+-def T_and_ldos(j):
+-    T, rho = j.channels_and_ldos(E, sites=[centre], side='left')     # one factorisation for both
+-    return {**T, 'ldos': rho[:, 0]}
+-
+-
+-res_Bz = myf.sweep(p, T_and_ldos, Bz=Bz_vals)            # dict of (N_Bz, N_E)
+-fig, axes = plt.subplots(1, 3, figsize=(19, 5))
+-for ax, key, title in [(axes[0], 'ee', r'$T_{ee}$ (EC)'), (axes[1], 'eh_cross', r'$T_{eh}$ (CAR)'),
+-                       (axes[2], 'ldos', 'LDOS at the centre')]:
+-    myf.plot_map(ax, Bz_vals, E / p.delta, res_Bz[key], r'$B_z$', r'$E/\Delta$', title)
+-    mark_gap(ax, 1.0, vertical=False)
+-plt.tight_layout()
+-plt.show()
+-
+-#%% --- 2D MAPS: two parameters at zero bias / zero energy ---
+-Bz_grid = np.linspace(0.0, 0.6, 13)
+-alpha_grid = np.linspace(0.0, 0.4, 11)
+-E0 = myf.energy_grid(0.0, p.kT, 33)                       # only the Fermi window around V = 0 is needed
+-
+-
+-def zero_bias(j):
+-    G_loc, G_nl = myf.bias_conductance(j, E0, 0.0, 'sym', side='left')
+-    return {'G_LL': G_loc['total'], 'G_LR': G_nl['total'],
+-            'ldos': j.ldos(0.0, sites=[centre])[0, 0]}
+-
+-
+-res_2d = myf.sweep(p, zero_bias, Bz=Bz_grid, alpha=alpha_grid)   # dict of (N_Bz, N_alpha)
+-fig, axes = plt.subplots(1, 3, figsize=(19, 5))
+-myf.plot_map(axes[0], Bz_grid, alpha_grid, res_2d['G_LL'], r'$B_z$', r'$\alpha$', r'$G_{LL}(V=0)$', r'$e^2/h$')
+-myf.plot_map(axes[1], Bz_grid, alpha_grid, res_2d['G_LR'], r'$B_z$', r'$\alpha$', r'$G_{LR}(V=0)$', r'$e^2/h$',
+-             diverging=True)
+-myf.plot_map(axes[2], Bz_grid, alpha_grid, res_2d['ldos'], r'$B_z$', r'$\alpha$', r'LDOS$(E=0)$ at the centre',
+-             'LDOS (1/t)')
+-plt.tight_layout()
+-plt.show()
+-# Any Params field works as a sweep axis, e.g. myf.sweep(p, zero_bias, mu_c=..., Bz=...) or phi=..., Bxy=...
+-
+-# %%
+diff --git a/thesis/4_terminal/tests/test_api.py b/thesis/4_terminal/tests/test_api.py
+new file mode 100644
+index 0000000..fb9f199
+--- /dev/null
++++ b/thesis/4_terminal/tests/test_api.py
+@@ -0,0 +1,48 @@
++"""Tests of the array-returning interface (compute.py), scan/ThermalPoint and the finite-bias wrappers.
++Run from the 4_terminal folder:  python tests/test_api.py      (about a minute)"""
++import os, sys, tempfile, time
++from pathlib import Path
++from dataclasses import replace
++import numpy as np
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++import my_functions as myf
++
++P = myf.Params(model='rashba', nx=24, ny=8, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=-0.03, t_s=1.0, mu_s=0.15,
++               delta=0.35, phi=np.pi, tc_top=1.1, tc_bot=1.1, tc_barr=1.0, alpha=1.2, Bz_s=0.94, eta=1e-5)
++R = []
++
++
++def check(name, ok, detail):
++    R.append(bool(ok)); print(f"[{'PASS' if ok else 'FAIL'}] {name}: {detail}")
++
++
++if __name__ == "__main__":
++    t0 = time.perf_counter()
++    E = np.linspace(-0.02, 0.02, 9)
++    r = myf.RGFFourTerminal(myf.FourTerminalJunction(P), E)
++    T1, T2 = myf.transmissions(P, E, 1.1), myf.transmissions(P, E, [0.0, 1.1])
++    d = max(np.abs(T1[k] - r.channels_at_phi(1.1, 'right')[k]).max() for k in T1)
++    check("transmissions == RGF", d == 0 and T2['ee'].shape == (2, len(E)), f"diff {d:.1e}")
++    k0, _ = myf.linear_response(P, np.pi, 0.0); c0 = r.channels_at_phi(np.pi, 'right')
++    k, g, ek, eg = myf.linear_response(P, np.pi, 1e-3, error=True)
++    ks, _ = myf.linear_response(P, [np.pi, 0.0], 1e-3)
++    check("linear_response", abs(k0 - (c0['ee'][4] + c0['he_cross'][4])) < 1e-9 and ks[0] == k and np.isfinite(ek),
++          f"T->0 {k0:.4f}; kT=1e-3: {k:.4f} +- {ek:.1e}")
++    A = myf.ldos(P, [0.0, 0.01], np.pi, cols=[0, 12])
++    check("ldos", A.shape == (2, 2, P.ny) and (A > -1e-12).all(), f"shape {A.shape}")
++    Eb, V = np.linspace(-0.5, 0.5, 201), np.linspace(-0.2, 0.2, 7)
++    ch = myf.transmissions(P, Eb, 1.1, 'left')
++    I1, I2 = myf.current(ch, Eb, V, -V, 2e-3), myf.currents(P, Eb, V, -V, 2e-3, 1.1)
++    G1, G2 = myf.differential_conductance(ch, Eb, V, -V, 2e-3), myf.partial_G_vectorized(ch, Eb, V, 1e-5, 2e-3, 'anti')
++    check("finite bias", np.abs(I1 - I2).max() < 1e-12 and max(np.abs(a - b).max() for a, b in zip(G1, G2)) == 0, "core == wrappers")
++    f = myf.ThermalPoint(P, kT=0.0, phis=(np.pi, 0.0))
++    grid = {'mu_s': [0.1, 0.2], 'Bz_s': [0.8, 0.94, 1.0]}          # ribbon parameter last
++    with tempfile.TemporaryDirectory() as tmp:
++        s1 = myf.scan(f, grid)
++        s2 = myf.scan(f, grid, n_workers=2, save=os.path.join(tmp, 's.npz'))
++        t1 = time.perf_counter(); s3 = myf.scan(f, grid, n_workers=2, save=os.path.join(tmp, 's.npz')); tr = time.perf_counter() - t1
++    direct = myf.linear_response(replace(P, mu_s=0.2, Bz_s=1.0), [np.pi, 0.0], 0.0)
++    check("scan + ThermalPoint", s1['values'].shape == (2, 3, 5) and np.array_equal(s1['values'], s2['values'])
++          and np.array_equal(s2['values'], s3['values']) and np.allclose(s1['values'][1, 2, [0, 2]], direct[0]) and tr < 1.0,
++          f"shape {s1['values'].shape}, parallel == serial == direct, resume {tr:.2f} s")
++    print(f"\n{sum(R)}/{len(R)} tests passed ({time.perf_counter() - t0:.0f} s)")

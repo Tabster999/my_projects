@@ -73,3 +73,8 @@ results/
 *.csv
 *.h5
 *.hdf5
+
+# generated results
+*.npz
+*.png
+!computations/*.md

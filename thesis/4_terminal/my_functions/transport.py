@@ -19,14 +19,23 @@ Known limitation: quasiparticle transfer from lead i into the grounded SC
 ribbons is not included.  The NON-LOCAL conductance dI_i/dV_j is exact (those
 terms don't depend on V_j); the LOCAL conductance dI_i/dV_i misses them above
 the gap, and below it whenever the ribbons carry propagating edge modes.
+
+Linear response in temperature: kappa/kappa0 = Int dx (3/pi^2) x^2/(4cosh^2(x/2)) T_th(x kT),
+G/G0 = Int dx 1/(4cosh^2(x/2)) T_el(x kT), x = E/kT, both kernels integrate to 1 (kT -> 0 gives
+T_th(0), T_el(0)).  Evaluated with the trapezoid rule on a uniform grid (step h, |x| <= x_max),
+negative energies from particle-hole symmetry.  h = 0.5 is accurate to <~2e-3 where T(E) is smooth
+on the kT scale; sharp resonances (e.g. at phi = 0 above the minigap, or open normal channels) can
+need h = 0.25 -- check with thermal_error_phs, which is free.  (The previous Gauss-Legendre rule was
+off by up to 0.14 at phi = 0 for exactly that reason.)
 """
 
+import warnings
 import numpy as np
 
-# np.trapezoid is NumPy >= 2.0; np.trapz is its NumPy 1.x name
-_trapezoid = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
+_trapezoid = np.trapezoid if hasattr(np, "trapezoid") else np.trapz     # NumPy 1.x name
 
 
+# ============================ Fermi functions ============================
 def f_electron(E, mu, kT):
     if kT == 0:
         return np.where(E < mu, 1.0, np.where(E == mu, 0.5, 0.0))
@@ -39,168 +48,132 @@ def f_hole(E, mu, kT):
     return 1.0 / (1.0 + np.exp(np.clip((E + mu) / kT, -1000, 1000)))
 
 
-def _current_terms(ch, f_oe, f_oh, f_ie, f_ih):
-    """EC, CAR and LAR integrands for lead 'out' (channels ch of that side), incl. the 1/2."""
-    EC = 0.5 * (ch['ee'] * (f_oe - f_ie) - ch['hh'] * (f_oh - f_ih))
-    CAR = 0.5 * (ch['eh_cross'] * (f_oe - f_ih) - ch['he_cross'] * (f_oh - f_ie))
-    LAR = 0.5 * (ch['eh_local'] + ch['he_local']) * (f_oe - f_oh)
-    return EC, CAR, LAR
+# ============================ finite bias: one core ============================
+def current(ch, E, V_out, V_in, kT, parts=False):
+    """
+    DC current into lead 'out' [e/h] from its channels `ch` on the energy grid E, for bias V_out on
+    that lead and V_in on the other normal lead (scalars or equal-shape arrays; result has that shape).
+    parts=True returns {'EC', 'CAR', 'LAR', 'total'}.
+    """
+    Vo, Vi = np.broadcast_arrays(np.asarray(V_out, float), np.asarray(V_in, float))
+    Vo, Vi = Vo[..., None], Vi[..., None]
+    fo_e, fo_h, fi_e, fi_h = f_electron(E, Vo, kT), f_hole(E, Vo, kT), f_electron(E, Vi, kT), f_hole(E, Vi, kT)
+    EC = 0.5 * (ch['ee'] * (fo_e - fi_e) - ch['hh'] * (fo_h - fi_h))
+    CAR = 0.5 * (ch['eh_cross'] * (fo_e - fi_h) - ch['he_cross'] * (fo_h - fi_e))
+    LAR = 0.5 * (ch['eh_local'] + ch['he_local']) * (fo_e - fo_h)
+    I = {k: _trapezoid(v, E, axis=-1) for k, v in (('EC', EC), ('CAR', CAR), ('LAR', LAR))}
+    I['total'] = I['EC'] + I['CAR'] + I['LAR']
+    return I if parts else I['total']
 
 
-def dc_current_channels(ch, E_sweep, bias, kT, out_name, in_name):
-    """Integrate the EC/CAR/LAR channel contributions into a DC current for one lead [e/h]."""
-    mu_out, mu_in = bias[out_name], bias[in_name]
-    EC, CAR, LAR = _current_terms(ch,
-                                  f_electron(E_sweep, mu_out, kT), f_hole(E_sweep, mu_out, kT),
-                                  f_electron(E_sweep, mu_in, kT), f_hole(E_sweep, mu_in, kT))
-    I_EC, I_CAR, I_LAR = (_trapezoid(x, E_sweep) for x in (EC, CAR, LAR))
-    return {'EC': I_EC, 'CAR': I_CAR, 'LAR': I_LAR, 'total': I_EC + I_CAR + I_LAR}
+def differential_conductance(ch, E, V_out, V_in, kT, dV=1e-5):
+    """(dI_out/dV_out, dI_out/dV_in) [e^2/h] at the bias point(s), central differences."""
+    G_loc = (current(ch, E, np.add(V_out, dV), V_in, kT) - current(ch, E, np.subtract(V_out, dV), V_in, kT)) / (2 * dV)
+    G_nl = (current(ch, E, V_out, np.add(V_in, dV), kT) - current(ch, E, V_out, np.subtract(V_in, dV), kT)) / (2 * dV)
+    return G_loc, G_nl
 
 
+# ---- the previous finite-bias functions, kept as thin wrappers ----
 def other_name(name):
     return 'right' if name == 'left' else 'left'
 
 
-def conductance_matrix(bias0, leads, channel_sweeps, E_sweep, kT, dV=1e-5):
-    """Differential conductance matrix G_ij = dI_i/dV_j [e^2/h] via central differences."""
-    G = {}
-    for i in leads:
-        ch_i, in_name = channel_sweeps[i], other_name(i)
-        for j in leads:
-            bp, bm = bias0.copy(), bias0.copy()
-            bp[j] += dV
-            bm[j] -= dV
-            rp = dc_current_channels(ch_i, E_sweep, bp, kT, i, in_name)
-            rm = dc_current_channels(ch_i, E_sweep, bm, kT, i, in_name)
-            G[(i, j)] = (rp['total'] - rm['total']) / (2 * dV)
-    return G
+def dc_current_channels(ch, E_sweep, bias, kT, out_name, in_name):
+    """Current into `out_name` for a bias dict {'left': V_L, 'right': V_R}, split into EC/CAR/LAR [e/h]."""
+    return current(ch, E_sweep, bias[out_name], bias[in_name], kT, parts=True)
 
 
 def eval_I_total(ch, E, VL, VR, kT):
-    """Vectorized total left-lead current I_L(V_L, V_R) [e/h] for arrays of bias points."""
-    EC, CAR, LAR = _current_terms({k: v[None, :] for k, v in ch.items()},
-                                  f_electron(E[None, :], VL, kT), f_hole(E[None, :], VL, kT),
-                                  f_electron(E[None, :], VR, kT), f_hole(E[None, :], VR, kT))
-    return _trapezoid(EC + CAR + LAR, E, axis=1)
+    """Total current into the lead of `ch` for bias arrays VL (that lead) and VR (other lead) [e/h]."""
+    return current(ch, E, np.squeeze(VL), np.squeeze(VR), kT)
+
+
+def conductance_matrix(bias0, leads, channel_sweeps, E_sweep, kT, dV=1e-5):
+    """G_ij = dI_i/dV_j [e^2/h] around the bias dict bias0; channel_sweeps[i] = channels of lead i."""
+    G = {}
+    for i in leads:
+        loc, nl = differential_conductance(channel_sweeps[i], E_sweep, bias0[i], bias0[other_name(i)], kT, dV)
+        for j in leads:
+            G[(i, j)] = loc if j == i else nl
+    return G
 
 
 def partial_G_vectorized(ch, E, V, dV, kT, scheme="sym"):
-    """
-    Partial conductances G_LL = dI_L/dV_L and G_LR = dI_L/dV_R [e^2/h], evaluated
-    around a bias baseline set by `scheme` ('sym': V_R = +V, 'anti': V_R = -V).
-    """
-    V = V[:, None]
-    if scheme == "sym":
-        VR_base = V
-    elif scheme == "anti":
-        VR_base = -V
-    else:
+    """dI_L/dV_L and dI_L/dV_R [e^2/h] along V_R = +V ('sym') or V_R = -V ('anti')."""
+    if scheme not in ("sym", "anti"):
         raise ValueError(f"Invalid scheme: {scheme}. Must be 'sym' or 'anti'")
-
-    def I_eval(VL, VR):
-        return eval_I_total(ch, E, VL, VR, kT)
-
-    G_LL = (I_eval(V + dV, VR_base) - I_eval(V - dV, VR_base)) / (2 * dV)
-    G_LR = (I_eval(V, VR_base + dV) - I_eval(V, VR_base - dV)) / (2 * dV)
-    return G_LL, G_LR
+    V = np.asarray(V, float)
+    return differential_conductance(ch, E, V, V if scheme == "sym" else -V, kT, dV)
 
 
 def total_dIdV_map(ch, E, V, dV, kT, scheme):
-    """
-    Direct derivative of I_L along the actual bias line — 'sym': V_R=+V,
-    'anti': V_R=-V — evaluated at the correct point for each scheme.
-    """
-    V = V[:, None]
-    if scheme == "sym":
-        sign = 1
-    elif scheme == "anti":
-        sign = -1
-    else:
+    """Total derivative dI_L/dV along V_R = +V ('sym') or V_R = -V ('anti') [e^2/h]."""
+    if scheme not in ("sym", "anti"):
         raise ValueError(f"Invalid scheme: {scheme}. Must be 'sym' or 'anti'")
-    Ip = eval_I_total(ch, E, V + dV, sign * (V + dV), kT)
-    Im = eval_I_total(ch, E, V - dV, sign * (V - dV), kT)
-    return (Ip - Im) / (2 * dV)
+    s, V = (1 if scheme == "sym" else -1), np.asarray(V, float)
+    return (current(ch, E, V + dV, s * (V + dV), kT) - current(ch, E, V - dV, s * (V - dV), kT)) / (2 * dV)
 
 
-# =============================================================================
-# Thermal conductance: kappa/kappa0 = (3/pi^2) Int de (e/kT)^2 (-df/de) T_th(e)
-# with T_th = T_ee + T_he.  The weight integrates to 1, so as T -> 0 it collapses
-# onto e = 0 and kappa/kappa0 -> T_th(0)  (the T -> 0 limit used in the maps).
-# At finite T the weight peaks at |e| ~ 2.4 kT, so E = 0 itself is NOT sampled.
-# =============================================================================
-def linear_response_nodes(kT, n=16, x_max=10.0):
+# ============================ linear response in temperature ============================
+def _kernels(x):
+    w = 1.0 / (4.0 * np.cosh(x / 2) ** 2)
+    return (3 / np.pi**2) * x**2 * w, w
+
+
+def _ignored_n(n):
+    if n is not None:
+        warnings.warn("`n` is ignored: the thermal integral now uses the trapezoid rule (set its step with h).",
+                      stacklevel=3)
+
+
+def linear_response_nodes(kT, h=0.5, x_max=16.0, n=None):
     """
-    Energies and weights of the linear-response integrals at temperature kT:
- 
-        kappa/kappa0 = sum_i w_th[i] * T_th(E_i),     T_th = T_ee + T_he
-        G/G0         = sum_i w_el[i] * T_el(E_i),     T_el = T_ee - T_he
- 
-    (Gauss-Legendre on x = E/kT; thermal weight (3/pi^2) x^2/(4cosh^2(x/2)), electrical
-    weight 1/(4cosh^2(x/2)); both integrate to 1.)  The thermal weight peaks at
-    |E| ~ 2.4 kT, so E = 0 itself is not sampled at finite temperature.
-    kT = 0 returns the T -> 0 rule: one node at E = 0 with both weights 1, i.e.
-    kappa/kappa0 = T_th(0) and G/G0 = T_el(0).
- 
-    Convergence (checked against a dense-grid integration of a junction with structure
-    in T_th on the scale 0.007):
-      n      : n = 6 / 8 / 12 are off by 0.2 / 0.09 / 0.01; from n = 16 the result is
-               converged to <~ 2e-3.  n = 16 is a good default, n = 24 is safe.
-      x_max  : the kernel holds 71% / 92% / 98.3% / 99.7% of its weight inside
-               |x| < 4 / 6 / 8 / 10, so small x_max biases kappa low.  x_max = 10-12 is
-               optimal; going beyond ~15 at FIXED n makes it worse again, because the
-               nodes then resolve the peak at |x| ~ 2.4 less well.
-    Two things the quadrature cannot fix:
-      * features of T_th narrower than the node spacing ~ 2 x_max kT / n are missed
-        (e.g. the SC-ribbon edge-overlap gap: keep kT >> that gap);
-      * the transmission must be available up to |E| ~ x_max * kT, which for large kT
-        reaches well beyond the superconducting gap.
+    Symmetric energy grid and trapezoid weights: kappa/kappa0 = sum(w_th * (T_ee + T_he)),
+    G/G0 = sum(w_el * (T_ee - T_he)) with channels computed at E (both signs).
+    Prefer linear_response_nodes_phs (half the energies).  kT = 0: E = [0], weights 1.
     """
+    _ignored_n(n)
     if kT == 0:
         return np.zeros(1), np.ones(1), np.ones(1)
-    x, w = np.polynomial.legendre.leggauss(n)
-    x, w = x * x_max, w * x_max
-    kernel = w / (4 * np.cosh(x / 2)**2)
-    return x * kT, (3 / np.pi**2) * kernel * x**2, kernel
- 
- 
-def linear_response_nodes_phs(kT, n=16, x_max=10.0):
+    x = np.arange(-x_max, x_max + h / 2, h)
+    W_th, W_el = _kernels(x)
+    w = np.full(len(x), h); w[0] = w[-1] = h / 2
+    return x * kT, W_th * w, W_el * w
+
+
+def linear_response_nodes_phs(kT, h=0.5, x_max=16.0, n=None):
     """
-    Half the energies of linear_response_nodes, using particle-hole symmetry.
-
-    BdG gives T_ee(-E) = T_hh(E) and T_he(-E) = T_eh(E) (exact, checked to 1e-12 with
-    Rashba, in-plane and out-of-plane Zeeman at arbitrary phi), and the Gauss rule is
-    symmetric, so only the n/2 nodes E > 0 are needed:
-
-        kappa/kappa0 = sum_i w_th[i] * (T_ee + T_he + T_hh + T_eh)(E_i)
-        G/G0         = sum_i w_el[i] * (T_ee - T_he + T_hh - T_eh)(E_i)
-
-    (use thermal_from_channels_phs).  Weights are those of linear_response_nodes at the
-    same nodes.  kT = 0 returns the single node E = 0 with weights 1/2, so the same sums
-    give T_th(0) and T_el(0).  n must be even (an odd rule has a node at E = 0).
+    Energies E >= 0 and weights for thermal_from_channels_phs: the trapezoid rule of
+    linear_response_nodes folded onto E >= 0 with particle-hole symmetry
+    (T_ee(-E) = T_hh(E), T_he(-E) = T_eh(E), exact).  33 energies with the defaults.
+    kT = 0 returns E = [0] with weights 1/2 (the same sums then give T_th(0), T_el(0)).
     """
+    _ignored_n(n)
     if kT == 0:
         return np.zeros(1), np.full(1, 0.5), np.full(1, 0.5)
-    if n % 2:
-        raise ValueError("n must be even for the particle-hole-symmetric rule")
-    E, w_th, w_el = linear_response_nodes(kT, n, x_max)
-    pos = E > 0
-    return E[pos], w_th[pos], w_el[pos]
+    x = np.arange(0.0, x_max + h / 2, h)
+    W_th, W_el = _kernels(x)
+    fold = np.full(len(x), h); fold[0] = fold[-1] = h / 2
+    return x * kT, W_th * fold, W_el * fold
 
 
 def thermal_from_channels_phs(ch, w_th, w_el):
-    """(kappa/kappa0, G/G0) from channels at the nodes of linear_response_nodes_phs."""
+    """(kappa/kappa0, G/G0) from channels at the energies of linear_response_nodes_phs."""
     ee, hh = np.asarray(ch['ee']), np.asarray(ch['hh'])
     he, eh = np.asarray(ch['he_cross']), np.asarray(ch['eh_cross'])
     return float(np.dot(w_th, ee + he + hh + eh)), float(np.dot(w_el, ee - he + hh - eh))
 
 
-def kappa_nodes(kT, n=16, x_max=10.0):
-    """Energies and thermal weights only (see linear_response_nodes)."""
-    E, w_th, _ = linear_response_nodes(kT, n, x_max)
-    return E, w_th
- 
- 
-def kappa_from_channels(ch, weights):
-    """kappa/kappa0 from channels evaluated at the energies of linear_response_nodes."""
-    return float(np.dot(weights, np.asarray(ch['ee']) + np.asarray(ch['he_cross'])))
-
+def thermal_error_phs(ch, kT, h=0.5, x_max=16.0):
+    """
+    Conservative error estimates (err_kappa, err_G) of thermal_from_channels_phs, from the same
+    channels on the step-2h sub-grid (free: no extra energies).  If too large, halve h.
+    """
+    if kT == 0:
+        return 0.0, 0.0
+    _, wt, we = linear_response_nodes_phs(kT, h, x_max)
+    _, wt2, we2 = linear_response_nodes_phs(kT, 2 * h, x_max)
+    sub = {k: np.asarray(v)[::2] for k, v in ch.items()}
+    k1, g1 = thermal_from_channels_phs(ch, wt, we)
+    k2, g2 = thermal_from_channels_phs(sub, wt2, we2)
+    return abs(k1 - k2), abs(g1 - g2)
