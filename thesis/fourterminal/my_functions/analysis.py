@@ -10,7 +10,7 @@ from tqdm import tqdm
 from .params import Params
 from .fast_phase_sweep import FastPhaseSweep
 from .junction import FourTerminalJunction
-from .transport import partial_G_vectorized
+from .transport import partial_G_vectorized, linear_response_coeffs
 from .plotting import style_axis
 
 def compute_phase_bias_maps(pc, E_sweep, phi_vals, V_bias_map, dV_map=1e-5, side='left', scheme='sym'):
@@ -27,6 +27,27 @@ def compute_phase_bias_maps(pc, E_sweep, phi_vals, V_bias_map, dV_map=1e-5, side
         )
 
     return G_LL_map, G_LR_map
+
+
+def compute_thermal_vs_phi(pc, E_sweep, phi_vals, kT_vals, side='left'):
+    """
+    Linear-response coefficients (see transport.linear_response_coeffs) on a
+    (phi, kT) grid. Channels don't depend on kT, so each phi is solved once
+    and every temperature is just a re-weighting of the same channels.
+
+    Returns a dict of (len(phi_vals), len(kT_vals)) arrays.
+    """
+    fps = FastPhaseSweep(FourTerminalJunction(pc), E_sweep, phi_ref=0.0)
+    out = None
+    for i, phi in enumerate(tqdm(phi_vals, desc='thermal phi sweep')):
+        ch = fps.channels_at_phi(phi, side_name=side)
+        for j, kT in enumerate(kT_vals):
+            coeffs = linear_response_coeffs(ch, E_sweep, kT)
+            if out is None:
+                out = {k: np.empty((len(phi_vals), len(kT_vals))) for k in coeffs}
+            for k, v in coeffs.items():
+                out[k][i, j] = v
+    return out
 
 
 def summarize_map(G_LL_map, G_LR_map):

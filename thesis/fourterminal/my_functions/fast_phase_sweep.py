@@ -32,6 +32,7 @@ import numpy as np
 from scipy.linalg import solve as batched_solve
 from .hamiltonians import onsite_block, Vx, Vy, make_row_hamiltonian
 from scipy.linalg import block_diag
+from .junction import lead_escape
 
 
 class FastPhaseSweep:
@@ -193,6 +194,7 @@ class FastPhaseSweep:
                 "he_cross": T(Gamma_own_h, G_he, Gamma_other_e, dagger(G_he)),
                 "eh_local": T(Gamma_own_e, G_self_eh, Gamma_own_h, dagger(G_self_eh)),
                 "he_local": T(Gamma_own_h, G_self_he, Gamma_own_e, dagger(G_self_he)),
+                **lead_escape(G_self, self.Gamma_L if name == 'left' else self.Gamma_R, e_idx, h_idx),
             }
 
         if side_name is None:

@@ -434,6 +434,7 @@ class RGFFourTerminal:
                 "he_cross": T(own_h, G_he, oth_e, dag(G_he)),
                 "eh_local": T(own_e, S_eh, own_h, dag(S_eh)),
                 "he_local": T(own_h, S_he, own_e, dag(S_he)),
+                **myf.lead_escape(G_self, self.Gamma_L if name == 'left' else self.Gamma_R, e_idx, h_idx),
             }
 
         if side_name is None:
