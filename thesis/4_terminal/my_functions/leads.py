@@ -22,18 +22,31 @@ from numpy.linalg import inv, norm
 N_UNRELIABLE = 0          # number of lead energies that failed the self-consistency check
 ACCEPT_TOL = 1e-8         # max. relative Dyson residual for a lead solution to be accepted
 
-# Cache of lead solutions: sweeps of central-region parameters (mu_c, tc, tc_barr, ny, phi, ...)
-# leave the leads unchanged.  The key contains everything the solution depends on; cached arrays
-# are read-only; a cached failure (NaN) is counted again on every reuse.
+# Cache of lead solutions.  It pays off when the same lead comes back, i.e. in sweeps of central-region
+# parameters (mu_c, tc, tc_barr, phi, ...), where the expensive ribbon decimation is then done once.
+# In ribbon sweeps (mu_s, Bz_s, ...) every lead is new, so storing it would only cost memory: a solution
+# is therefore stored only the SECOND time its key is requested (the keys seen so far are remembered,
+# hashes only), and at most CACHE_MAX_ENTRIES solutions are kept (LRU; one junction needs <= 3 on the
+# RGF path).  The key contains everything the solution depends on; cached arrays are read-only; a
+# cached failure (NaN) is counted again on every reuse.
 CACHE_ENABLED = True
-CACHE_MAX_BYTES = 1.5e9   # per process; LRU eviction beyond this
+CACHE_MAX_ENTRIES = 4     # per process
+CACHE_MAX_BYTES = 1.0e9   # per process, safety cap on top of the entry limit
 CACHE_STATS = {"hits": 0, "misses": 0}
 _CACHE = OrderedDict()
+_SEEN = OrderedDict()     # keys requested once but not stored (admission on the second request)
+_SEEN_MAX = 256
 
 
 def clear_cache():
     _CACHE.clear()
+    _SEEN.clear()
     CACHE_STATS.update(hits=0, misses=0)
+
+
+def cache_bytes():
+    """Memory held by the lead cache of this process [bytes]."""
+    return sum(a.nbytes + b.nbytes for a, b in _CACHE.values())
 
 
 def _cache_key(H_onsite, V_plus, zs, p, need):
@@ -178,11 +191,17 @@ def surface_eps_pair(H_onsite, V_plus, z_batch, p, name="lead", need=(True, True
             warnings.warn("lead surface GF not self-consistent at some energies even after Newton and the "
                           "eigenmode fallback (counted in my_functions.leads.N_UNRELIABLE); set to NaN.")
     if CACHE_ENABLED:
-        for a in pair:
-            a.setflags(write=False)
-        _CACHE[key] = (pair[0], pair[1])
-        while len(_CACHE) > 1 and sum(a.nbytes + b.nbytes for a, b in _CACHE.values()) > CACHE_MAX_BYTES:
-            _CACHE.popitem(last=False)
+        if key in _SEEN:                                   # requested before -> likely to come back: store
+            del _SEEN[key]
+            for a in pair:
+                a.setflags(write=False)
+            _CACHE[key] = (pair[0], pair[1])
+            while len(_CACHE) > 1 and (len(_CACHE) > CACHE_MAX_ENTRIES or cache_bytes() > CACHE_MAX_BYTES):
+                _CACHE.popitem(last=False)
+        else:                                              # first request: remember the key only
+            _SEEN[key] = None
+            while len(_SEEN) > _SEEN_MAX:
+                _SEEN.popitem(last=False)
     return pair[0], pair[1]
 
 
