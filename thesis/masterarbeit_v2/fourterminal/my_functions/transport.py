@@ -62,14 +62,14 @@ def current(ch, E, V_out, V_in, kT, parts=False):
     CAR = 0.5 * (ch['eh_cross'] * (fo_e - fi_h) - ch['he_cross'] * (fo_h - fi_e))
     LAR = 0.5 * (ch['eh_local'] + ch['he_local']) * (fo_e - fo_h)
     I = {k: _trapezoid(v, E, axis=-1) for k, v in (('EC', EC), ('CAR', CAR), ('LAR', LAR))}
-    I['total'] = I['EC'] + I['CAR'] + I['LAR'] #type: ignore
+    I['total'] = I['EC'] + I['CAR'] + I['LAR']
     return I if parts else I['total']
 
 
 def differential_conductance(ch, E, V_out, V_in, kT, dV=1e-5):
     """(dI_out/dV_out, dI_out/dV_in) [e^2/h] at the bias point(s), central differences."""
-    G_loc = (current(ch, E, np.add(V_out, dV), V_in, kT) - current(ch, E, np.subtract(V_out, dV), V_in, kT)) / (2 * dV) #type: ignore
-    G_nl = (current(ch, E, V_out, np.add(V_in, dV), kT) - current(ch, E, V_out, np.subtract(V_in, dV), kT)) / (2 * dV) #type: ignore
+    G_loc = (current(ch, E, np.add(V_out, dV), V_in, kT) - current(ch, E, np.subtract(V_out, dV), V_in, kT)) / (2 * dV)
+    G_nl = (current(ch, E, V_out, np.add(V_in, dV), kT) - current(ch, E, V_out, np.subtract(V_in, dV), kT)) / (2 * dV)
     return G_loc, G_nl
 
 
@@ -111,7 +111,7 @@ def total_dIdV_map(ch, E, V, dV, kT, scheme):
     if scheme not in ("sym", "anti"):
         raise ValueError(f"Invalid scheme: {scheme}. Must be 'sym' or 'anti'")
     s, V = (1 if scheme == "sym" else -1), np.asarray(V, float)
-    return (current(ch, E, V + dV, s * (V + dV), kT) - current(ch, E, V - dV, s * (V - dV), kT)) / (2 * dV) #type: ignore
+    return (current(ch, E, V + dV, s * (V + dV), kT) - current(ch, E, V - dV, s * (V - dV), kT)) / (2 * dV)
 
 
 # ============================ linear response in temperature ============================

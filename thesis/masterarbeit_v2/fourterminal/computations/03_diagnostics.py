@@ -22,6 +22,7 @@ C = np.array([myf.chern_number(replace(p0, Bz_s=b), N=40) for b in Bs])
 xi = np.array([myf.coherence_length(replace(p0, Bz_s=b)) for b in Bs])
 gap = np.array([myf.ribbon_gap(replace(p0, Bz_s=b), nk=41) for b in Bs])
 x, dens, xi_fit, _ = myf.edge_state_profile(replace(p0, nx=200))
+np.savez("diagnostics.npz", Bs=Bs, C=C, xi=xi, gap=gap, x=x, dens=dens)
 
 #%% --- PLOT ---
 fig, ax = plt.subplots(1, 3, figsize=(15, 4))

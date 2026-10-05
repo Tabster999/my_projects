@@ -56,8 +56,8 @@ def thermal_point(p, E, w_th, w_el, phis=(np.pi,), side='right'):
 
 
 def _init_worker():
-    try:                                    
-        from threadpoolctl import threadpool_limits #type: ignore
+    try:                                    # one BLAS thread per worker: points run in parallel instead
+        from threadpoolctl import threadpool_limits
         threadpool_limits(1)
     except ImportError:
         pass
@@ -157,7 +157,7 @@ def scan(func, grid, n_workers=1, save=None, pool=None):
         values[ix], done[ix] = r, True
         if save:
             os.makedirs(os.path.dirname(os.path.abspath(save)), exist_ok=True)
-            np.savez(save, values=values, done=done, names=np.array(names), **{f'axis_{n}': a for n, a in zip(names, axes)}) #type: ignore
+            np.savez(save, values=values, done=done, names=np.array(names), **{f'axis_{n}': a for n, a in zip(names, axes)})
 
     todo = [ix for ix in itertools.product(*[range(n) for n in shape]) if not done[ix]]
     jobs = [(func, {n: axes[k][ix[k]].item() for k, n in enumerate(names)}) for ix in todo]

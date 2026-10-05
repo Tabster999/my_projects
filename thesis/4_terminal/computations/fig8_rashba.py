@@ -40,9 +40,9 @@ from my_functions import leads
 p_base = myf.Params(
     model='rashba', nx=85, ny=20, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=-0.05, t_s=1.0, mu_s=0.05,
     delta=0.25, phi=np.pi, tc_top=1.0, tc_bot=1.0, tc_barr=1.0,
-    alpha=1.2, Bz=0.0, Bxy=0.0, Bz_s=0.7, eta=2e-5, kT = 0.0 
+    alpha=1.2, Bz=0.0, Bxy=0.0, Bz_s=0.7, eta=2e-5, kT = 1e-3
 )
-KT = 0.0                     # 0 -> T -> 0 limit; e.g. 1e-3 -> finite temperature (16 energies/point)
+KT = 1e-3                     # 0 -> T -> 0 limit; e.g. 1e-3 -> finite temperature
 MAX_SECONDS = None             # e.g. 250 to stop the map early and resume on the next run
 param1_name = 'Bz_s'                          # x-axis
 param1_vals = np.linspace(0.50, 2.20, 31)
@@ -57,7 +57,7 @@ PANELS = {   # name: (x-parameter, x-values, y-parameter or None, y-values)
     'a': (param1_name, param1_vals, param2_name, param2_vals),
 }
 out = Path("results"); out.mkdir(exist_ok=True)
-E_nodes, w_th, w_el = myf.linear_response_nodes(KT, n=16)
+E_nodes, w_th, w_el = myf.linear_response_nodes(KT)
 
 print(f"working point: C = {myf.chern_number(p_base):+.2f}, ribbon edge gap = {myf.ribbon_gap(p_base, nk=61):.1e}, "
       f"eta = {p_base.eta:g}" + (f", kT = {KT:g}" if KT else " (T -> 0)"))

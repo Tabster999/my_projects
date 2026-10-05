@@ -18,6 +18,7 @@ cols = list(range(0, p.nx, 2))
 
 #%% --- COMPUTE ---
 A = {phi: myf.ldos(p, [0.0], phi, cols)[0] for phi in (np.pi, 0.0)}      # (n_cols, ny) each
+np.savez("ldos.npz", cols=cols, A_pi=A[np.pi], A_0=A[0.0])
 
 #%% --- PLOT ---
 fig, ax = plt.subplots(1, 2, figsize=(12, 3.5))
