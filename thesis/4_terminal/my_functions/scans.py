@@ -12,7 +12,7 @@ when only ribbon parameters change, so put ribbon parameters (mu_s, Bz_s, delta,
 
 The lower-level thermal_point / thermal_scan below are what ThermalPoint and scan are built on:
 
-    E, w_th, w_el = myf.linear_response_nodes_phs(kT, n=16)
+    E, w_th, w_el = myf.linear_response_nodes_phs(kT)          # trapezoid in E/kT, 33 energies
     rows = myf.thermal_scan(param_list, E, w_th, w_el, phis=(np.pi, 0.0), n_workers=8)
 
 Each row is [kappa(phi_0), G(phi_0), kappa(phi_1), G(phi_1), ...].  Consecutive

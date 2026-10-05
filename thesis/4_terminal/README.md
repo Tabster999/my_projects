@@ -22,7 +22,7 @@ Everything returns arrays; plotting is left to you. Examples: `computations/01�
 |---|---|
 | `params.py` | `Params` (all settings; optional per-region `alpha_c/alpha_n/alpha_s`, `Bz_n`) |
 | `hamiltonians.py` | onsite/hopping blocks of both models, region handling |
-| `leads.py` | lead surface solutions: Sancho-Rubio → Newton → eigenmode fallback, residual-checked, cached |
+| `leads.py` | lead surface solutions: Sancho-Rubio → Newton → eigenmode fallback, residual-checked; cached only when reused |
 | `junction.py` | `FourTerminalJunction` (geometry; dense `channels()` as reference) |
 | `rgf.py` | `RGFFourTerminal` — the solver (`channels_at_phi`, `green_blocks`, `with_ribbons`) |
 | `fast_phase_sweep.py` | `FastPhaseSweep` — dense reference for small systems / checks |
@@ -43,7 +43,8 @@ Everything returns arrays; plotting is left to you. Examples: `computations/01�
   error=True)` / `thermal_error_phs` give a free error estimate. (The former Gauss-Legendre rule was off
   by up to 0.14 at φ = 0.)
 * **Speed.** In `scan`, put ribbon-only parameters (mu_s, Bz_s, delta, t_s, m0) last: each worker then
-  reuses its central solve. Sweeps of central parameters (mu_c, tc, …) reuse the cached leads.
+  reuses its central solve. Sweeps of central parameters (mu_c, tc, …) reuse the cached leads (a lead is
+  stored from its second request on, at most 4 per process, so ribbon sweeps don't fill memory).
 
 ## Checks and tests
 ```
