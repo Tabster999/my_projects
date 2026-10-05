@@ -28,7 +28,7 @@ def onsite_block(t, mu, delta=0.0, phi=0.0, Bz=0.0, Bxy=0.0, theta_z=0.0,
     ons = np.zeros((4, 4), dtype=complex)
     onsite_val = ((4 * t - mu) if twod else (2 * t - mu)) + (alpha**2 + beta**2) / 4
     pairing = delta * np.exp(1j * phi)
-    Bxy_c = Bxy * np.exp(-1j * theta_z)
+    Bxy_c = Bxy * np.exp(1j * theta_z)
 
     ons[0, 0] = onsite_val + Bz
     ons[1, 1] = onsite_val - Bz
