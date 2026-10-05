@@ -37,6 +37,18 @@ UNITS.  PhysParams holds meV / nm / T and converts to the lattice units the pack
     E_Z = g mu_B B / 2  (note the 1/2),  eta = eta_rel * Delta_t.
 Validated against the paper: t = 2.49 meV and E_T = 829 / 276 / 166 ueV for W = 100 / 300 /
 500 nm, against the paper's 832 / 277 / 166 ueV.
+
+TRANSPORT vs LDOS SETTINGS.  The two cannot share one parameter set.  Scharf's LDOS uses
+decoupled probes (tc_barr = 0) and a broad eta = 0.05 Delta; both make every transport quantity
+vanish identically -- no probe coupling, and a broadening far wider than the Majorana resonance.
+kappa/G therefore use their own fields (tc_barr_transport, eta_rel_transport) through
+params_transport(), while the LDOS keeps pp.tc_barr / pp.eta_rel.  At the paper's junction and
+E_Z = 0.5 meV, phi = pi this gives kappa/kappa0 = 0.491 with G/G0 = 0 (T_ee = T_he to four
+digits: the Majorana condition), against 0.000 for both at eta = 0.05 Delta.
+The coupling must stay WEAK: at tc_barr ~ 1 the end states hybridise with the leads and kappa
+collapses to 0.001.  Note this is a resonance, not a plateau -- its width is the hybridisation
+splitting of the two end Majoranas across L, not a topological gap (Scharf's ribbons are trivial,
+Bz_s = 0), so it is gone above kT ~ 0.1 ueV (~1 mK).
 """
 # %% --- IMPORTS ---
 import os
@@ -77,6 +89,10 @@ class PhysParams:
     tc: float = 1.0            # SC <-> normal coupling, in units of t
     tc_barr: float = 0.00      # probe coupling, in units of t (0 = decoupled, hard walls)
     eta_rel: float = 0.05     # LDOS broadening eta = eta_rel * Delta (Scharf: 0.05)
+    # --- transport only; the LDOS fields above stay at Scharf's values (see docstring) ---
+    tc_barr_transport: float = 0.20   # probe coupling for kappa/G (0 gives kappa = 0 exactly)
+    eta_rel_transport: float = 1e-5   # broadening for kappa/G; must be << the resonance width
+    kT_transport: float = 0.0         # meV; temperature for the map's kappa_kT/G_kT (0 = skip)
 
     # --- derived scales ---
     @property
@@ -127,6 +143,16 @@ class PhysParams:
             Bxy=0.0, Bxy_c=EZ / t, Bxy_n=0.0, Bxy_s=0.0,
             eta=self.eta_rel * self.Delta / t)
 
+    def params_transport(self, E_Z=None, phi=np.pi):
+        """
+        Params for kappa/G: params() with the transport probe coupling and broadening swapped in.
+        The LDOS settings (tc_barr = 0, eta = 0.05 Delta) give kappa = 0 identically; see the
+        module docstring.
+        """
+        return replace(self.params(E_Z, phi),
+                       tc_barr=self.tc_barr_transport,
+                       eta=self.eta_rel_transport * self.Delta / self.t)
+
     def summary(self):
         t = self.t
         print("-" * 64)
@@ -153,7 +179,7 @@ class PhysParams:
 # %% --- PARAMETERS ---
 alpha   =   14.3
 beta    =   7.3
-E_z     =   0.23                     # meV; only sets PP.B, the maps sweep B themselves
+E_z     =   0.46                     # meV; only sets PP.B, the maps sweep B themselves
 
 PP = PhysParams(a=20.0, m_eff=0.038, Delta=0.25, mu_S=1.0, mu_N=0.7, alpha=alpha, beta=beta,
                 soc_axis='100', g=10.0, B=0.0, theta_z=None, W=100.0, L=2000.0,  # type: ignore
@@ -163,7 +189,7 @@ PP.B = PP.B_of_E_Z(E_z)
 PP.theta_z = PP.theta_z_optimal() + np.pi      
 print(f"Zeeman energy = {E_z:.3f} meV  (B = {PP.B:.2f} T, g = {PP.g:g})")
 
-step_sizes = 151
+step_sizes = 101
 B_VALS = np.linspace(0.0, 3.5, step_sizes)
 PHIS = np.linspace(0.0, 2 * np.pi, step_sizes)
 ENERGY_VALS = np.linspace(-1.01 * PP.Delta, 1.01 * PP.Delta, step_sizes)
@@ -186,46 +212,67 @@ def _dE(pp):
 
 def _row(pp, phis, cols, i_end, i_mid):
     """
-    One field value: returns an array (len(phis), 7) with the columns
-    ldos_end, ldos_mid, kappa, G, dIdV, curv_end, curv_mid.
+    One field value: returns an array (len(phis), len(KEYS)) with the columns of KEYS.
+    The LDOS columns (ldos_*, curv_*) use pp's own eta / tc_barr -- Scharf's values; the transport
+    columns (kappa, G, dIdV, andreev, *_kT) use params_transport(), which they must: see the
+    module docstring.  kappa_kT / G_kT are NaN unless pp.kT_transport > 0 (they cost 33 energies
+    per phase instead of one, so they are off by default).
     The two curvatures are d2(LDOS)/dE2 at E = 0 -- the ENERGY curvature, which is Scharf's
     Fig. 8(e),(f) quantity: negative = zero-energy peak, positive = dip.
     """
-    p, dE = pp.params(), _dE(pp)
-    J = myf.FourTerminalJunction(p)
-    lg = myf.LocalGreen(J, np.array([-dE, 0.0, dE]) / pp.t, cols=cols)  
-    rgf = myf.RGFFourTerminal(J, np.array([0.0]))                        # channels at E = 0
-    out = np.empty((len(phis), 7))
+    dE = _dE(pp)
+    lg = myf.LocalGreen(myf.FourTerminalJunction(pp.params()),
+                        np.array([-dE, 0.0, dE]) / pp.t, cols=cols)
+    J_t = myf.FourTerminalJunction(pp.params_transport())
+    rgf = myf.RGFFourTerminal(J_t, np.array([0.0]))                      # channels at E = 0
+    if pp.kT_transport > 0:
+        E_th, w_th, w_el = myf.linear_response_nodes_phs(pp.kT_transport / pp.t)
+        rgf_T = myf.RGFFourTerminal(J_t, E_th)
+    out = np.empty((len(phis), len(KEYS)))
     for j, ph in enumerate(phis):
         e, h = lg.ldos(float(ph))
-        D = (e + h).sum(axis=2)                     
-        A = D[1]                                   
+        D = (e + h).sum(axis=2)
+        A = D[1]
         d_end, d_mid = D[:, i_end].sum(axis=1), D[:, i_mid].sum(axis=1)
         c = {k: float(np.asarray(v)[0]) for k, v in rgf.channels_at_phi(float(ph), 'left').items()}
+        if pp.kT_transport > 0:
+            k_T, g_T = myf.thermal_from_channels_phs(
+                rgf_T.channels_at_phi(float(ph), 'left'), w_th, w_el)
+        else:
+            k_T = g_T = np.nan
         out[j] = [A[i_end].sum(), A[i_mid].sum(),
                   c['ee'] + c['he_cross'],                       # kappa, T -> 0
                   c['ee'] - c['he_cross'],                       # G
                   0.5 * (c['ee'] + c['hh'] + c['eh_cross'] + c['he_cross'])
                   + c['eh_local'] + c['he_local'],               # zero-bias dI_L/dV_L
                   (d_end[0] - 2 * d_end[1] + d_end[2]) / dE**2,  # curv_end
-                  (d_mid[0] - 2 * d_mid[1] + d_mid[2]) / dE**2]  # curv_mid
+                  (d_mid[0] - 2 * d_mid[1] + d_mid[2]) / dE**2,  # curv_mid
+                  c['eh_local'] + c['he_local'],                 # local Andreev conductance
+                  k_T, g_T]                                      # kappa, G at pp.kT_transport
     return out
 
 
-KEYS = ('ldos_end', 'ldos_mid', 'kappa', 'G', 'dIdV', 'curv_end', 'curv_mid')
+KEYS = ('ldos_end', 'ldos_mid', 'kappa', 'G', 'dIdV', 'curv_end', 'curv_mid',
+        'andreev', 'kappa_kT', 'G_kT')
 
 
 def run_map(pp=PP, phis=PHIS, b_vals=B_VALS, save=SAVE):
     """
     LDOS(E=0) at the junction end and middle, its ENERGY curvature at E = 0, kappa/kappa0,
-    G/G0 and the zero-bias dI/dV, on the (phi, B) grid.  Saves after every field value and
-    resumes from `save`.  Returns a dict of arrays of shape (len(b_vals), len(phis)).
+    G/G0, the zero-bias dI/dV and the local Andreev conductance, on the (phi, B) grid.  Saves
+    after every field value and resumes from `save`.  Returns a dict of arrays of shape
+    (len(b_vals), len(phis)), plus 'n_unreliable' (failed lead solves; see CLAUDE.md).
     """
     cols, mid_cols = _cols(pp)
     i_end = [cols.index(c) for c in COL_END]
     i_mid = [cols.index(c) for c in mid_cols]
+    n_bad0 = myf.leads.N_UNRELIABLE
     if save and os.path.exists(save):
         d = np.load(save)
+        missing = [k for k in KEYS if k not in d.files]
+        if missing:
+            raise ValueError(f"{save} was written before the transport columns existed "
+                             f"(missing {', '.join(missing)}); delete it and re-run")
         R = {k: d[k].copy() for k in KEYS}
         done = d['done'].copy()
     else:
@@ -243,7 +290,10 @@ def run_map(pp=PP, phis=PHIS, b_vals=B_VALS, save=SAVE):
             np.savez(save, done=done, phis=phis, b_vals=b_vals, **R)
         print(f"B = {B:.2f} T  (E_Z = {pp.g * _muB * B / 2:.3f} meV) done   ({i + 1}/{len(b_vals)})",
               flush=True)
-    R.update(phis=phis, b_vals=b_vals, E_Z=pp.g * _muB * b_vals / 2)
+    n_bad = myf.leads.N_UNRELIABLE - n_bad0
+    if n_bad:
+        print(f"WARNING: {n_bad} lead energies failed the Sancho-Rubio check (NaN in the result)")
+    R.update(phis=phis, b_vals=b_vals, E_Z=pp.g * _muB * b_vals / 2, n_unreliable=n_bad)
     return R
 
 
@@ -267,10 +317,13 @@ def run_map_parallel(pp=PP, phis=PHIS, b_vals=B_VALS, n_workers=8, save="scharf_
     f = _MapRow(pp, phis, cols, [cols.index(c) for c in COL_END],
                 [cols.index(c) for c in mid_cols])
     res = myf.scan(f, {'B': np.asarray(b_vals)}, n_workers=n_workers, save=save)
-    V = res['values']                                       # (n_B, n_phi, 7)
+    V = res['values']                                       # (n_B, n_phi, len(KEYS))
     R = {k: V[..., n] for n, k in enumerate(KEYS)}
+    n_bad = int(np.isnan(V[..., KEYS.index('kappa')]).sum())
+    if n_bad:
+        print(f"WARNING: {n_bad} (B, phi) points have NaN kappa -- failed lead solves or unfinished")
     R.update(phis=np.asarray(phis), b_vals=np.asarray(b_vals),
-             E_Z=pp.g * _muB * np.asarray(b_vals) / 2)
+             E_Z=pp.g * _muB * np.asarray(b_vals) / 2, n_unreliable=n_bad)
     return R
 
 
@@ -389,13 +442,106 @@ def spectrum(B, pp=PP, E_meV=None, phis=None, show=True):
     return E_meV, phis, end, mid
 
 
+# --- 4. TRANSPORT AND REAL-SPACE LDOS AT CHOSEN POINTS ---
+def transport_point(pp, phi, E_Z=None, kTs=(0.0,), side='left'):
+    """
+    kappa/kappa0 and G/G0 at one (E_Z, phi) for every temperature in kTs (meV), plus the channel
+    decomposition at E = 0.  Returns (kappas, Gs, channels, n_unreliable); the two arrays have
+    shape (len(kTs),).  Uses params_transport(): with the LDOS settings all of this is zero.
+    """
+    kTs = np.atleast_1d(np.asarray(kTs, float))
+    n_bad0 = myf.leads.N_UNRELIABLE
+    p = pp.params_transport(E_Z=E_Z)
+    kappas, Gs = np.empty(len(kTs)), np.empty(len(kTs))
+    for i, kT in enumerate(kTs):
+        kappas[i], Gs[i] = myf.linear_response(p, float(phi), kT=float(kT) / pp.t, side=side)
+    ch = myf.RGFFourTerminal(myf.FourTerminalJunction(p),
+                             np.array([0.0])).channels_at_phi(float(phi), side)
+    return (kappas, Gs, {k: float(np.asarray(v)[0]) for k, v in ch.items()},
+            myf.leads.N_UNRELIABLE - n_bad0)
+
+
+def pick_points(R, n=2, target=0.5, require_phi=None):
+    """
+    The n points of a run_map result whose kappa is closest to `target`, best first, each a dict
+    with E_Z, phi, kappa, G, ldos_end, ldos_mid and contrast = ldos_end / ldos_mid.
+    require_phi (rad) restricts the search to the nearest phase column.  NaN points are skipped.
+    """
+    EZ, phis, K = R['E_Z'], R['phis'], R['kappa']
+    mask = np.isfinite(K)
+    if require_phi is not None:
+        keep = np.zeros_like(mask)
+        keep[:, int(np.argmin(np.abs(phis - require_phi)))] = True
+        mask &= keep
+    cost = np.where(mask, np.abs(K - target), np.inf)
+    out = []
+    for f in np.argsort(cost, axis=None)[:n]:
+        i, j = np.unravel_index(f, K.shape)
+        if not np.isfinite(cost[i, j]):
+            continue
+        out.append(dict(E_Z=float(EZ[i]), phi=float(phis[j]), kappa=float(K[i, j]),
+                        G=float(R['G'][i, j]), ldos_end=float(R['ldos_end'][i, j]),
+                        ldos_mid=float(R['ldos_mid'][i, j]),
+                        contrast=float(R['ldos_end'][i, j] / R['ldos_mid'][i, j])))
+    return out
+
+
+def point_report(pp, points, kTs=(0.0, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3), show=True):
+    """
+    For each point (a dict from pick_points, or a plain (E_Z, phi) pair): print the E = 0 channels
+    and kappa/G against temperature, and plot the real-space LDOS there (LDOS settings, so the
+    bound states look as they do in Scharf's Fig. 7).  Returns a list of (kappas, Gs, channels).
+    """
+    out = []
+    for pt in points:
+        E_Z, phi = (pt['E_Z'], pt['phi']) if isinstance(pt, dict) else (float(pt[0]), float(pt[1]))
+        kap, G, ch, n_bad = transport_point(pp, phi, E_Z=E_Z, kTs=kTs)
+        print("=" * 70)
+        print(f"E_Z = {E_Z:.3f} meV ({E_Z / pp.E_T:.2f} E_T),  phi = {phi / np.pi:.3f} pi")
+        print("  channels at E=0:  " + "  ".join(f"{k}={v:.4f}" for k, v in ch.items()))
+        print(f"  local Andreev = {ch['eh_local'] + ch['he_local']:.4f} e^2/h"
+              f"      failed lead solves: {n_bad}")
+        print("     kT [ueV]      kappa/kappa0        G/G0")
+        for kT, k, g in zip(np.atleast_1d(np.asarray(kTs, float)), kap, G):
+            print(f"   {kT * 1e3:9.3f}    {k:10.4f}   {g:10.4f}")
+        if show:
+            real_space(phi, pp.B_of_E_Z(E_Z), pp=pp, show=True)
+        out.append((kap, G, ch))
+    return out
+
+
+def plot_transport(R, pp=PP):
+    """kappa/kappa0 and G/G0 over the (E_Z, phi) map; kappa = 0.5 with G = 0 is the Majorana point."""
+    phis, EZ = R['phis'], R['E_Z']
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
+    for ax, key, label in ((axs[0], 'kappa', r"$\kappa/\kappa_0$"), (axs[1], 'G', r"$G/G_0$")):
+        Z = R[key]
+        im = ax.pcolormesh(EZ, phis / np.pi, Z.T, shading='nearest', cmap='viridis', vmin=0.0,
+                           vmax=max(0.5, float(np.nanmax(Z))) if key == 'kappa' else None)
+        fig.colorbar(im, ax=ax, label=label)
+        ax.set_xlabel(r"$E_Z$ [meV]", fontsize=10)
+        ax.set_ylabel(r"$\phi/\pi$", fontsize=10)
+        ax.set_title(label, fontsize=10)
+    fig.suptitle(f"transport: tc_barr={pp.tc_barr_transport:g}, eta={pp.eta_rel_transport:g} Delta"
+                 f"   (the LDOS panels use tc_barr={pp.tc_barr:g}, eta={pp.eta_rel:g} Delta)",
+                 fontsize=8)
+    plt.tight_layout()
+    plt.show()
+
+
 # %% --- RUN ---
 if __name__ == "__main__":
     PP.summary()
     R = run_map() if N_WORKERS == 1 else run_map_parallel(n_workers=N_WORKERS)
     plot_map(R)
     plot_curvature(R)
-    real_space(np.pi, PP.B)
+    plot_transport(R)
+    pts = pick_points(R, n=2, require_phi=np.pi)
+    print("\npicked points (kappa closest to 0.5 at phi = pi):")
+    for pt in pts:
+        print(f"   E_Z={pt['E_Z']:.3f} meV  phi={pt['phi'] / np.pi:.2f} pi  "
+              f"kappa={pt['kappa']:.4f}  G={pt['G']:.4f}  end/mid={pt['contrast']:.1f}")
+    point_report(PP, pts)
     spectrum(PP.B, E_meV=ENERGY_VALS, phis=PHIS)
 
-       # %%
+# %%
