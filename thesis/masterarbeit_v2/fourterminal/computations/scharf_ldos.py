@@ -3,16 +3,42 @@ Phase-controlled planar Josephson junction with an in-plane Zeeman field, in PHY
 (Scharf et al., PRB 99, 214503): edge/bulk LDOS, real-space Majorana bound states, conductances.
 Uses the 4_terminal package.
 
-GEOMETRY.  Axis letters follow SCHARF throughout this file:
-    x = ACROSS the junction,  W = 100 nm  ->  5 sites at a = 20 nm
-    y = ALONG the interfaces, L = 2000 nm -> 100 sites
-Internally the package uses the opposite letters (its nx counts sites ALONG the interfaces =
-Scharf's y, its ny counts sites ACROSS = Scharf's x); PhysParams does the translation, so you
-never need the internal names.
-    SC ribbons above/below the centre (semi-infinite), phase difference phi, trivial (Bz_s = 0)
-    in-plane Zeeman ONLY in the normal region (Bxy_c), as in Scharf's (V0 tau_z - E_Z.s) h(x)
-    normal leads at the two ends = weakly coupled tunneling probes (tc_barr small; 0 = hard walls)
-    Majorana bound states appear at the ENDS of the normal region, y = +-L/2.
+GEOMETRY.  This file speaks the PAPER's letters everywhere:
+
+           x = -W/2    x = +W/2
+               |           |
+      SC(phi)  |     N     |  SC(0)        <- phase phi across the junction
+   ------------+-----------+------------
+               |  ## MBS   |  y = +L/2     <- normal probe (coupling tc_barr)
+               |           |
+               |           |   L = 2000 nm, 100 sites, ALONG the interfaces (y)
+               |           |
+               |  ## MBS   |  y = -L/2     <- normal probe (coupling tc_barr)
+   ------------+-----------+------------
+          W = 100 nm, 5 sites, ACROSS the junction (x)
+
+    x = ACROSS the junction,  extent W;  the SC occupies |x| > W/2 (semi-infinite, trivial,
+        Bz_s = 0), so the two S/N interfaces are the long lines x = +-W/2.
+    y = ALONG the interfaces, extent L;  the two normal leads are weakly coupled tunnelling
+        probes at the short ends y = +-L/2 (tc_barr small; 0 = hard walls).
+    in-plane Zeeman ONLY in the normal region (Bxy_c), as in Scharf's (V0 tau_z - E_Z.s) h(x).
+    Majorana bound states sit at the ENDS, y = +-L/2, peaked at x = 0 -- i.e. at the ends of
+        the S/N interfaces, midway between them across the junction.
+
+THE AXIS SWAP.  my_functions uses the OPPOSITE letters: its nx counts sites along the
+interfaces (= paper y) and its ny counts sites across (= paper x).  The entire translation is
+the two aliases nx = n_along / ny = n_across in PhysParams, plus PhysParams.coords() on the way
+back out.  Nothing else in this file should mention nx or ny.
+
+    quantity                     paper        my_functions
+    ---------------------------  -----------  --------------------
+    across the junction (W)      x            ny  (= n_across, 5)
+    along the interfaces (L)     y            nx  (= n_along, 100)
+    where the SC is              |x| > W/2    rows iy = 0, ny-1
+    where the probes are         y = +-L/2    cols ix = 0, nx-1
+
+So a "column" index anywhere below runs ALONG the interfaces: it is a paper-y position.  Use
+cols_near_end() / cols_near_middle() rather than writing indices by hand.
 
 SPIN-ORBIT CONVENTION.  Params.soc_axis selects the crystallographic setup, in this package's
 geometry (x along the interfaces, y across them):
@@ -112,19 +138,40 @@ class PhysParams:
     @property
     def E_T(self):
         """Thouless energy (pi/2) hbar v_F / W, in meV (v_F from mu_N)."""
-        return (np.pi / 2) * 2 * np.sqrt(self.mu_N * self.t) / round(self.W / self.a)
+        return (np.pi / 2) * 2 * np.sqrt(self.mu_N * self.t) / self.n_across
 
     def theta_z_optimal(self):
         """In-plane field angle with E_Z perpendicular to n_soc (see the module docstring)."""
         return np.arctan2(self.alpha, self.beta) if self.soc_axis == '100' else 0.0
 
+    # ---- geometry: the paper's letters ----
     @property
-    def ny(self):
+    def n_across(self):
+        """Sites ACROSS the junction (the paper's x, extent W)."""
         return max(1, round(self.W / self.a))
 
     @property
-    def nx(self):
+    def n_along(self):
+        """Sites ALONG the interfaces (the paper's y, extent L)."""
         return max(1, round(self.L / self.a))
+
+    # ---- THE AXIS SWAP: these two lines are the whole of it ----
+    # my_functions counts its x along the interfaces and its y across them, i.e. the opposite
+    # letters.  Everything above is in the paper's letters; everything handed to my_functions
+    # goes through these.  See "THE AXIS SWAP" in the module docstring.
+    nx = n_along          # package x  <- paper y  (L)
+    ny = n_across         # package y  <- paper x  (W)
+
+    def coords(self, rows=None):
+        """
+        Site centres in the PAPER's coordinates, measured from the centre of the junction:
+        returns (x_nm, y_nm) with x over [-W/2, W/2] across and y over [-L/2, L/2] along.
+        `rows` selects a subset of the along-columns (default: all of them).
+        This is the only place the package's indices turn back into paper coordinates.
+        """
+        rows = np.arange(self.n_along) if rows is None else np.asarray(rows)
+        return ((np.arange(self.n_across) + 0.5) * self.a - self.W / 2,
+                (rows + 0.5) * self.a - self.L / 2)
 
     def params(self, E_Z=None, phi=np.pi):
         """The corresponding my_functions.Params (lattice units). E_Z in meV overrides g mu_B B/2."""
@@ -171,7 +218,8 @@ class PhysParams:
               f"  (optimum {self.theta_z_optimal()/np.pi:.3f} pi)")
         print(f"  alpha k_F    = {self.alpha / (self.a * t) * np.sqrt(self.mu_N / t) * t:8.3f} meV"
               f"     (should exceed E_Z)")
-        print(f"  geometry     = {self.nx} x {self.ny} sites   (L = {self.L} nm, W = {self.W} nm)")
+        print(f"  geometry     = {self.n_along} along x {self.n_across} across sites"
+              f"   (L = {self.L} nm along y, W = {self.W} nm across x)")
         print(f"  eta          = {self.eta_rel * self.Delta:8.4f} meV")
         print("-" * 64)
 
@@ -179,11 +227,17 @@ class PhysParams:
 # %% --- PARAMETERS ---
 alpha   =   14.3
 beta    =   7.3
-E_z     =   0.46                     # meV; only sets PP.B, the maps sweep B themselves
+E_z     =   0.46                 
 
-PP = PhysParams(a=20.0, m_eff=0.038, Delta=0.25, mu_S=1.0, mu_N=0.7, alpha=alpha, beta=beta,
-                soc_axis='100', g=10.0, B=0.0, theta_z=None, W=100.0, L=2000.0,  # type: ignore
-                tc=1.0, tc_barr=0.0, eta_rel=0.05)                           
+# Along the S/N interface <-> nx:L (my model x, Paper y)
+# Across the S/N interface <-> ny:W (my model y, Paper x)
+PP = PhysParams(
+                a=20.0, m_eff=0.038, 
+                Delta=0.25, mu_S=1.0, mu_N=0.7, 
+                alpha=alpha, beta=beta, soc_axis='110',
+                g=10.0, B=0.0, theta_z=None, # type: ignore
+                W=100.0, L=2000.0, tc=1.0, tc_barr=0.0, eta_rel=0.05, tc_barr_transport=1.0, eta_rel_transport=1e-5, kT_transport=0.0
+                )                           
 
 PP.B = PP.B_of_E_Z(E_z)           
 PP.theta_z = PP.theta_z_optimal() + np.pi      
@@ -194,15 +248,39 @@ B_VALS = np.linspace(0.0, 3.5, step_sizes)
 PHIS = np.linspace(0.0, 2 * np.pi, step_sizes)
 ENERGY_VALS = np.linspace(-1.01 * PP.Delta, 1.01 * PP.Delta, step_sizes)
 SAVE = None
-N_WORKERS = 1                   
-COL_END = [0, 1, 2, 3, 4]
+N_WORKERS = 8                 
+N_END = 5                       # edge
+N_MID = 3                       # bulk
+END_SIDE = 'low'                # which end: (low: y = -L/2, high: y = +L/2) or 'both'
+COL_END = [0, 1, 2, 3, 4]       # kept for backwards compatibility; unused if N_END is set
 COL_MID_FRAC = 0.5
 
 
 # %% --- 1. THE MAP (Scharf Figs. 8(e), 8(f)) ---
+def cols_near_end(pp, n=None, side=None):
+    """
+    Column indices within n sites of a junction END.  Columns run ALONG the interfaces, so
+    index 0 is y = -L/2 and index n_along-1 is y = +L/2 (see the module docstring).
+    side='low' (default) samples y = -L/2 only, 'high' samples y = +L/2, 'both' samples both.
+    The structure is symmetric in y, so 'low' and 'high' give the same numbers.
+    """
+    n = N_END if n is None else n
+    side = END_SIDE if side is None else side
+    lo, hi = list(range(n)), list(range(pp.n_along - n, pp.n_along))
+    return {'low': lo, 'high': hi, 'both': sorted(set(lo) | set(hi))}[side]
+
+
+def cols_near_middle(pp, n=None):
+    """The n column indices centred on y = 0 (the junction middle)."""
+    n = N_MID if n is None else n
+    mid = int(COL_MID_FRAC * pp.n_along)
+    return [mid + k for k in range(-(n // 2), -(n // 2) + n)]
+
+
 def _cols(pp):
-    mid = int(COL_MID_FRAC * pp.nx)
-    return sorted(set(COL_END) | {mid - 1, mid, mid + 1}), [mid - 1, mid, mid + 1]
+    """(all sampled columns, the middle ones) -- both are positions along y."""
+    end, mid = cols_near_end(pp), cols_near_middle(pp)
+    return sorted(set(end) | set(mid)), mid
 
 
 def _dE(pp):
@@ -264,7 +342,7 @@ def run_map(pp=PP, phis=PHIS, b_vals=B_VALS, save=SAVE):
     (len(b_vals), len(phis)), plus 'n_unreliable' (failed lead solves; see CLAUDE.md).
     """
     cols, mid_cols = _cols(pp)
-    i_end = [cols.index(c) for c in COL_END]
+    i_end = [cols.index(c) for c in cols_near_end(pp)]
     i_mid = [cols.index(c) for c in mid_cols]
     n_bad0 = myf.leads.N_UNRELIABLE
     if save and os.path.exists(save):
@@ -314,7 +392,7 @@ def run_map_parallel(pp=PP, phis=PHIS, b_vals=B_VALS, n_workers=8, save="scharf_
     MUST be called from inside `if __name__ == "__main__":` -- the workers re-import this module.
     """
     cols, mid_cols = _cols(pp)
-    f = _MapRow(pp, phis, cols, [cols.index(c) for c in COL_END],
+    f = _MapRow(pp, phis, cols, [cols.index(c) for c in cols_near_end(pp)],
                 [cols.index(c) for c in mid_cols])
     res = myf.scan(f, {'B': np.asarray(b_vals)}, n_workers=n_workers, save=save)
     V = res['values']                                       # (n_B, n_phi, len(KEYS))
@@ -386,11 +464,9 @@ def real_space(phi, B, pp=PP, E=0.0, every=1, show=True, equal_aspect=False):
     [-L/2, L/2] (Scharf's Fig. 7 convention).
     """
     p = pp.params(E_Z=pp.g * _muB * B / 2)
-    rows = list(range(0, p.nx, every))
-    A = myf.ldos(p, [E / pp.t], float(phi), rows)[0]   # (n_y, n_x)
-    # x in [-W/2, W/2] and y in [-L/2, L/2]
-    y_nm = (np.array(rows) + 0.5) * pp.a - pp.L / 2    # along the interfaces
-    x_nm = (np.arange(p.ny) + 0.5) * pp.a - pp.W / 2   # across the junction
+    rows = list(range(0, pp.n_along, every))           # columns ALONG the interfaces (paper y)
+    A = myf.ldos(p, [E / pp.t], float(phi), rows)[0]   # (n_along, n_across) = (y, x)
+    x_nm, y_nm = pp.coords(rows)                       # paper coordinates; see PhysParams.coords
     if show:
         prof = A.sum(axis=1)                           # sum over x -> one value per y
         fig, axs = plt.subplots(1, 2, figsize=(9, 5.5))
@@ -426,7 +502,7 @@ def spectrum(B, pp=PP, E_meV=None, phis=None, show=True):
     for j, ph in enumerate(phis):
         e, h = lg.ldos(float(ph))
         A = (e + h).sum(axis=2)                                   # (n_E, n_cols)
-        end[j] = A[:, [cols.index(c) for c in COL_END]].sum(axis=1)
+        end[j] = A[:, [cols.index(c) for c in cols_near_end(pp)]].sum(axis=1)
         mid[j] = A[:, [cols.index(c) for c in mid_cols]].sum(axis=1)
     if show:
         fig, axs = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
@@ -440,6 +516,120 @@ def spectrum(B, pp=PP, E_meV=None, phis=None, show=True):
         plt.tight_layout()
         plt.show()
     return E_meV, phis, end, mid
+
+
+# --- NOTEBOOK OUTPUT.  LaTeX in a cell; plain text when run as a plain script. ---
+# MathJax rules that bite here: inside \text{...} an underscore or a math command is an error,
+# and a bare \\ only separates rows INSIDE an environment.  So header/label strings below are
+# math mode (write \text{...} yourself around words), and anything multi-line is wrapped in an
+# array.  _delatex() turns the same strings back into plain text for the script path.
+def _show(latex, plain):
+    """
+    display(Math(latex)) inside a notebook / VS Code interactive cell, print(plain) otherwise.
+    Same mechanism as myf.print_params, so output matches the rest of the project.
+    """
+    try:
+        from IPython import get_ipython
+        from IPython.display import display, Math
+        if get_ipython() is None:
+            raise RuntimeError("not interactive")
+        display(Math(latex))
+    except Exception:
+        print(plain)
+
+
+def _delatex(x):
+    """Crude LaTeX -> plain text for the non-notebook fallback (order matters)."""
+    import re
+    x = re.sub(r"\\text(?:bf|it|rm)?\{([^}]*)\}", r"\1", str(x))   # \text{meV}, \textbf{x} -> x
+    x = x.replace(r"\times", " x ").replace(r"\,", " ").replace(r"\ ", " ").replace(r"\quad", "  ")
+    x = re.sub(r"\\([A-Za-z]+)", r"\1", x)                         # \Delta -> Delta
+    return " ".join(x.replace("{", "").replace("}", "").split())
+
+
+def _latex_table(header, rows, align=None):
+    """
+    A LaTeX array.  `header` and `rows` are used VERBATIM as math -- put \text{...} around any
+    words yourself, because \text{} cannot contain _ or math commands.
+    """
+    align = align or "r" * len(header)
+    return (r"\begin{array}{" + align + r"}\hline " + " & ".join(header)
+            + r"\\\hline " + r"\\".join(" & ".join(r) for r in rows) + r"\\\hline\end{array}")
+
+
+def _plain_table(header, rows):
+    """The same table as fixed-width text, with LaTeX stripped from every cell."""
+    header = [_delatex(h) for h in header]
+    rows = [tuple(_delatex(c) for c in r) for r in rows]
+    w = [max(len(header[i]), *(len(r[i]) for r in rows)) for i in range(len(header))]
+    return "\n".join(["  ".join(h.rjust(x) for h, x in zip(header, w)),
+                      "  ".join("-" * x for x in w)]
+                     + ["  ".join(c.rjust(x) for c, x in zip(r, w)) for r in rows])
+
+
+def _both(title, header, rows):
+    """(latex, plain) for a titled table."""
+    return (title + r"\quad " + _latex_table(header, rows),
+            _delatex(title) + "\n" + _plain_table(header, rows))
+
+
+def show_summary(pp=PP):
+    """PhysParams as a LaTeX table: the notebook counterpart of pp.summary()."""
+    t = pp.t
+    th = (pp.theta_z_optimal() if pp.theta_z is None else pp.theta_z) / np.pi
+    mn = r"\text{meV}"
+    header = [r"\text{quantity}", r"\text{value}", r"\text{unit}", r"\text{in units of }t"]
+    rows = [(r"\Delta", f"{pp.Delta:.3f}", mn, f"{pp.Delta / t:.4f}"),
+            (r"\mu_S", f"{pp.mu_S:.3f}", mn, f"{pp.mu_S / t:.4f}"),
+            (r"\mu_N", f"{pp.mu_N:.3f}", mn, f"{pp.mu_N / t:.4f}"),
+            (r"\alpha", f"{pp.alpha:.2f}", r"\text{meV\,nm}", f"{pp.alpha / (pp.a * t):.4f}"),
+            (r"\beta", f"{pp.beta:.2f}", r"\text{meV\,nm}", f"{pp.beta / (pp.a * t):.4f}"),
+            (r"E_Z", f"{pp.E_Z:.3f}", mn, f"{pp.E_Z / t:.4f}"),
+            (r"E_T", f"{pp.E_T:.3f}", mn, f"{pp.E_T / t:.4f}"),
+            (r"E_Z/E_T", f"{pp.E_Z / pp.E_T:.2f}", "-", "-"),
+            (r"t", f"{t:.3f}", mn, "1"),
+            (r"L \times W", rf"{pp.L:.0f} \times {pp.W:.0f}", r"\text{nm}",
+             rf"{pp.n_along} \times {pp.n_across}\ \text{{sites}}"),
+            (r"\theta_z", f"{th:.3f}", r"\pi", "-"),
+            (r"\eta_\text{LDOS}", f"{pp.eta_rel * pp.Delta:.4f}", mn,
+             rf"{pp.eta_rel:g}\,\Delta"),
+            (r"\eta_\text{transport}", f"{pp.eta_rel_transport * pp.Delta:.2e}", mn,
+             rf"{pp.eta_rel_transport:g}\,\Delta"),
+            (r"t_\text{barr}", f"{pp.tc_barr:g}", r"t", r"\text{LDOS}"),
+            (r"t_\text{barr}^\text{transport}", f"{pp.tc_barr_transport:g}", r"t",
+             r"\text{transport}")]
+    _show(*_both(rf"\textbf{{Scharf junction}}\ [{pp.soc_axis}]", header, rows))
+
+
+def show_points(pts, target=0.5):
+    """A list of pick_points dicts as a LaTeX table."""
+    if not pts:
+        _show(r"\text{no finite points in the map}", "no finite points in the map")
+        return
+    header = [r"E_Z\ [\text{meV}]", r"\phi/\pi", r"\kappa/\kappa_0", r"G/G_0",
+              r"\text{LDOS end}", r"\text{LDOS mid}", r"\text{end/mid}"]
+    rows = [(f"{p['E_Z']:.3f}", f"{p['phi'] / np.pi:.3f}", f"{p['kappa']:.4f}", f"{p['G']:.4f}",
+             f"{p['ldos_end']:.3f}", f"{p['ldos_mid']:.3f}", f"{p['contrast']:.1f}") for p in pts]
+    _show(*_both(rf"\textbf{{picked points}}\ (\kappa\ \text{{closest to}}\ {target})",
+                 header, rows))
+
+
+def _point_latex(pp, E_Z, phi, ch, kTs, kap, G, n_bad):
+    """One point's channels and kappa/G against temperature, as (latex, plain)."""
+    chan = r",\quad ".join(rf"T_{{\text{{{k.replace('_', '-')}}}}}={v:.4f}" for k, v in ch.items())
+    andreev = ch['eh_local'] + ch['he_local']
+    header = [r"k_BT\ [\mu\text{eV}]", r"\kappa/\kappa_0", r"G/G_0"]
+    rows = [(f"{kT * 1e3:.3f}", f"{k:.4f}", f"{g:.4f}")
+            for kT, k, g in zip(np.atleast_1d(np.asarray(kTs, float)), kap, G)]
+    head = (rf"E_Z = {E_Z:.3f}\ \text{{meV}}\ ({E_Z / pp.E_T:.2f}\,E_T),\quad "
+            rf"\phi = {phi / np.pi:.3f}\,\pi")
+    foot = (rf"G_\text{{Andreev}} = {andreev:.4f}\ e^2/h,\quad "
+            rf"\text{{failed lead solves}} = {n_bad}")
+    latex = (r"\begin{array}{l}" + head + r"\\[2pt]" + chan + r"\\[2pt]" + foot
+             + r"\\[4pt]" + _latex_table(header, rows) + r"\end{array}")
+    plain = ("=" * 70 + "\n" + _delatex(head) + "\n  " + _delatex(chan) + "\n  "
+             + _delatex(foot) + "\n" + _plain_table(header, rows))
+    return latex, plain
 
 
 # --- 4. TRANSPORT AND REAL-SPACE LDOS AT CHOSEN POINTS ---
@@ -488,7 +678,7 @@ def pick_points(R, n=2, target=0.5, require_phi=None):
 
 def point_report(pp, points, kTs=(0.0, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3), show=True):
     """
-    For each point (a dict from pick_points, or a plain (E_Z, phi) pair): print the E = 0 channels
+    For each point (a dict from pick_points, or a plain (E_Z, phi) pair): show the E = 0 channels
     and kappa/G against temperature, and plot the real-space LDOS there (LDOS settings, so the
     bound states look as they do in Scharf's Fig. 7).  Returns a list of (kappas, Gs, channels).
     """
@@ -496,14 +686,7 @@ def point_report(pp, points, kTs=(0.0, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3), show=True)
     for pt in points:
         E_Z, phi = (pt['E_Z'], pt['phi']) if isinstance(pt, dict) else (float(pt[0]), float(pt[1]))
         kap, G, ch, n_bad = transport_point(pp, phi, E_Z=E_Z, kTs=kTs)
-        print("=" * 70)
-        print(f"E_Z = {E_Z:.3f} meV ({E_Z / pp.E_T:.2f} E_T),  phi = {phi / np.pi:.3f} pi")
-        print("  channels at E=0:  " + "  ".join(f"{k}={v:.4f}" for k, v in ch.items()))
-        print(f"  local Andreev = {ch['eh_local'] + ch['he_local']:.4f} e^2/h"
-              f"      failed lead solves: {n_bad}")
-        print("     kT [ueV]      kappa/kappa0        G/G0")
-        for kT, k, g in zip(np.atleast_1d(np.asarray(kTs, float)), kap, G):
-            print(f"   {kT * 1e3:9.3f}    {k:10.4f}   {g:10.4f}")
+        _show(*_point_latex(pp, E_Z, phi, ch, kTs, kap, G, n_bad))
         if show:
             real_space(phi, pp.B_of_E_Z(E_Z), pp=pp, show=True)
         out.append((kap, G, ch))
@@ -531,16 +714,13 @@ def plot_transport(R, pp=PP):
 
 # %% --- RUN ---
 if __name__ == "__main__":
-    PP.summary()
+    show_summary(PP)                      # LaTeX table in a cell, plain text as a script
     R = run_map() if N_WORKERS == 1 else run_map_parallel(n_workers=N_WORKERS)
     plot_map(R)
     plot_curvature(R)
     plot_transport(R)
     pts = pick_points(R, n=2, require_phi=np.pi)
-    print("\npicked points (kappa closest to 0.5 at phi = pi):")
-    for pt in pts:
-        print(f"   E_Z={pt['E_Z']:.3f} meV  phi={pt['phi'] / np.pi:.2f} pi  "
-              f"kappa={pt['kappa']:.4f}  G={pt['G']:.4f}  end/mid={pt['contrast']:.1f}")
+    show_points(pts)
     point_report(PP, pts)
     spectrum(PP.B, E_meV=ENERGY_VALS, phis=PHIS)
 
