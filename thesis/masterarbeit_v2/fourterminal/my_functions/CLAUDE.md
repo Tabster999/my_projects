@@ -161,6 +161,45 @@ own criterion curv_end<0 plus end/mid>3.
   W=300 -> 1.0 T).  Opposite direction to Gresta.  Whether that trades field for temperature
   favourably is open.
 
+### THE PLATEAU THAT DOES EXIST IN SCHARF: local Andreev at 2e^2/h
+There is no kappa plateau (see above), but the LOCAL Andreev conductance has one, because it
+needs only ONE Majorana at the probed end -- no overlap, hence no delta, hence no resonance.
+Measured at phi=pi, L=2000 nm, scanning E_Z in 0.01 meV steps:
+      tc_barr   longest flat run        mean Andreev   deviation from 2
+        0.2     0.18 meV (0.18-0.35)      1.9357           3.2%
+        0.5     0.51 meV (0.05-0.55)      1.9723           1.4%
+        1.0     0.74 meV (0.05-0.78)      1.9769           1.2%
+  At tc_barr=1.0 it reads 1.999 to FOUR digits across E_Z = 0.11-0.53 meV.  kappa over the same
+  range is 0.000-0.001: the knob that builds the plateau destroys the nonlocal signal.
+* Its UPPER EDGE tracks the topological transition: 0.78 meV at tc_barr=1.0 against E_T=0.829.
+  So plotting the plateau maps the phase boundary.
+* TEMPERATURE-ROBUST, because its width is ~Gamma (your choice) and not ~delta.  At tc_barr=1.0,
+  E_Z=0.3: energy half-width 20.6 ueV (~239 mK), and zero-bias dI/dV =
+      1.9840 at 11.6 mK   1.7514 at 58 mK    1.1641 at 232 mK
+      1.9429 at 23.2 mK   1.4672 at 116 mK   0.8013 at 580 mK
+  At tc_barr=0.2 (what nonlocal kappa needs) the peak is only 0.47 ueV wide and has already
+  collapsed to 0.72 by 11.6 mK.
+* NUMERICAL CAVEAT: `conductances(...)` at kT=0 returns ~50 here -- a finite-difference artefact
+  (dV=1e-5 meV against a 1.25 ueV energy grid).  Use the channel value eh_local+he_local at E=0,
+  or a finite kT.
+
+### WHY THERE IS NO kappa PLATEAU -- the structural reason
+* The end states DO overlap enough to carry heat: kappa=0.4910 with G=0.0001 at L=2000 nm, the
+  full half-quantum.  The failure is WIDTH, not amplitude (0.5 ueV in energy, 0.03 meV in E_Z).
+* Widening needs a larger splitting delta so a larger Gamma can be matched -- but delta IS the
+  overlap, and increasing it merges the two states into an ordinary Andreev level.  Measured:
+  L=800 nm at tc_barr=0.5 gives kappa=0.5518 but G=0.343 (|G|/kappa=0.62), i.e. charged.
+* So: MAJORANA CHARACTER REQUIRES SEPARATION; MEASURABLE NONLOCAL HEAT REQUIRES OVERLAP.  The
+  better the Majoranas, the narrower the heat signal, and no window satisfies both.  This is
+  definitional, not an engineering shortfall, which is why tuning L, tc_barr, E_Z or phi all fail.
+* THE RESULTING TENSION, both halves measured in this model:
+      the quantity WITH a plateau (local 2e^2/h) CANNOT prove a Majorana -- disorder fakes it,
+          with BETTER LDOS contrast (17-19) than the genuine MBS (3.2-6.4), at kappa ~ 1e-7;
+      the quantity that CAN prove one (nonlocal kappa=1/2 with G=0) has NO plateau.
+* STILL OPEN: mu_N has never been scanned.  delta ~ cos(k_F L) and mu_N sets k_F, so kappa should
+  oscillate in mu_N too; but the Andreev plateau may extend across mu_N, making it a 2D plateau
+  region in (E_Z, mu_N) rather than a line.
+
 ### GRESTA: yes, but on the feasibility boundary.
 * The ceiling is set by the phi=0 MINIGAP, not by the ribbons' bulk gap (0.267 t).  kappa(pi)
   itself survives to kT=0.01 t (0.4581) but kappa(0) rises 0.004 -> 0.236 -> 0.444 over
