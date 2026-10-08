@@ -38,6 +38,7 @@ from .transport import (
     f_electron, f_hole, current, differential_conductance,
     dc_current_channels, other_name, conductance_matrix, partial_G_vectorized, eval_I_total, total_dIdV_map,
     linear_response_nodes, linear_response_nodes_phs, thermal_from_channels_phs, thermal_error_phs,
+    phs_residual,
 )
 from .spectra import (chern_number, junction_spectrum_kx, ribbon_gap, LocalGreen,
                       edge_state_profile, coherence_length)

@@ -164,6 +164,33 @@ def thermal_from_channels_phs(ch, w_th, w_el):
     return float(np.dot(w_th, ee + he + hh + eh)), float(np.dot(w_el, ee - he + hh - eh))
 
 
+def phs_residual(ch, E, tol=None):
+    """
+    Particle-hole identity at E = 0, where PHS forces T_ee = T_hh and T_eh = T_he EXACTLY.
+    Returns the largest violation over the E = 0 entries of the grid (0.0 if it has none), and
+    with `tol` also warns when that exceeds it.  Free: it reuses channels you already have.
+
+    Scope, measured: this is a REGRESSION check, not a breakdown detector.  It stays at ~1e-12
+    even where the channels are badly wrong -- at the Gresta point with eta = 1e-7 it reads
+    5e-13 while kappa(pi) = 0.64 instead of 0.50.  Sancho-Rubio can converge to the wrong
+    (growing) branch, which satisfies both this identity and the Dyson residual, so neither test
+    sees it.  Do NOT use it to validate a small-eta run; keep eta >~ 1e-6 instead, and note that
+    T_ee = T_he (ee vs he_cross) is the MAJORANA condition, not a symmetry, so it cannot be
+    checked either.
+    """
+    E = np.atleast_1d(np.asarray(E, float))
+    at0 = np.flatnonzero(E == 0.0)
+    if at0.size == 0:
+        return 0.0
+    g = lambda k: np.atleast_1d(np.asarray(ch[k], float))[at0]
+    r = float(max(np.abs(g('ee') - g('hh')).max(), np.abs(g('eh_cross') - g('he_cross')).max()))
+    if tol is not None and r > tol:
+        warnings.warn(f"particle-hole symmetry violated at E = 0 by {r:.2e} (> {tol:.1e}); the "
+                      "channels are unreliable even though the lead residual check passed",
+                      stacklevel=2)
+    return r
+
+
 def thermal_error_phs(ch, kT, h=0.5, x_max=16.0):
     """
     Conservative error estimates (err_kappa, err_G) of thermal_from_channels_phs, from the same

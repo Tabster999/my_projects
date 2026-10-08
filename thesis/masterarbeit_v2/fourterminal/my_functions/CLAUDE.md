@@ -50,6 +50,37 @@ Rashba model. See README.md for structure and usage.
 * soc_axis matters: '110' puts (α−β) on the propagation axis, '100' puts √(α²+β²). With β=7.3
   that halves the effective SOC at '110' — κ>0.05 on 9.6% of the map vs 28.6% at '100'.
 
+## Numerics: eta is absorption, and the solver's limit tracks xi
+* eta is added at EVERY site, so it acts as uniform absorption and costs transmission in
+  proportion to path length.  This, not physics, produced the apparent decay of kappa with
+  junction length.  Gresta point, beta=0, kT=0, phi=pi:
+      eta=1e-5: kappa = 0.4746 / 0.4492 / 0.4252   (nx = 80 / 160 / 240)   <- artefact
+      eta=1e-6: kappa = 0.4997 / 0.4944 / 0.4917
+      eta=1e-7: kappa =   --   / 0.4991 / 0.4989
+      eta=1e-8: kappa =   --   / 0.4996 / 0.4996   <- flat: no decay with length
+  The chiral Majorana mode does NOT decay along the junction, as topology requires.
+  Use eta >~ 1e-6 for long junctions; eta=1e-5 is only safe for short ones.
+* But eta cannot simply be lowered: Sancho-Rubio breaks down when xi is LONG (transfer-matrix
+  eigenvalues near 1, so the doubling overflows before converging).  At beta=0.8 (xi=12.2 sites)
+  eta=1e-6 gives NaN at nx=80 and overflow warnings at nx=160; beta=0 (xi=5.5) is fine.
+  This is a DIFFERENT failure from the documented one (edge gap far below eta).
+* Worse, the wrong branch can pass every existing test.  At the Gresta point with eta=1e-7,
+  nx=80, kappa(pi)=0.6378 instead of 0.50 with leads.N_UNRELIABLE = 0.  Two candidate detectors
+  were tried and BOTH read clean there: the E=0 PHS identity (`myf.phs_residual`, ~5e-13) and the
+  retarded-branch condition min eig of Gamma = i(Sigma-Sigma^dag) (positive, +2.5e-10).
+  Sancho-Rubio converges to a solution that satisfies the Dyson equation but is the growing
+  branch, which neither test distinguishes.  The only signal currently emitted is numpy's
+  "overflow encountered in matmul" RuntimeWarning from leads.py:74 -- untested as a flag.
+  Practical rule: keep eta >= 1e-6, and distrust any run that printed an overflow warning.
+* NOTE T_ee = T_he (ee vs he_cross) is the MAJORANA condition, not a symmetry, so it is NOT
+  available as a numerical check.  The genuine identity at E=0 is T_ee = T_hh and T_eh = T_he
+  (`phs_residual`, checked in run_all).
+* CONSEQUENCE for the Dresselhaus claim below: "larger nx does not help at beta=0.8" was measured
+  at eta=1e-5 and is therefore contaminated by absorption (~0.05 of the 0.165 drop at beta=0).
+  It cannot be recomputed at eta=1e-6 because the solver fails there for beta=0.8.  Treat the
+  nx-dependence at beta=0.8 as UNRESOLVED; the beta=0 baseline (0.4997/0.4944/0.4917 at eta=1e-6)
+  is sound.
+
 ## Combining Gresta and Scharf (all tested, all negative)
 * A κ PLATEAU needs a PROPAGATING Majorana, hence Chern≠0 in the ribbons, hence OUT-OF-PLANE
   Zeeman. An in-plane field in the ribbons makes the 2D spectrum NODAL at any magnitude (bulk gap

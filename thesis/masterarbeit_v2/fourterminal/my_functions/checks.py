@@ -7,6 +7,8 @@ Physics and solver regression checks.  Run after any change to the Hamiltonian, 
 1. H_C is Hermitian and particle-hole symmetric (both models, SOC + Zeeman + per-region SOC)
 2. RGF == dense junction.channels == FastPhaseSweep (Caroli transmissions, both leads, several phases)
 3. particle-hole symmetry of the transmissions: T_ee(-E) = T_hh(E), T_he(-E) = T_eh(E)
+3b. the same at E = 0 itself (T_ee = T_hh, T_eh = T_he): a free self-check that catches
+    small-eta Sancho-Rubio breakdown which the lead residual test passes (see phs_residual)
 4. clean normal wire: integer transmission, no Andreev processes
 5. lead solver: eigenmode fallback == Sancho-Rubio where healthy; the known E = 0 failure is repaired
 """
@@ -16,6 +18,7 @@ import numpy as np
 from .params import Params
 from .junction import FourTerminalJunction
 from .rgf import RGFFourTerminal
+from .transport import phs_residual
 from .fast_phase_sweep import FastPhaseSweep
 from . import leads
 
@@ -74,6 +77,16 @@ def particle_hole_of_transmissions():
         _report(f"T_ee(-E) = T_hh(E), T_he(-E) = T_eh(E) ({name})", worst, 1e-9)
 
 
+def phs_at_zero_energy():
+    """T_ee = T_hh and T_eh = T_he at E = 0 exactly.  particle_hole_of_transmissions covers
+    E != 0 on a symmetric grid; this covers E = 0 itself, which is where small eta breaks down."""
+    for name, p in CASES.items():
+        r = RGFFourTerminal(FourTerminalJunction(p), np.zeros(1))
+        worst = max(phs_residual(r.channels_at_phi(phi, 'right'), np.zeros(1))
+                    for phi in (0.0, 1.1, np.pi))
+        _report(f"T_ee = T_hh and T_eh = T_he at E = 0 ({name})", worst, 1e-9)
+
+
 def clean_wire():
     # SC ribbons fully decoupled: tc = 0 AND alpha = 0 (a Rashba bond keeps its SOC part even at t = 0)
     p = Params(model='rashba', nx=8, ny=5, t_n=1.0, mu_n=0.8, t_c=1.0, mu_c=0.8, t_s=1.0, mu_s=0.5, delta=0.3,
@@ -106,7 +119,8 @@ def lead_solver():
 
 def run_all():
     _RESULTS.clear()
-    for f in (hermiticity_and_phs_of_H, solvers_agree, particle_hole_of_transmissions, clean_wire, lead_solver):
+    for f in (hermiticity_and_phs_of_H, solvers_agree, particle_hole_of_transmissions,
+              phs_at_zero_energy, clean_wire, lead_solver):
         f()
     print(f"\n{sum(_RESULTS)}/{len(_RESULTS)} checks passed")
     return all(_RESULTS)
