@@ -196,9 +196,9 @@ Measured at phi=pi, L=2000 nm, scanning E_Z in 0.01 meV steps:
       the quantity WITH a plateau (local 2e^2/h) CANNOT prove a Majorana -- disorder fakes it,
           with BETTER LDOS contrast (17-19) than the genuine MBS (3.2-6.4), at kappa ~ 1e-7;
       the quantity that CAN prove one (nonlocal kappa=1/2 with G=0) has NO plateau.
-* STILL OPEN: mu_N has never been scanned.  delta ~ cos(k_F L) and mu_N sets k_F, so kappa should
-  oscillate in mu_N too; but the Andreev plateau may extend across mu_N, making it a 2D plateau
-  region in (E_Z, mu_N) rather than a line.
+* RESOLVED (mu_N scanned): kappa oscillates in mu_N exactly as it does in E_Z, with quantised
+  maxima and no plateau; the Andreev plateau DOES extend across mu_N, making it a 2D wedge.
+  See "The plateau is TWO-DIMENSIONAL in (E_Z, mu_N)" below.
 
 ### GRESTA: yes, but on the feasibility boundary.
 * The ceiling is set by the phi=0 MINIGAP, not by the ribbons' bulk gap (0.267 t).  kappa(pi)
@@ -224,6 +224,47 @@ Measured at phi=pi, L=2000 nm, scanning E_Z in 0.01 meV steps:
   beyond what is demonstrated.  Scale-invariantly: the plateau is visible only for
       k_BT  <~  0.3%  of the Zeeman/exchange energy.
   So the realistic device is Al/EuS at ny=8, giving ~25 mK -- just above fridge base temperature.
+
+### The plateau is TWO-DIMENSIONAL in (E_Z, mu_N) -- mu_N scanned 2026-10-08.
+* mu_N was the last untested parameter, and it CONFIRMS the plateau rather than shrinking it.
+  At phi=pi, tc_barr=1.0, the local Andreev conductance holds 2e^2/h over a connected WEDGE:
+  86 cells of a 29x31 map, mu_N = 0.65-0.95 meV x E_Z = 0.04-0.72 meV, G = 1.952-1.999
+  (mean 1.9899, std 0.013).  The largest fully-inside RECTANGLE is
+      mu_N = 0.65-0.90 meV  (0.25 meV)   x   E_Z = 0.08-0.40 meV  (0.32 meV),
+  mean 1.9949 throughout.  PP.mu_N = 0.7 sits inside it.  mu_N is GATE-tunable, so this is a
+  far stronger experimental claim than the 1D E_Z line: the plateau can be found by sweeping a
+  gate at fixed field, and it does not require hitting a field value.
+  Cached: `computations/scharf_mu_{map,line}.npz`, figure `computations/scharf_mu_map.png`.
+* THE WEDGE CLOSES AS E_Z RISES: the mu_N width goes 0.30 meV (E_Z=0.12-0.32) -> 0.25 (0.36-0.40)
+  -> 0.20 (0.44-0.48) -> 0.15 (0.52-0.56) -> 0.10 (0.60) -> 0 by E_Z=0.68.  So LOW field is
+  better, which is the opposite of the usual "push the field up to get topological" instinct.
+  I predicted the upper edge would GROW like sqrt(E_Z^2 - Delta^2) (a 1D-wire topological
+  criterion); it does the reverse.  Unexplained -- do not quote a mechanism for it.
+* THE LOWER EDGE IS THE FIRST TRANSVERSE SUBBAND, and it is E_Z-INDEPENDENT.  For a ny-site
+  strip the subband bottoms are E_n = 2t(1-cos(n pi/(ny+1))); at ny=5, t=2.4877 meV that is
+  0.667, 2.488, 4.975, ... meV.  Everything (kappa, G, Andreev) is EXACTLY ZERO below
+  mu_N ~ 0.62 because the normal strip has no propagating mode at all.  The measured edge sits
+  at 0.62 against the bare 0.667, i.e. Zeeman/SOC soften it by only ~0.05 meV, NOT by the
+  E_Z/2 = 0.15 I expected, and the edge does not move with E_Z across the whole map.
+* THE SECOND SUBBAND IS AT 2.49 meV, far outside any usable window: the entire Scharf result
+  lives on a SINGLE transverse subband.  Worth stating in the thesis -- it is why W enters only
+  through E_T and why nothing is gained by adding transverse modes here (contrast the Gresta
+  case, where ny=8 vs 12 matters a lot).
+* kappa HAS NO PLATEAU IN mu_N EITHER, which closes the question.  On the 0.01-meV line scan at
+  E_Z=0.3, kappa swings between 0.0005 and 0.4969 between adjacent points; on the map the longest
+  contiguous run of |kappa-0.5|<0.05 along mu_N is 3 cells (0.10 meV) and that is at grid
+  resolution.  Maxima are quantised (max among charge-neutral points = 0.4972) -- oscillation
+  with quantised peaks, exactly as in E_Z.  Both tuning parameters now show the same thing, so
+  "kappa oscillates, it does not plateau" is a measured statement about the model and not a
+  failure to find the right knob.
+* |G|/kappa SEPARATES THE WEDGE FROM EVERYTHING ABOVE IT.  Along the E_Z=0.3 line |G|/kappa stays
+  below 0.015 for mu_N <= 0.94 and then climbs monotonically 0.10 (mu_N=1.00) -> 0.41 (1.20) ->
+  0.87 (1.50).  The Andreev plateau and charge neutrality die together at mu_N ~ 0.95-1.0: above
+  it the zero-energy state is an ordinary charged Andreev level.  Same discriminator as on the
+  (E_Z, phi) map, now validated on a second cut.
+* CAUTION: eh_local + he_local EXCEEDS 2 (2.12-2.21) at mu_N = 0.95-1.00, E_Z >= 1.16.  That is
+  a separate high-field feature outside the wedge, not a plateau; the 2e^2/h bound only holds for
+  a single-mode probe, so do not read those cells as "better than quantised".
 
 ### How an experimentalist would actually identify a Majorana (from this work)
 1. A 2e^2/h zero-bias peak is NOT sufficient: disorder produced zero-energy end states with
