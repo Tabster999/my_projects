@@ -179,6 +179,9 @@ def central_fingerprint(junction, E_sweep):
     H_slice, V = junction.slice_blocks_x()
     parts = [H_slice, V, np.atleast_1d(np.asarray(E_sweep, dtype=float)),
              np.array([p.eta, p.tol, p.max_iter, p.lead_refine, p.nx, p.ny], dtype=float)]
+    cols = junction.column_onsite()      # the disorder realisation itself; without it two
+    if cols is not None:                 # different seeds hash the same and scan() silently
+        parts.append(cols)               # reuses one seed's solve for all of them
     for lead in (junction.lead_L, junction.lead_R):
         parts += [lead.H_onsite, lead.V_hop, lead.V_coupling]
     parts += [junction.ribbon_top.V_coupling, junction.ribbon_bot.V_coupling]

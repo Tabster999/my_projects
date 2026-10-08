@@ -17,8 +17,9 @@ import numpy as np
 
 from .params import Params
 from .junction import FourTerminalJunction
-from .rgf import RGFFourTerminal
+from .rgf import RGFFourTerminal, central_fingerprint
 from .transport import phs_residual
+from .compute import ldos
 from .fast_phase_sweep import FastPhaseSweep
 from . import leads
 
@@ -77,6 +78,25 @@ def particle_hole_of_transmissions():
         _report(f"T_ee(-E) = T_hh(E), T_he(-E) = T_eh(E) ({name})", worst, 1e-9)
 
 
+def disorder_reaches_everything():
+    """
+    Disorder must reach BOTH solvers and the central fingerprint.  Both silently failed:
+    LocalGreen used the clean slice, so the LDOS was disorder-blind; and central_fingerprint
+    omitted the realisation, so scan()/ThermalPoint reused one seed's solve for every seed.
+    """
+    p = replace(CASES['rashba'], nx=12, disorder_W=0.5)
+    seeds = (0, 1, 2)
+    fps = {central_fingerprint(FourTerminalJunction(replace(p, disorder_seed=s)), np.zeros(1))
+           for s in seeds}
+    _report("central_fingerprint distinguishes disorder seeds", 0.0 if len(fps) == len(seeds) else 1.0, 0.5)
+    A = [ldos(replace(p, disorder_seed=s), [0.0], np.pi, cols=[0, 5]).sum() for s in seeds]
+    _report("LDOS responds to the disorder seed", 0.0 if max(A) - min(A) > 1e-9 else 1.0, 0.5)
+    ch = [RGFFourTerminal(FourTerminalJunction(replace(p, disorder_seed=s)),
+                          np.zeros(1)).channels_at_phi(np.pi, 'right')['ee'][0] for s in seeds]
+    _report("channels respond to the disorder seed",
+            0.0 if max(ch) - min(ch) > 1e-9 else 1.0, 0.5)
+
+
 def phs_at_zero_energy():
     """T_ee = T_hh and T_eh = T_he at E = 0 exactly.  particle_hole_of_transmissions covers
     E != 0 on a symmetric grid; this covers E = 0 itself, which is where small eta breaks down."""
@@ -120,7 +140,7 @@ def lead_solver():
 def run_all():
     _RESULTS.clear()
     for f in (hermiticity_and_phs_of_H, solvers_agree, particle_hole_of_transmissions,
-              phs_at_zero_energy, clean_wire, lead_solver):
+              phs_at_zero_energy, disorder_reaches_everything, clean_wire, lead_solver):
         f()
     print(f"\n{sum(_RESULTS)}/{len(_RESULTS)} checks passed")
     return all(_RESULTS)

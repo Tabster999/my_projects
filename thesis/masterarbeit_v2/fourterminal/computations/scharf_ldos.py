@@ -119,6 +119,9 @@ class PhysParams:
     tc_barr_transport: float = 0.20   # probe coupling for kappa/G (0 gives kappa = 0 exactly)
     eta_rel_transport: float = 1e-5   # broadening for kappa/G; must be << the resonance width
     kT_transport: float = 0.0         # meV; temperature for the map's kappa_kT/G_kT (0 = skip)
+    # --- onsite disorder in the NORMAL region only (the ribbons stay clean) ---
+    disorder: float = 0.0             # meV, uniform in [-disorder/2, +disorder/2]
+    disorder_seed: int = 0            # which realisation
 
     # --- derived scales ---
     @property
@@ -190,6 +193,7 @@ class PhysParams:
             Bz_s=0.0,                                   
             theta_z=self.theta_z_optimal() if self.theta_z is None else self.theta_z,
             Bxy=0.0, Bxy_c=EZ / t, Bxy_n=0.0, Bxy_s=0.0,
+            disorder_W=self.disorder / t, disorder_seed=self.disorder_seed,
             eta=self.eta_rel * self.Delta / t)
 
     def params_transport(self, E_Z=None, phi=np.pi):

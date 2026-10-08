@@ -127,6 +127,9 @@ class LocalGreen:
         W = block_diag(top.V_coupling, bot.V_coupling)
 
         H_slice, V = junction.slice_blocks_x()
+        cols = junction.column_onsite()          # (nx, d, d) when disorder is on, else None
+        if cols is not None:                     # _g0_on_subspace takes either shape
+            H_slice = cols                       # without this the LDOS ignores the disorder
         g0 = _g0_on_subspace(z, H_slice, V, {0: Sigma_L, nx - 1: Sigma_R}, sub)
         P = np.concatenate([sub.posT, sub.posB])
         M = np.concatenate([sub.site(ix, iy) for ix in self.cols for iy in range(ny)])
