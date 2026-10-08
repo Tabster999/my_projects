@@ -79,7 +79,42 @@ Rashba model. See README.md for structure and usage.
   at eta=1e-5 and is therefore contaminated by absorption (~0.05 of the 0.165 drop at beta=0).
   It cannot be recomputed at eta=1e-6 because the solver fails there for beta=0.8.  Treat the
   nx-dependence at beta=0.8 as UNRESOLVED; the beta=0 baseline (0.4997/0.4944/0.4917 at eta=1e-6)
-  is sound.
+  is sound.  Re-measured at eta=1e-6 anyway: beta=0.8 gives NaN at nx=80 and
+  kappa(pi)=0.993/1.004 at nx=160/240 WITH overflow warnings, against 0.19-0.36 at
+  eta=1e-5 -- so the two eta disagree wildly and both are suspect.  Still UNRESOLVED.
+
+## Disorder (onsite, normal region only; `PhysParams.disorder` in meV, `.disorder_seed`)
+Scharf point, soc_axis='100', tc_barr_transport=0.2, 32 seeds per cell.  A = (E_Z 0.505, phi=pi)
+topological on resonance; B = (0.505, phi=0) and C = (0, pi) trivial.  "LDOS candidate" = Scharf's
+own criterion curv_end<0 plus end/mid>3.
+* ROBUSTNESS: charge neutrality is far tougher than the transmission magnitude.  At point A,
+  |G|/kappa stays at 3e-4 .. 2e-3 from zero disorder up to 3.2 meV (12.8 Delta) while kappa itself
+  falls 0.4888 -> 0.2236 (mean) with large scatter.  Neutrality follows from the Majorana
+  character, not from clean transmission, so it survives what the magnitude does not.
+* Strong disorder DETUNES rather than destroys: at 3.2 meV the mean kappa is 0.22 but the
+  per-seed MAXIMUM is still 0.4913.  Individual realisations are pushed off the delta ~ Gamma
+  resonance; some land back on it.  LDOS candidates: 32/32 up to 0.4 meV, 31/32 at 1.6, 12/32 at 3.2.
+* DISCRIMINATION, and it is NOT via |G|/kappa.  Disorder does manufacture convincing LDOS
+  look-alikes at the trivial points -- B gets 2/32 candidates at 1.6 meV and 7/32 at 3.2, C gets
+  1/32 and 2/32, with end/mid contrast up to 17-19, BETTER than the genuine MBS (3.2-6.4) at the
+  same disorder.  But every one of them is TRANSPORT-DARK:
+      B at 3.2 meV: kappa = 2e-7, 4e-7, 5e-8, 7e-8, 2e-9, 2e-7, 7e-6
+      C at 3.2 meV: kappa = 5e-12, 4e-13
+      A at 3.2 meV: kappa = 0.293, 0.491, 0.425, 0.444, 0.320, ... (12 survivors)
+  Six to twelve orders of magnitude.  Reason: LDOS is LOCAL, so one state localized near an end
+  gives a zero-energy peak; nonlocal kappa needs a PAIR at both ends with finite overlap delta,
+  which is what makes them Majoranas.  Disorder localizes; it does not create end-to-end pairs.
+* So the test is TWO-PRONGED, with a measured counter-example for each prong:
+      kappa ~ 1/2  rejects disorder-localized trivial states (kappa ~ 1e-7)
+      G ~ 0        rejects ordinary charge-carrying channels (the 10 clean-map points, |G|/kappa 0.58-0.98)
+  Do NOT read |G|/kappa for a transport-dark state: it is 0/0 and meaningless.
+* CAVEAT: the trivial-point candidate counts are 2/32 and 7/32, so the RATE is only known to
+  about +-7%.  The orders-of-magnitude kappa gap is safe at 32 seeds; any claim about how OFTEN
+  disorder fakes a Majorana needs ~128.  Rare realisations that both look like an MBS and
+  transport would be the counter-example that breaks this, and 32 seeds cannot see a 1-in-100 event.
+* GOTCHA, fixed in 8129ca0: disorder used to reach neither `LocalGreen` (so the LDOS was blind)
+  nor `central_fingerprint` (so scan()/ThermalPoint returned ONE seed's answer for every seed).
+  `run_all` now asserts all three paths respond to `disorder_seed`.
 
 ## Combining Gresta and Scharf (all tested, all negative)
 * A κ PLATEAU needs a PROPAGATING Majorana, hence Chern≠0 in the ribbons, hence OUT-OF-PLANE
