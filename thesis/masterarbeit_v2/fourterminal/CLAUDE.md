@@ -144,6 +144,59 @@ own criterion curv_end<0 plus end/mid>3.
   nor `central_fingerprint` (so scan()/ThermalPoint returned ONE seed's answer for every seed).
   `run_all` now asserts all three paths respond to `disorder_seed`.
 
+## Measurability — can an experimentalist see this?  (conversion: 1 ueV = 11.6 mK)
+### SCHARF: no.  Checked three ways.
+* The genuine Majorana resonance needs a WEAK probe (tc_barr~0.2) and is then ~0.5-0.8 ueV wide:
+  kappa = 0.491 -> 0.44 at kT=0.1 ueV (1 mK) -> 0.019 at 1 ueV.  A fridge delivers 10-20 mK.
+* Raising tc_barr to 0.5 widens things and the resonance MOVES in E_Z (to 0.79-0.85 meV) rather
+  than vanishing -- so the earlier "strong coupling kills it" was measured at fixed E_Z.  But
+  retuning does not rescue it: at L=800/1200 nm the wide kappa~0.5 peaks are CHARGED
+  (|G|/kappa = 0.62 / 0.28), i.e. the false-positive class.  Only L=2000 nm stays roughly neutral
+  (|G|/kappa=0.060) and there kappa(phi=0)=0.335, so the phase contrast is only 0.16 and kappa
+  still halves by kT=2 ueV (23 mK).
+* Every configuration is EITHER Majorana-like with no temperature window OR wide but charged.
+* The W lever for Scharf is UNTESTED and is NOT the Gresta ny lever: here W sets the Thouless
+  energy, E_T = (pi/2)*2*sqrt(mu_N t)/n_across ~ 1/W, and the topological region sits at
+  E_Z ~ E_T, so a WIDER junction needs a WEAKER field (W=100 nm -> 2.9 T, W=200 -> 1.4 T,
+  W=300 -> 1.0 T).  Opposite direction to Gresta.  Whether that trades field for temperature
+  favourably is open.
+
+### GRESTA: yes, but on the feasibility boundary.
+* The ceiling is set by the phi=0 MINIGAP, not by the ribbons' bulk gap (0.267 t).  kappa(pi)
+  itself survives to kT=0.01 t (0.4581) but kappa(0) rises 0.004 -> 0.236 -> 0.444 over
+  kT = 0.001 -> 0.003 -> 0.010 t, so the CONTRAST dies far earlier than kappa(pi) does.
+  Measure the contrast kappa(pi) - kappa(0) together with G~0, never kappa(pi) alone.
+* The minigap is the hybridisation gap of the two INTERFACE Majoranas across the width, so the
+  junction width is a real lever -- and ny=12 is NOT optimal.  Usable ceiling (contrast > 0.40,
+  |G| < 0.05), nx=80, eta=1e-6:
+      ny= 4: none (kappa(pi) only 0.37-0.41, too few transverse modes)
+      ny= 6: kT = 0.003 t     ny= 8: kT = 0.003 t  <- best, kappa(pi)=0.4885
+      ny=10: kT = 0.001 t     ny=12: kT = 0.001 t     ny=16: none (kappa(0)=0.34 already)
+  So ny=8 TRIPLES the window over ny=12.  There is an optimum, not a monotone trend.
+* Physical temperature, anchoring t = Delta_phys/0.35:
+      Delta=0.25 meV (Al):  25 mK at ny=8   (8 mK at ny=12)
+      Delta=1.0 meV:        99 mK
+      Delta=2.0 meV:       199 mK
+* THE FIELD IS THE BINDING CONSTRAINT.  Bz_s=0.94 t out-of-plane is 2.3 T for Al-scale Delta,
+  against ~0.01-0.1 T for a thin Al film -- an applied field is out by 2-3 orders of magnitude.
+  It has to be an EXCHANGE field from a ferromagnetic insulator (EuS/Al gives ~0.1-1 meV, and
+  0.94 t = 0.67 meV at Delta=0.25 meV, so it just fits).  Scaling Delta up to get a hotter
+  plateau scales the required exchange field the same way (2.69 meV at Delta=1, 5.37 at Delta=2),
+  beyond what is demonstrated.  Scale-invariantly: the plateau is visible only for
+      k_BT  <~  0.3%  of the Zeeman/exchange energy.
+  So the realistic device is Al/EuS at ny=8, giving ~25 mK -- just above fridge base temperature.
+
+### How an experimentalist would actually identify a Majorana (from this work)
+1. A 2e^2/h zero-bias peak is NOT sufficient: disorder produced zero-energy end states with
+   BETTER LDOS contrast (17-19) than the genuine MBS (3.2-6.4), carrying kappa ~ 1e-7.
+2. The decisive measurement is NONLOCAL -- does heat cross from one end to the other.  That needs
+   a delocalised PAIR, which is what being Majoranas means, and disorder cannot fake it.
+3. Charge neutrality G~0 is the second prong and the robust one (|G|/kappa held at 3e-4 through
+   12.8 Delta of disorder while kappa collapsed).
+4. BOTH PRONGS CANNOT COME FROM ONE CONTACT.  Strong coupling gives the quantised LOCAL 2e^2/h and
+   kills nonlocal transport (kappa=0.001 at tc_barr=1); weak coupling gives nonlocal kappa=1/2.
+   The device needs tunable contacts, or two devices.  This constraint is in neither paper.
+
 ## Combining Gresta and Scharf (all tested, all negative)
 * A κ PLATEAU needs a PROPAGATING Majorana, hence Chern≠0 in the ribbons, hence OUT-OF-PLANE
   Zeeman. An in-plane field in the ribbons makes the 2D spectrum NODAL at any magnitude (bulk gap
