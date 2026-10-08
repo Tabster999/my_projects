@@ -85,7 +85,7 @@ import matplotlib.pyplot as plt
 
 try:
     import my_functions as myf
-except ModuleNotFoundError:                  # not pip-installed: find the package by walking up
+except ModuleNotFoundError:                
     import sys
     from pathlib import Path
     _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
@@ -140,8 +140,10 @@ class PhysParams:
         """Thouless energy (pi/2) hbar v_F / W, in meV (v_F from mu_N)."""
         return (np.pi / 2) * 2 * np.sqrt(self.mu_N * self.t) / self.n_across
 
-    def theta_z_optimal(self):
+    def theta_z_optimal(self, theta_soc=None):
         """In-plane field angle with E_Z perpendicular to n_soc (see the module docstring)."""
+        if theta_soc is not None:
+            return np.pi / 2 - theta_soc if self.soc_axis == '100' else 0.0
         return np.arctan2(self.alpha, self.beta) if self.soc_axis == '100' else 0.0
 
     # ---- geometry: the paper's letters ----
@@ -225,25 +227,27 @@ class PhysParams:
 
 
 # %% --- PARAMETERS ---
-alpha   =   14.3
-beta    =   7.3
-E_z     =   0.46                 
+soc_amp     =   16.0    # nm
+theta_soc   =   0.15 * np.pi     # radians
+alpha       =   soc_amp * np.cos(theta_soc)
+beta        =   soc_amp * np.sin(theta_soc)
+E_z         =   0.46                 
 
 # Along the S/N interface <-> nx:L (my model x, Paper y)
 # Across the S/N interface <-> ny:W (my model y, Paper x)
 PP = PhysParams(
                 a=20.0, m_eff=0.038, 
                 Delta=0.25, mu_S=1.0, mu_N=0.7, 
-                alpha=alpha, beta=beta, soc_axis='110',
+                alpha=alpha, beta=beta, soc_axis='100',
                 g=10.0, B=0.0, theta_z=None, # type: ignore
-                W=100.0, L=2000.0, tc=1.0, tc_barr=0.0, eta_rel=0.05, tc_barr_transport=1.0, eta_rel_transport=1e-5, kT_transport=0.0
+                W=100.0, L=2000.0, tc=1.0, tc_barr=0.0, eta_rel=0.05, tc_barr_transport=0.5, eta_rel_transport=1e-5, kT_transport=0.0
                 )                           
 
 PP.B = PP.B_of_E_Z(E_z)           
-PP.theta_z = PP.theta_z_optimal() + np.pi      
+PP.theta_z = PP.theta_z_optimal(theta_soc=theta_soc) + np.pi      
 print(f"Zeeman energy = {E_z:.3f} meV  (B = {PP.B:.2f} T, g = {PP.g:g})")
 
-step_sizes = 101
+step_sizes = 61
 B_VALS = np.linspace(0.0, 3.5, step_sizes)
 PHIS = np.linspace(0.0, 2 * np.pi, step_sizes)
 ENERGY_VALS = np.linspace(-1.01 * PP.Delta, 1.01 * PP.Delta, step_sizes)
@@ -385,7 +389,7 @@ class _MapRow:
         return _row(replace(self.pp, B=float(B)), self.phis, self.cols, self.i_end, self.i_mid)
 
 
-def run_map_parallel(pp=PP, phis=PHIS, b_vals=B_VALS, n_workers=8, save="scharf_map_par.npz"):
+def run_map_parallel(pp=PP, phis=PHIS, b_vals=B_VALS, n_workers=8, save=SAVE):
     """
     Same result as run_map, but the field values run in `n_workers` processes (one BLAS thread
     each), resumable through `save`.
@@ -412,7 +416,7 @@ def plot_map(R, pp=PP):
     fig, axs = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
     for ax, key, title in ((axs[0], 'ldos_end', "Edge LDOS"), (axs[1], 'ldos_mid', "Bulk LDOS")):
         Z = R[key]
-        im = ax.pcolormesh(EZ, phis / np.pi, Z.T / np.nanmax(Z), shading='nearest', cmap='bwr')
+        im = ax.pcolormesh(EZ, phis / np.pi, Z.T / np.nanmax(Z), shading='nearest', cmap='viridis')
         fig.colorbar(im, ax=ax, label=r'$\mathrm{LDOS}$ (norm.)')
         ax.set_xlabel(r"$E_Z$ [meV]", fontsize=10)
         ax.set_ylabel(r"$\phi/\pi$", fontsize=10)
@@ -435,7 +439,7 @@ def plot_curvature(R, pp=PP, n_levels=101):
     fig, axs = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
     for ax, key, title in ((axs[0], 'curv_end', "Edge"), (axs[1], 'curv_mid', "Bulk")):
         Z = R[key].T * eta**2
-        v = np.nanpercentile(np.abs(Z), 99.9)
+        v = np.nanmax(-Z)
         levels = np.linspace(-v, v, n_levels)       
         im = ax.contourf(EZ, phis / np.pi, Z, levels=levels, cmap='bwr', extend='both')
         fig.colorbar(im, ax=ax, label=r"$\eta^2\,\partial^2\mathrm{D}/\partial E^2$")
@@ -595,10 +599,10 @@ def show_summary(pp=PP):
              rf"{pp.eta_rel:g}\,\Delta"),
             (r"\eta_\text{transport}", f"{pp.eta_rel_transport * pp.Delta:.2e}", mn,
              rf"{pp.eta_rel_transport:g}\,\Delta"),
-            (r"t_\text{barr}", f"{pp.tc_barr:g}", r"t", r"\text{LDOS}"),
+            (r"t_\text{barr}", f"{pp.tc_barr:g}", r"t", r"\text{--}"),
             (r"t_\text{barr}^\text{transport}", f"{pp.tc_barr_transport:g}", r"t",
-             r"\text{transport}")]
-    _show(*_both(rf"\textbf{{Scharf junction}}\ [{pp.soc_axis}]", header, rows))
+             r"\text{--}")]
+    _show(*_both(rf"\textbf{{Junction}}\ [{pp.soc_axis}]", header, rows))
 
 
 def show_points(pts, target=0.5):
@@ -693,14 +697,17 @@ def point_report(pp, points, kTs=(0.0, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3), show=True)
     return out
 
 
-def plot_transport(R, pp=PP):
+def plot_transport(R, pp=PP, toggle_contour=True):
     """kappa/kappa0 and G/G0 over the (E_Z, phi) map; kappa = 0.5 with G = 0 is the Majorana point."""
     phis, EZ = R['phis'], R['E_Z']
     fig, axs = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
     for ax, key, label in ((axs[0], 'kappa', r"$\kappa/\kappa_0$"), (axs[1], 'G', r"$G/G_0$")):
         Z = R[key]
+        if toggle_contour:
+            ax.contour(EZ, phis / np.pi, Z.T, levels=[0.49,0.5,0.51], colors='r', linewidths=1.5)
         im = ax.pcolormesh(EZ, phis / np.pi, Z.T, shading='nearest', cmap='viridis', vmin=0.0,
                            vmax=max(0.5, float(np.nanmax(Z))) if key == 'kappa' else None)
+        
         fig.colorbar(im, ax=ax, label=label)
         ax.set_xlabel(r"$E_Z$ [meV]", fontsize=10)
         ax.set_ylabel(r"$\phi/\pi$", fontsize=10)
@@ -714,7 +721,7 @@ def plot_transport(R, pp=PP):
 
 # %% --- RUN ---
 if __name__ == "__main__":
-    show_summary(PP)                      # LaTeX table in a cell, plain text as a script
+    show_summary(PP)                    
     R = run_map() if N_WORKERS == 1 else run_map_parallel(n_workers=N_WORKERS)
     plot_map(R)
     plot_curvature(R)
