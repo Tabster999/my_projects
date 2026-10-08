@@ -1,8 +1,34 @@
 # Context for Claude Code — thesis/fourterminal
 
-Master's thesis code: NEGF transport through a four-terminal Josephson junction; goal is the half-integer
-thermal-conductance plateau (κ/κ₀ = 0.5 with G/G₀ = 0 at φ = π, Gresta et al., PRB 114, 125405) in a
-Rashba model. See README.md for structure and usage.
+Master's thesis code: NEGF transport through a four-terminal Josephson junction.
+**TWO DIFFERENT SYSTEMS share this package.  Their numbers are NOT comparable — check which
+one a statement belongs to before reusing it.**  Current focus: the SCHARF model.
+See README.md for structure and usage.
+
+| | Gresta / Domínguez | Scharf |
+|---|---|---|
+| paper | PRB 114, 125405 | PRB 99, 214503 |
+| driven from | `Params` directly | `PhysParams` in `computations/scharf_ldos.py` |
+| units | dimensionless, t = 1 | physical meV/nm, t = 2.488 meV |
+| geometry | nx=80 × ny=12 | nx=100 × ny=5  (L=2000 nm × W=100 nm) |
+| Zeeman | `Bz_s`=0.94, OUT-of-plane, in the RIBBONS | `Bxy_c` in-plane, in the CENTRE; `Bz_s`=0 |
+| ribbons | TOPOLOGICAL, Chern = −1 | TRIVIAL, Chern = 0 |
+| Majoranas | PROPAGATING chiral mode along the junction | LOCALISED pair at the ends y = ±L/2 |
+| α | 1.2 (units of t·a) | 14.3 meV·nm = 0.2865 t·a |
+| centre | DEPLETED, μ_c = −0.03 | POPULATED, μ_N = 0.7 meV |
+| κ = 1/2 is | a PLATEAU, protected by a bulk gap | a RESONANCE, width = the MBS splitting δ |
+| probe contact | transparent: tc ≈ 1.1, μ_n ≈ 1 | WEAK: tc_barr ≈ 0.2 |
+
+## ξ: two different lengths wearing the same symbol
+* **ξ_ribbon** = `coherence_length(p)` — decay length in the SC RIBBON material (region 's').
+  Meaningful for GRESTA, where the ribbons are topological: 5.51 sites at the working point, and
+  what the `nx ≳ 12 ξ` rule below refers to.
+  At the SCHARF point it returns 12.14 sites, which is the TRIVIAL ribbon's evanescent length and
+  has NOTHING to do with the end MBS.  **Do not use it there.**
+* **ξ_MBS** — decay of the end MBS ALONG the junction, in the normal region.  No function computes
+  it; measure it from the real-space LDOS profile.  At the Scharf point ≈ 466 nm ≈ 23 sites
+  (3.4068 at y = ±950 nm against 0.4428 at y ≈ 0).
+  Every `δ ~ Δe^(−L/ξ)` in the Scharf section means **ξ_MBS**, never `coherence_length`.
 
 ## Rules
 * Keep existing public names (Params fields, RGFFourTerminal.channels_at_phi, …); scripts depend on them.
@@ -10,17 +36,17 @@ Rashba model. See README.md for structure and usage.
 * Never let a failed lead solve pass silently (NaN is intended). Report `myf.leads.N_UNRELIABLE` in scans.
 * Computation returns arrays; plotting stays in the scripts.
 
-## Physics established so far (Rashba model)
+## GRESTA / DOMÍNGUEZ model — dimensionless units, Bz_s in the ribbons
 * Working point: nx=80, ny=12, Δ=0.35, α=1.2, tc=1.1, μ_c=−0.03, μ_n=1, μ_s≈0.15, B_z,s≈0.94, η=1e-5 →
   κ=0.497 at k_BT=1e-3 with κ(φ=0)=0.003; connected T→0 plateau in (B_z,s, μ_s).
-* Plateau width: Majorana decay length ξ vs nx (`coherence_length`; nx ≳ 12ξ at T→0, ≳ 7ξ at k_BT=1e-3).
-  Larger Δ and α shorten ξ.
+* Plateau width: ξ_ribbon vs nx (`coherence_length`; nx ≳ 12 ξ_ribbon at T→0, ≳ 7 ξ_ribbon at
+  k_BT=1e-3).  Larger Δ and α shorten ξ_ribbon.
 * Plateau height: interface matching (tc ≈ 1.1–1.2, μ_n ≈ 1).
 * Phase contrast: the centre is depleted (no Dirac point), so the φ=0 gap decays exponentially with ny;
   contrast is lost for ny > 12 (κ(0): 0.006 at ny=12, 0.45 at ny=20). No SOC/Zeeman/mass variant fixes this.
 * Dirac model reproduces the paper's Fig. 8 with μ_n ≈ 1 (unstated in the paper).
 
-## Scharf model (`computations/scharf_ldos.py`; Scharf et al., PRB 99, 214503)
+## SCHARF model (`computations/scharf_ldos.py`; Scharf et al., PRB 99, 214503)
 * LDOS and transport need DIFFERENT settings and cannot share one parameter set. The LDOS uses
   Scharf's tc_barr=0 and η=0.05Δ, and both make κ and G vanish identically (the saved map had
   κ≡0). κ/G go through `PhysParams.params_transport()` with `tc_barr_transport≈0.2`,
@@ -50,7 +76,9 @@ Rashba model. See README.md for structure and usage.
 * soc_axis matters: '110' puts (α−β) on the propagation axis, '100' puts √(α²+β²). With β=7.3
   that halves the effective SOC at '110' — κ>0.05 on 9.6% of the map vs 28.6% at '100'.
 
-## Numerics: eta is absorption, and the solver's limit tracks xi
+## Numerics — measured on the GRESTA point unless stated
+(eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,
+so it applies to GRESTA, where the ribbons are topological.)
 * eta is added at EVERY site, so it acts as uniform absorption and costs transmission in
   proportion to path length.  This, not physics, produced the apparent decay of kappa with
   junction length.  Gresta point, beta=0, kT=0, phi=pi:
@@ -130,7 +158,8 @@ own criterion curv_end<0 plus end/mid>3.
   need OPPOSITE central regions — Gresta depleted (μ_c=−0.03), Scharf populated (μ_N=0.7 meV) — and
   any Bxy_c large enough for Scharf physics (≫|μ_c|) fills the centre with ordinary channels.
   Watch for κ≈G there (e.g. κ=0.447, G=0.411 at Bxy_c=0.8): an ordinary channel passing near 0.5.
-* Dresselhaus hurts the Gresta plateau in BOTH orientations, for different reasons. '110' closes
+* Dresselhaus hurts the GRESTA plateau in BOTH orientations (distinct from the
+  Scharf soc_axis finding above, which is about an in-plane field and trivial ribbons), for different reasons. '110' closes
   the Chern gap through (α−β) and ξ diverges (5.5→49.7 sites for β=0→1.1). '100' keeps ξ short
   (5.5→4.5, since SOC adds in quadrature) but κ(π) overshoots to 0.91–0.99 with G(π)≈0.33, i.e.
   it stops being charge-neutral. Larger nx does NOT help: κ(π) 0.358→0.192 for nx=80→240 at β=0.8.
