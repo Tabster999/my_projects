@@ -192,13 +192,16 @@ def model_hop(p, direction, t, m0, alpha=None, bond=False):
     """
     Hopping block H_{j,j+1} along `direction` ('x' or 'y') with amplitude t.
     m0 is the Wilson mass of the bond (ignored by the Rashba model).
-    bond=True: an INTERFACE bond with coupling t (tc, tc_barr) = t x one bond of the lattice, i.e.
-    t x [-tau_z + SOC(global alpha, beta)].  The whole bond scales, so t = 1 is an ordinary lattice
-    bond and t = 0 truly decouples (an unscaled SOC part left a 0.16 t spin-flip hop at the Scharf
-    point).  `alpha` is ignored then.  The Dirac model is unchanged.
+    bond=True: an INTERFACE bond with coupling t (tc, tc_barr), built from the global alpha, beta:
+        t <= 1:  t x [-tau_z + SOC]     a barrier: the whole bond scales, t = 0 truly decouples
+                                        (an unscaled SOC part left a 0.16 t spin-flip hop at Scharf)
+        t >  1:  -t tau_z + SOC         better matching: more hopping, but the SOC stays at its
+                                        bulk value (a material property, not enhanced by the interface)
+    Continuous at t = 1, an ordinary lattice bond there.  `alpha` is ignored.  Dirac unchanged.
     """
     if p.model == 'rashba':
-        a, b = (p.alpha * t, p.beta * t) if bond else ((p.alpha if alpha is None else alpha), p.beta)
+        s = min(t, 1.0)
+        a, b = (p.alpha * s, p.beta * s) if bond else ((p.alpha if alpha is None else alpha), p.beta)
         return (Vx(t, a, b, p.soc_axis) if direction == 'x'
                 else Vy(t, a, b, p.soc_axis))
     return dirac_Vx(t, m0) if direction == 'x' else dirac_Vy(t, m0)

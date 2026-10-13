@@ -50,9 +50,12 @@ See README.md for structure and usage.
 * Before the fix, model_hop(p, dir, tc, alpha=bond_alpha) scaled only the -tc tau_z part of an
   interface bond; the Rashba/Dresselhaus part stayed at full strength.  At the Scharf point that is
   a 0.16 t SPIN-FLIP hop surviving tc_barr = 0: kappa = 0.208 at point A with "decoupled" probes.
-* Now every interface bond (probe: tc_barr, ribbons: tc_top/tc_bot) is model_hop(..., bond=True)
-  = tc x ONE LATTICE BOND, tc x [-tau_z + SOC(global alpha, beta)]: a barrier lowers the tunnelling
-  amplitude, not the spin rotation per hop.  No averaging over the two regions (per-region alpha_c/
+* Now every interface bond (probe: tc_barr, ribbons: tc_top/tc_bot) is model_hop(..., bond=True),
+  built from the global alpha, beta:  tc <= 1: tc x [-tau_z + SOC] (a barrier lowers the tunnelling
+  amplitude, not the spin rotation per hop);  tc > 1: -tc tau_z + SOC (better matching enhances the
+  hopping, NOT the SOC, a material property).  Continuous at tc = 1.  So the GRESTA point (tc = 1.1)
+  is exactly as before: kappa(pi) = 0.4997 at eta = 1e-6, kT = 0.  (A brief version that also scaled
+  SOC above 1 gave 0.486 there -- the tc > 1 cap is what keeps the Gresta numbers valid.)  No averaging over the two regions (per-region alpha_c/
   alpha_n/alpha_s and t_n/t_c/t_s do NOT enter the bond; tc is the bond hopping in units of the unit
   lattice hop).  tc = 1 is bit-identical to a bulk bond; Dirac unchanged.
   run_all 25/25, tests/test_api.py 5/5.

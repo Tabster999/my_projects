@@ -53,7 +53,7 @@ from scharf_ldos import myf
 PP = replace(S.PP, tc_barr_transport=0.2)          # weak probe for kappa and G
 TC_STRONG = 1.0                                    # strong probe for the Andreev peak and det r
 
-A = (0.505, np.pi)      # (E_Z in meV, phi): topological, on a kappa resonance
+A = (0.98, np.pi)      # (E_Z in meV, phi): topological, on a kappa resonance
 B = (0.505, 0.0)        # trivial: same field, phi = 0
 C = (0.0, np.pi)        # trivial: no field
 
@@ -258,3 +258,5 @@ if __name__ == "__main__":
     axs[-1].set_xlabel(r'$E_Z$ [meV]')
     plt.tight_layout()
     plt.show()
+
+# %%
