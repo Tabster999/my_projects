@@ -183,7 +183,7 @@ def central_fingerprint(junction, E_sweep):
     if cols is not None:                 # different seeds hash the same and scan() silently
         parts.append(cols)               # reuses one seed's solve for all of them
     for lead in (junction.lead_L, junction.lead_R):
-        parts += [lead.H_onsite, lead.V_hop, lead.V_coupling]
+        parts += [lead.H_onsite, lead.V_hop, lead.V_coupling, *lead.barrier]
     parts += [junction.ribbon_top.V_coupling, junction.ribbon_bot.V_coupling]
     h = hashlib.sha1()
     for a in parts:
@@ -193,9 +193,8 @@ def central_fingerprint(junction, E_sweep):
     return h.hexdigest()
 
 
-# ---------------------------------------------------------------------------
 #  main solver
-# ---------------------------------------------------------------------------
+
 class RGFFourTerminal:
     """
     RGF + exact boundary-Dyson solver for FourTerminalJunction.

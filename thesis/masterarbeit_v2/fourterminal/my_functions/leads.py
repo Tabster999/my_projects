@@ -202,21 +202,31 @@ class Lead:
            True  -> H_{s,C} = V_coupling^dagger   (right lead, bottom ribbon)
 
     Sigma = H_{C,s} g_s H_{s,C},  g_s = (z - eps_s)^-1 from Sancho-Rubio.
+
+    barrier    : onsite blocks of extra cells between the centre and the clean lead, ordered from
+                 the contact outward; they hop to each other and to the lead with V_out.  They are
+                 decimated exactly into eps_s, one step of the lead's own Dyson equation per cell,
+                 so the contact sees the clean lead behind a finite barrier.
     """
 
-    def __init__(self, name, H_onsite, V_out, V_coupling, p, br=False, dual=False):
+    def __init__(self, name, H_onsite, V_out, V_coupling, p, br=False, dual=False, barrier=()):
         self.name = name
         self.dual = dual
         self.H_onsite = np.asarray(H_onsite, dtype=complex)
         self.V_hop = np.asarray(V_out, dtype=complex)
         self.V_coupling = np.asarray(V_coupling, dtype=complex).conj().T if br else np.asarray(V_coupling, dtype=complex)
+        self.barrier = tuple(np.asarray(H, dtype=complex) for H in barrier)
         self.p = p
 
     def surface_eps(self, z_batch):
-        """Renormalized surface onsite eps_s, shape (N_E, M, M)."""
+        """Renormalized surface onsite eps_s, shape (N_E, M, M), including any barrier cells."""
         need = (False, True) if self.dual else (True, False)
         pair = surface_eps_pair(self.H_onsite, self.V_hop, z_batch, self.p, self.name, need)
-        return pair[1] if self.dual else pair[0]
+        eps = pair[1] if self.dual else pair[0]
+        V_out = self.V_hop.conj().T if self.dual else self.V_hop       # outward hop, as in eps = H0 + V_out g V_out^dag
+        for H_b in reversed(self.barrier):                              # outermost cell first
+            eps = H_b[None] + V_out[None] @ inv(z_batch - eps) @ V_out.conj().T[None]
+        return eps
 
     def surface_gf(self, z_batch):
         """Retarded surface GF g_s = (z - eps_s)^-1."""

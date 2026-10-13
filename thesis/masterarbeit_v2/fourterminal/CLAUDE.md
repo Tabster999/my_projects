@@ -9,7 +9,7 @@ See README.md for structure and usage.
 |---|---|---|
 | paper | PRB 114, 125405 | PRB 99, 214503 |
 | driven from | `Params` directly | `PhysParams` in `computations/scharf_ldos.py` |
-| units | dimensionless, t = 1 | physical meV/nm, t = 2.488 meV |
+| units | dimensionless, t = 1 | physical meV/nm, t = 2.507 meV (CODATA; was 2.488) |
 | geometry | nx=80 × ny=12 | nx=100 × ny=5  (L=2000 nm × W=100 nm) |
 | Zeeman | `Bz_s`=0.94, OUT-of-plane, in the RIBBONS | `Bxy_c` in-plane, in the CENTRE; `Bz_s`=0 |
 | ribbons | TOPOLOGICAL, Chern = −1 | TRIVIAL, Chern = 0 |
@@ -46,7 +46,62 @@ See README.md for structure and usage.
   contrast is lost for ny > 12 (κ(0): 0.006 at ny=12, 0.45 at ny=20). No SOC/Zeeman/mass variant fixes this.
 * Dirac model reproduces the paper's Fig. 8 with μ_n ≈ 1 (unstated in the paper).
 
+## INTERFACE BONDS SCALE AS A WHOLE (fixed 2026-10-13) -- read before trusting older numbers
+* Before the fix, model_hop(p, dir, tc, alpha=bond_alpha) scaled only the -tc tau_z part of an
+  interface bond; the Rashba/Dresselhaus part stayed at full strength.  At the Scharf point that is
+  a 0.16 t SPIN-FLIP hop surviving tc_barr = 0: kappa = 0.208 at point A with "decoupled" probes.
+* Now every interface bond (probe: tc_barr, ribbons: tc_top/tc_bot) is model_hop(..., bond=True)
+  = tc x ONE LATTICE BOND, tc x [-tau_z + SOC(global alpha, beta)]: a barrier lowers the tunnelling
+  amplitude, not the spin rotation per hop.  No averaging over the two regions (per-region alpha_c/
+  alpha_n/alpha_s and t_n/t_c/t_s do NOT enter the bond; tc is the bond hopping in units of the unit
+  lattice hop).  tc = 1 is bit-identical to a bulk bond; Dirac unchanged.
+  run_all 25/25, tests/test_api.py 5/5.
+* What it changes (computations/scharf_soc_bond_compare.py keeps the OLD variant, scaled=False):
+  - OLD tc_barr = 0.2 behaves like NEW tc_barr ~ 0.26 = sqrt(0.2^2 + 0.16^2): the clean E_Z sweep
+    reproduces the old resonance positions and heights.  So every Scharf weak-probe number below
+    measured at "tc_barr = 0.2" (or 0.5) belongs to a stronger coupling than its label.
+  - NEW tc_barr = 0.2 moves the resonances (0.43, 0.485, 0.53, 0.555, 0.625, ... meV); point A
+    (E_Z 0.505) then sits on a flank, kappa 0.402.  PP's working point needs re-tuning.
+  - Qualitative claims all survive: quantised maxima 0.45-0.49, G ~ 0 (|G|/k <= 0.023 at peaks),
+    |G|/kappa still separates the false positives on the 61x61 map (98% of kappa>0.05 neutral),
+    weak disorder harmless, strong-probe results identical.
+  - Scharf's LDOS (tc_barr = 0) is now truly decoupled; end LDOS at A 10.42 -> 10.58.
+* PHYSICAL TUNNEL CONTACT (2026-10-13), no rescaling at all: Params.barrier_n / barrier_V
+  (units of t) put barrier_n cells of lead material (same t, alpha, beta) at +barrier_V tau_z
+  between each probe and the centre, folded EXACTLY into the probe self-energy (Lead(barrier=...),
+  one Dyson step per cell; geometry unchanged).  Use with tc_barr = 1, so every bond is a bulk
+  bond.  barrier_where='junction' instead raises the first/last barrier_n columns of the centre
+  (enters via column_onsite, so RGF, LDOS and now the dense H_C all see it).
+  Scharf point A, phi=pi (t = 2.488 meV):  Tr Gamma_L falls exponentially with V_b and n_b, and
+  kappa sweeps the resonance --  n_b=1: kappa 0.000/0.010/0.152/0.484 at V_b = 1/2.5/5/10 meV
+  (Andreev 2.00 -> 0.36);  n_b=2: 0.004/0.410/0.085/0.001 (Andreev 1.99/0.99/0.004/0);
+  G <= 3e-4 throughout.  So the complementarity local Andreev <-> nonlocal kappa now comes from a
+  real barrier.  Checks: run_all 28/28 (lead material as barrier == no barrier; RGF == dense with
+  junction barrier + disorder; Tr Gamma falls with V_b).
+  Dense H_C previously IGNORED disorder (only RGF/LDOS used column_onsite); fixed with the above.
+* STALE DATA: computations/plot_npz/scharf_disorder_*.npz were computed with the OLD bonds.  Their
+  kappa, G, andreev (weak probe) are pre-fix; kappa_s, G_s, andreev_s, det are unaffected.
+  scharf_disorder.load_or_run will return them without noticing -- delete them to recompute.
+
 ## SCHARF model (`computations/scharf_ldos.py`; Scharf et al., PRB 99, 214503)
+* MATCH TO THE PAPER (checked line by line against Eq. 1 / App. B Eq. B6, 2026-10-13): basis, kinetic
+  term, the m(alpha^2+beta^2)/2hbar^2 shift, the [100] SOC hops, pairing sign, Zeeman (theta_code =
+  pi - theta_Z), mu_N/mu_S, a = 20 nm, 5 x 100 N sites -- all EXACT.  Deliberate differences, kept:
+  semi-infinite S ribbons (Scharf: W_S = 450 nm hard walls; phase boundaries barely differ, App. A2),
+  Lorentzian eta (Scharf: Gaussian Gamma = 0.05 Delta on eigenstates), the transport probes (not in
+  Scharf), and the phase on the TOP ribbon = Scharf's x < -W/2 side, i.e. phi -> -phi, compensated by
+  the + pi on theta_z in PP (symmetry phi -> -phi with E_Z -> -E_Z).  Constants are CODATA since
+  2026-10-13 (t 2.488 -> 2.507 meV, E_T = 832 ueV exactly); N_MID = 5 (100 nm bulk probe, Fig. 8g).
+  All plot_npz results predate the constants change (0.8% in t).
+* BOND SETTINGS THAT REPRODUCE SCHARF (keep these):
+  - tc_top = tc_bot = 1: Scharf's S/N interface is a plain bulk bond; the mismatch is mu_N vs mu_S
+    only.  With the whole-bond scaling, tc = 1 is bit-identical to the bulk bond, SOC included.
+  - LDOS: tc_barr = 0 = Scharf's hard walls at y = +-L/2.  Only exact WITH the whole-bond scaling
+    (the old bond left a 0.16 t spin-flip hop to the probes).
+  - Transport (our addition): tc_barr < 1 is a reduced-transparency contact whose SOC scales with it
+    (old tc_barr 0.2 ~ new 0.26).  For a contact made of the material itself use tc_barr = 1 with
+    barrier_n / barrier_V.  Either way: barrier_V = 0 and tc_barr = 0 for anything meant as Scharf.
+  - alpha_c / alpha_n / alpha_s = None (one global alpha, beta everywhere, as in Scharf).
 * LDOS and transport need DIFFERENT settings and cannot share one parameter set. The LDOS uses
   Scharf's tc_barr=0 and η=0.05Δ, and both make κ and G vanish identically (the saved map had
   κ≡0). κ/G go through `PhysParams.params_transport()` with `tc_barr_transport≈0.2`,
@@ -143,6 +198,37 @@ own criterion curv_end<0 plus end/mid>3.
 * GOTCHA, fixed in 8129ca0: disorder used to reach neither `LocalGreen` (so the LDOS was blind)
   nor `central_fingerprint` (so scan()/ThermalPoint returned ONE seed's answer for every seed).
   `run_all` now asserts all three paths respond to `disorder_seed`.
+* REVISED 2026-10-12 with the scattering invariant Q = sign det r (left lead, tc_barr=1;
+  `_det_r` in `computations/scharf_disorder.py`; clean A -> -1.00, B -> +1.00).  The bullets above
+  hold up to W ~ 3.2 meV, but at STRONG disorder two of them break:
+  - "trivial" is no longer a property of the point.  At B with W=6.4 meV, 9/256 realisations are
+    TOPOLOGICAL (Q=-1); the kappa=0.478, |G|/kappa=0.006 seed with LDOS peaks at both ends is one of
+    them -- a disorder-induced topological state, NOT a fake.
+  - but genuine fakes exist too: TRIVIAL (Q=+1, |det r| 0.84-0.99) realisations with NEUTRAL kappa
+    up to 0.38 (B W=6.4 seed 233: kappa 0.380, |G|/kappa 0.018, LDOS candidate; A W=6.4 seed 50:
+    0.333, det +0.967).  First seen at W=4.8 meV (19 Delta).  So "trivial look-alikes are
+    transport-dark" holds only for W <~ 3.2 meV.  No trivial realisation reached kappa > 0.45, but
+    nobody has swept E_Z per seed at W >= 4.8 -- whether one can be TUNED to 1/2 is open.
+  - A itself loses topology between 3.2 (62/64 Q=-1) and 4.8 meV (21/64).
+  - "2e^2/h is not sufficient" is now MEASURED: 1.5-5% of trivial realisations at B/C
+    (W=1.6-3.2) have the strong-probe Andreev conductance within 0.05 of 2.
+### Weak disorder, W <= Delta = 0.25 meV  (2026-10-12; mean free path >> L, ballistic)
+* Point A, 64 seeds: mean kappa 0.4945 -> 0.4868 at W=Delta, worst seed 0.435, 97% above 0.45;
+  |G|/kappa <= 4.4e-4; strong-probe Andreev >= 1.993; Q=-1 and LDOS candidate in 64/64.
+  Essentially undamaged.
+* B and C, 128 seeds at W=0.1/0.25: no LDOS candidates, no Q=-1, nothing near quantised Andreev.
+  B kappa <= 3e-10.  C kappa up to 0.028 but CHARGED (|G|/kappa 0.56-0.79; clean C is 0.001 with
+  G~kappa: the gap nearly closes at E_Z=0, phi=pi) -- rejected by the G~0 prong.
+* E_Z sweep at phi=pi (0.005 meV steps, 16 seeds): every seed reproduces the clean resonance
+  PATTERN.  The broad resonances (0.505-0.64 meV) keep kappa 0.44-0.49 and move <= 0.02 meV at
+  W=Delta.  The dense low-field ones (E_Z < 0.13, spacing ~0.025) move by up to a full spacing, so
+  kappa AT the clean position can drop to 0.002 while each device still has its own peak at
+  ~0.45-0.48: the resonance is device-specific, its height is not.  The peaks at 0.845 and 0.98
+  are narrower than the grid; their heights are not resolved at any W.
+* So for realistic (weak) disorder, the two-pronged test is untouched; disorder only matters
+  above ~6 Delta, and fakes only above ~19 Delta.
+* Code: `computations/scharf_disorder.py` -- `measure(W, seed, E_Z, phi)`, `sweep(...)`,
+  `load_or_run(name, ...)`; results in `scharf_disorder_<name>.npz`, arrays (W, seed, E_Z, phi).
 
 ## Measurability — can an experimentalist see this?  (conversion: 1 ueV = 11.6 mK)
 ### SCHARF: no.  Checked three ways.
@@ -270,7 +356,9 @@ Measured at phi=pi, L=2000 nm, scanning E_Z in 0.01 meV steps:
 1. A 2e^2/h zero-bias peak is NOT sufficient: disorder produced zero-energy end states with
    BETTER LDOS contrast (17-19) than the genuine MBS (3.2-6.4), carrying kappa ~ 1e-7.
 2. The decisive measurement is NONLOCAL -- does heat cross from one end to the other.  That needs
-   a delocalised PAIR, which is what being Majoranas means, and disorder cannot fake it.
+   a delocalised PAIR, which is what being Majoranas means, and disorder cannot fake it -- up to
+   W ~ 3.2 meV (13 Delta).  At W >= 4.8 meV trivial realisations reach neutral kappa ~ 0.3-0.38
+   (see "REVISED" under Disorder), so the claim needs that bound.
 3. Charge neutrality G~0 is the second prong and the robust one (|G|/kappa held at 3e-4 through
    12.8 Delta of disorder while kappa collapsed).
 4. BOTH PRONGS CANNOT COME FROM ONE CONTACT.  Strong coupling gives the quantised LOCAL 2e^2/h and

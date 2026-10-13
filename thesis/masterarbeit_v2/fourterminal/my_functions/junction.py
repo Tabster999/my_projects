@@ -4,9 +4,11 @@ import numpy as np
 from numpy.linalg import inv
 from scipy.linalg import block_diag
 
-from .hamiltonians import (model_onsite, model_hop, region_alpha, bond_alpha, bond_m0, make_row_hamiltonian,
+from .hamiltonians import (model_onsite, model_hop, region_alpha, bond_m0, make_row_hamiltonian,
                            get_2d_hamiltonian, flat_site_idx)
 from .leads import Lead
+
+_TAU_Z = np.diag([1.0, 1.0, -1.0, -1.0])     # BdG basis (c_up, c_dn, c_dn^dag, -c_up^dag)
 
 
 class FourTerminalJunction:
@@ -38,12 +40,19 @@ class FourTerminalJunction:
         onsite_N = model_onsite(p, 'n')
         H_layer_N = make_row_hamiltonian(ny, onsite_N, model_hop(p, 'y', p.t_n, p.m0_n, alpha=region_alpha(p, 'n')))
         V_n = block_diag(*[model_hop(p, 'x', p.t_n, p.m0_n, alpha=region_alpha(p, 'n'))] * ny)                        # H_{x,x+1} inside the N leads
-        V_b = block_diag(*[model_hop(p, 'x', p.tc_barr, bond_m0(p.m0_n, p.m0_c), alpha=bond_alpha(p, 'n', 'c'))] * ny)  # H_{x,x+1} across the barrier bond
+        V_b = block_diag(*[model_hop(p, 'x', p.tc_barr, bond_m0(p.m0_n, p.m0_c), bond=True)] * ny)  # H_{x,x+1} across the barrier bond
+
+        # Tunnel barrier folded into the probes: barrier_n cells of lead material at +barrier_V tau_z
+        barrier = ()
+        if p.barrier_where == 'lead' and p.barrier_n and p.barrier_V:
+            barrier = (H_layer_N + p.barrier_V * np.kron(np.eye(ny), _TAU_Z),) * p.barrier_n
+        elif p.barrier_where not in ('lead', 'junction'):
+            raise ValueError(f"barrier_where must be 'lead' or 'junction', got {p.barrier_where!r}")
 
         # Left lead, cells x = -1, -2, ...: outward hop H_{-1,-2} = V_n^dag, coupling H_{-1,0} = V_b
-        self.lead_L = Lead('L', H_layer_N, V_n, V_b, p, br=False, dual=True)
+        self.lead_L = Lead('L', H_layer_N, V_n, V_b, p, br=False, dual=True, barrier=barrier)
         # Right lead, cells x = nx, nx+1, ...: outward hop H_{nx,nx+1} = V_n, coupling H_{nx,nx-1} = V_b^dag
-        self.lead_R = Lead('R', H_layer_N, V_n, V_b, p, br=True, dual=False)
+        self.lead_R = Lead('R', H_layer_N, V_n, V_b, p, br=True, dual=False, barrier=barrier)
         self.ribbon_top = self._make_ribbon(p.phi, p.tc_top, is_bot=False)
         self.ribbon_bot = self._make_ribbon(0.0, p.tc_bot, is_bot=True)
         self.chain_top = self._make_single_chain(p.phi, is_bot=False)
@@ -60,7 +69,13 @@ class FourTerminalJunction:
         Only the dense solvers (channels, FastPhaseSweep) need it; RGF does not."""
         if self._H_C is None:
             p = self.p
-            self._H_C = get_2d_hamiltonian(p.nx, p.ny, self.onsite_C, self.Vx_C, self.Vy_C)
+            H = get_2d_hamiltonian(p.nx, p.ny, self.onsite_C, self.Vx_C, self.Vy_C)
+            cols = self.column_onsite()                 # disorder / junction barrier, as RGF sees it
+            if cols is not None:
+                for ix in range(p.nx):
+                    ci = (4 * (ix + p.nx * np.arange(p.ny))[:, None] + np.arange(4)[None, :]).ravel()
+                    H[np.ix_(ci, ci)] = cols[ix]
+            self._H_C = H
         return self._H_C
 
     def column_onsite(self):
@@ -68,17 +83,22 @@ class FourTerminalJunction:
         Onsite Hamiltonian of every column, (nx, 4 ny, 4 ny).  Without disorder all columns are
         equal to make_row_hamiltonian(...); with p.disorder_W > 0 each site gets a random potential
         V_i uniform in [-W/2, W/2], entering the BdG basis as V_i * diag(1, 1, -1, -1) (tau_z).
+        With barrier_where = 'junction', the first and last barrier_n columns get +barrier_V tau_z.
         """
         p = self.p
         H1 = make_row_hamiltonian(p.ny, self.onsite_C, self.Vy_C)
-        if not p.disorder_W:
+        V = np.zeros((p.nx, p.ny))
+        if p.disorder_W:
+            rng = np.random.default_rng(p.disorder_seed)
+            V += rng.uniform(-p.disorder_W / 2, p.disorder_W / 2, size=(p.nx, p.ny))
+        if p.barrier_where == 'junction' and p.barrier_n and p.barrier_V:
+            V[:p.barrier_n] += p.barrier_V
+            V[p.nx - p.barrier_n:] += p.barrier_V
+        if not V.any():
             return None                                     # signal: translationally invariant
-        rng = np.random.default_rng(p.disorder_seed)
-        V = rng.uniform(-p.disorder_W / 2, p.disorder_W / 2, size=(p.nx, p.ny))
-        tau_z = np.diag([1.0, 1.0, -1.0, -1.0])
         H = np.broadcast_to(H1, (p.nx,) + H1.shape).copy()
         for ix in range(p.nx):
-            H[ix] += np.kron(np.diag(V[ix]), tau_z)
+            H[ix] += np.kron(np.diag(V[ix]), _TAU_Z)
         return H
 
     def slice_blocks_x(self):
@@ -101,7 +121,7 @@ class FourTerminalJunction:
         onsite_SC = model_onsite(p, 's', phi=phi_lead)
         H_intra = make_row_hamiltonian(p.nx, onsite_SC, model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')))
         V_s = block_diag(*([model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))] * p.nx))                     # H_{y,y+1} inside ribbon
-        V_c = block_diag(*([model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))] * p.nx))       # H_{y,y+1} ribbon<->centre bond
+        V_c = block_diag(*([model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c), bond=True)] * p.nx))       # H_{y,y+1} ribbon<->centre bond
         name = 'sc_bot' if is_bot else 'sc_top'
         return Lead(name, H_intra, V_s, V_c, p, br=is_bot, dual=not is_bot)
 
@@ -110,7 +130,7 @@ class FourTerminalJunction:
         onsite_sc = model_onsite(p, 's', phi=phi_lead, twod=False, Bxy=0.0, theta_z=0.0)
         hop_y = model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))                                   # H_{y,y+1}
         tc = p.tc_bot if is_bot else p.tc_top
-        hop_c = model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))                     # H_{y,y+1} across the bond
+        hop_c = model_hop(p, 'y', tc, bond_m0(p.m0, p.m0_c), bond=True)                                                       # H_{y,y+1} across the bond
         name = 'sc_bot' if is_bot else 'sc_top'
         return Lead(name, onsite_sc, hop_y, hop_c, p, br=is_bot, dual=not is_bot)
 

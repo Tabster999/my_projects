@@ -61,8 +61,8 @@ symmetry of the Hamiltonian is (phi -> -phi together with E_Z -> -E_Z), not eith
 UNITS.  PhysParams holds meV / nm / T and converts to the lattice units the package uses:
     t = hbar^2 / (2 m a^2),  mu_t = mu/t,  Delta_t = Delta/t,  alpha_t = alpha/(a t),
     E_Z = g mu_B B / 2  (note the 1/2),  eta = eta_rel * Delta_t.
-Validated against the paper: t = 2.49 meV and E_T = 829 / 276 / 166 ueV for W = 100 / 300 /
-500 nm, against the paper's 832 / 277 / 166 ueV.
+Validated against the paper (CODATA constants): t = 2.507 meV and E_T = 832 / 277 / 166 ueV for W = 100 / 300 /
+500 nm, exactly the paper's 832 / 277 / 166 ueV (rounded constants gave t = 2.488, E_T = 829 / 276 / 166).
 
 TRANSPORT vs LDOS SETTINGS.  The two cannot share one parameter set.  Scharf's LDOS uses
 decoupled probes (tc_barr = 0) and a broad eta = 0.05 Delta; both make every transport quantity
@@ -92,7 +92,7 @@ except ModuleNotFoundError:
     sys.path.insert(0, str(next(p for p in (_here, *_here.parents) if (p / "my_functions").is_dir())))
     import my_functions as myf
 
-_hbar, _e, _m0, _muB = 1.05e-34, 1.602e-19, 9.1e-31, 5.78e-2      # J s, C, kg, meV/T
+_hbar, _e, _m0, _muB = 1.054571817e-34, 1.602176634e-19, 9.1093837015e-31, 5.7883818060e-2   # CODATA 2018: J s, C, kg, meV/T
 
 
 # %% --- UNITS ---
@@ -106,19 +106,19 @@ class PhysParams:
     mu_N: float = 0.7          # meV, chemical potential in the normal region
     alpha: float = 16.0        # meV nm, Rashba SOC
     beta: float = 0.0          # meV nm, Dresselhaus SOC
-    soc_axis: str = '100'      # '100' (Scharf Eq. 1, most of the paper) or '110' (Eq. 17)
+    soc_axis: str = '100'      # '100' (Eq. 1) or '110' (Eq. 17)
     g: float = 10.0            # g factor
     B: float = 2.0             # T, in-plane magnetic field
     theta_z: float = None      #type: ignore    # rad, in-plane field angle; None = theta_z_optimal() 
     W: float = 100.0           # nm, junction width  (across)
     L: float = 2000.0          # nm, junction length (along the interfaces)
-    tc: float = 1.0            # SC <-> normal coupling, in units of t
-    tc_barr: float = 0.00      # probe coupling, in units of t (0 = decoupled, hard walls)
+    tc: float = 1.0            # SC <-> normal coupling
+    tc_barr: float = 0.00      # probe couplingn (0 = decoupled, hard walls)
     eta_rel: float = 0.05     # LDOS broadening eta = eta_rel * Delta (Scharf: 0.05)
-    # --- transport only; the LDOS fields above stay at Scharf's values (see docstring) ---
+    # --- transport only
     tc_barr_transport: float = 0.20   # probe coupling for kappa/G (0 gives kappa = 0 exactly)
     eta_rel_transport: float = 1e-5   # broadening for kappa/G; must be << the resonance width
-    kT_transport: float = 0.0         # meV; temperature for the map's kappa_kT/G_kT (0 = skip)
+    kT_transport: float = 0.0         # meV; temperature for kappa_kT/G_kT (0 = skip)
     # --- onsite disorder in the NORMAL region only (the ribbons stay clean) ---
     disorder: float = 0.0             # meV, uniform in [-disorder/2, +disorder/2]
     disorder_seed: int = 0            # which realisation
@@ -258,7 +258,7 @@ ENERGY_VALS = np.linspace(-1.01 * PP.Delta, 1.01 * PP.Delta, step_sizes)
 SAVE = None
 N_WORKERS = 8                 
 N_END = 5                       # edge
-N_MID = 3                       # bulk
+N_MID = 5                       # bulk: 100 nm, as Scharf Fig. 8(g)
 END_SIDE = 'low'                # which end: (low: y = -L/2, high: y = +L/2) or 'both'
 COL_END = [0, 1, 2, 3, 4]       # kept for backwards compatibility; unused if N_END is set
 COL_MID_FRAC = 0.5
@@ -270,7 +270,6 @@ def cols_near_end(pp, n=None, side=None):
     Column indices within n sites of a junction END.  Columns run ALONG the interfaces, so
     index 0 is y = -L/2 and index n_along-1 is y = +L/2 (see the module docstring).
     side='low' (default) samples y = -L/2 only, 'high' samples y = +L/2, 'both' samples both.
-    The structure is symmetric in y, so 'low' and 'high' give the same numbers.
     """
     n = N_END if n is None else n
     side = END_SIDE if side is None else side

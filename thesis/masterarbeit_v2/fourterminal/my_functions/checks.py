@@ -78,6 +78,36 @@ def particle_hole_of_transmissions():
         _report(f"T_ee(-E) = T_hh(E), T_he(-E) = T_eh(E) ({name})", worst, 1e-9)
 
 
+def tunnel_barrier():
+    """
+    Probe tunnel barrier.  (1) Cells of plain lead material (barrier_V = 0) folded into a probe must
+    leave its self-energy unchanged -- a lead is self-similar -- which pins the orientation of the
+    folding for both leads.  (2) A barrier on the junction's own columns, with disorder, must give the
+    same channels in RGF and in the dense solver (dense H_C now includes column_onsite).
+    (3) The probe coupling Tr Gamma_L at E = 0 must fall as the barrier rises.
+    """
+    p = replace(CASES['rashba'], nx=12)
+    J = FourTerminalJunction(p)
+    z = (E[:1] + 1j * p.eta)[:, None, None] * np.eye(4 * p.ny)[None]
+    worst = 0.0
+    for lead in (J.lead_L, J.lead_R):
+        dressed = leads.Lead(lead.name, lead.H_onsite, lead.V_hop, lead.V_coupling, p,
+                             dual=lead.dual, barrier=(lead.H_onsite,) * 3)
+        dressed.V_coupling = lead.V_coupling                  # already oriented by the original
+        worst = max(worst, np.abs(dressed.self_energy(z) - lead.self_energy(z)).max())
+    _report("barrier of lead material == no barrier (L and R)", worst, 1e-9)
+
+    q = replace(p, barrier_where='junction', barrier_n=2, barrier_V=0.4, disorder_W=0.3)
+    r = RGFFourTerminal(FourTerminalJunction(q), E).channels_at_phi(1.1, 'left')
+    d = FourTerminalJunction(replace(q, phi=1.1)).channels(E, side_name='left')
+    _report("RGF == dense with junction barrier + disorder",
+            max(np.abs(np.asarray(d[k]) - np.asarray(r[k])).max() for k in r), 1e-8)
+
+    g = [np.trace(RGFFourTerminal(FourTerminalJunction(replace(p, barrier_n=2, barrier_V=V)),
+                                  E[:1]).Gamma_L[0]).real for V in (0.0, 0.5, 1.0, 2.0)]
+    _report("Tr Gamma_L falls with the barrier height", 0.0 if np.all(np.diff(g) < 0) else 1.0, 0.5)
+
+
 def disorder_reaches_everything():
     """
     Disorder must reach BOTH solvers and the central fingerprint.  Both silently failed:
@@ -140,7 +170,7 @@ def lead_solver():
 def run_all():
     _RESULTS.clear()
     for f in (hermiticity_and_phs_of_H, solvers_agree, particle_hole_of_transmissions,
-              phs_at_zero_energy, disorder_reaches_everything, clean_wire, lead_solver):
+              phs_at_zero_energy, disorder_reaches_everything, tunnel_barrier, clean_wire, lead_solver):
         f()
     print(f"\n{sum(_RESULTS)}/{len(_RESULTS)} checks passed")
     return all(_RESULTS)

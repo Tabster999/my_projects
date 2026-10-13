@@ -55,6 +55,12 @@ class Params:
     Bxy_s: float = None     # in-plane Zeeman in the SC ribbons     (default: Bxy)
     disorder_W: float = 0.0   # onsite disorder in the CENTRE, uniform in [-W/2, W/2] (units of t)
     disorder_seed: int = 0    # RNG seed for that disorder realisation
+    # tunnel barrier at each normal-probe contact: barrier_n cells of the lead material (same t,
+    # alpha, beta) with an extra potential +barrier_V tau_z (units of t).  Use with tc_barr = 1.
+    barrier_V: float = 0.0
+    barrier_n: int = 0
+    barrier_where: str = 'lead'   # 'lead': folded exactly into the probe self-energy (geometry
+                                  # unchanged); 'junction': on the first/last barrier_n columns of the centre
 
     # --- Wilson masses (model='dirac' only); paper: all 0.8, appendix: m0_c = m0_n = 0 ---
     m0: float = 0.8         # SC ribbons

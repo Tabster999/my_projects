@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .hamiltonians import model_onsite, model_hop, region_alpha, bond_alpha, bond_m0, make_row_hamiltonian
+from .hamiltonians import model_onsite, model_hop, region_alpha, bond_m0, make_row_hamiltonian
 from .leads import Lead
 
 
@@ -35,8 +35,8 @@ def junction_spectrum_kx(p, kx_vals, E_vals):
     zC = z[:, None, None] * np.eye(4 * ny)[None]
     VxC, VyC = model_hop(p, 'x', p.t_c, p.m0_c, alpha=region_alpha(p, 'c')), model_hop(p, 'y', p.t_c, p.m0_c, alpha=region_alpha(p, 'c'))
     VxS, VyS = model_hop(p, 'x', p.t_s, p.m0, alpha=region_alpha(p, 's')), model_hop(p, 'y', p.t_s, p.m0, alpha=region_alpha(p, 's'))
-    VcT = model_hop(p, 'y', p.tc_top, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))
-    VcB = model_hop(p, 'y', p.tc_bot, bond_m0(p.m0, p.m0_c), alpha=bond_alpha(p, 's', 'c'))
+    VcT = model_hop(p, 'y', p.tc_top, bond_m0(p.m0, p.m0_c), bond=True)
+    VcB = model_hop(p, 'y', p.tc_bot, bond_m0(p.m0, p.m0_c), bond=True)
     A = np.zeros((len(z), len(kx_vals)))
     for n, k in enumerate(kx_vals):
         bloch = lambda h0, Vx: h0 + Vx * np.exp(1j * k) + Vx.conj().T * np.exp(-1j * k)
