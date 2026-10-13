@@ -199,6 +199,9 @@ def model_hop(p, direction, t, m0, alpha=None, bond=False):
                                         bulk value (a material property, not enhanced by the interface)
     Continuous at t = 1, an ordinary lattice bond there.  `alpha` is ignored.  Dirac unchanged.
     """
+    if bond and not p.t_n == p.t_c == p.t_s == 1.0:
+        raise ValueError("interface bonds are measured in units of the lattice hop: they need "
+                         f"t_n = t_c = t_s = 1 (got {p.t_n}, {p.t_c}, {p.t_s})")
     if p.model == 'rashba':
         s = min(t, 1.0)
         a, b = (p.alpha * s, p.beta * s) if bond else ((p.alpha if alpha is None else alpha), p.beta)

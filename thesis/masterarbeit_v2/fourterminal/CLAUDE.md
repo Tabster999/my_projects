@@ -17,7 +17,7 @@ See README.md for structure and usage.
 | α | 1.2 (units of t·a) | 14.3 meV·nm = 0.2865 t·a |
 | centre | DEPLETED, μ_c = −0.03 | POPULATED, μ_N = 0.7 meV |
 | κ = 1/2 is | a PLATEAU, protected by a bulk gap | a RESONANCE, width = the MBS splitting δ |
-| probe contact | transparent: tc ≈ 1.1, μ_n ≈ 1 | WEAK: tc_barr ≈ 0.2 |
+| probe contact | transparent: tc ≈ 1.1, μ_n ≈ 1 | WEAK: old tc_barr 0.2 ≈ new 0.26, or a lattice barrier (barrier_n/V) |
 
 ## ξ: two different lengths wearing the same symbol
 * **ξ_ribbon** = `coherence_length(p)` — decay length in the SC RIBBON material (region 's').
@@ -57,8 +57,10 @@ See README.md for structure and usage.
   is exactly as before: kappa(pi) = 0.4997 at eta = 1e-6, kT = 0.  (A brief version that also scaled
   SOC above 1 gave 0.486 there -- the tc > 1 cap is what keeps the Gresta numbers valid.)  No averaging over the two regions (per-region alpha_c/
   alpha_n/alpha_s and t_n/t_c/t_s do NOT enter the bond; tc is the bond hopping in units of the unit
-  lattice hop).  tc = 1 is bit-identical to a bulk bond; Dirac unchanged.
-  run_all 25/25, tests/test_api.py 5/5.
+  lattice hop).  tc = 1 is bit-identical to a bulk bond; Dirac unchanged.  The spin rotation per hop
+  (9.07 deg at Scharf) and its axis are exactly the bulk ones for tc <= 1; above 1 the angle shrinks
+  (8.25 deg at tc = 1.1), the axis stays.  model_hop raises unless t_n = t_c = t_s = 1, because the
+  1.0 in min(tc, 1) IS the lattice hop.  run_all 28/28, tests/test_api.py 5/5.
 * What it changes (computations/scharf_soc_bond_compare.py keeps the OLD variant, scaled=False):
   - OLD tc_barr = 0.2 behaves like NEW tc_barr ~ 0.26 = sqrt(0.2^2 + 0.16^2): the clean E_Z sweep
     reproduces the old resonance positions and heights.  So every Scharf weak-probe number below
@@ -75,7 +77,7 @@ See README.md for structure and usage.
   one Dyson step per cell; geometry unchanged).  Use with tc_barr = 1, so every bond is a bulk
   bond.  barrier_where='junction' instead raises the first/last barrier_n columns of the centre
   (enters via column_onsite, so RGF, LDOS and now the dense H_C all see it).
-  Scharf point A, phi=pi (t = 2.488 meV):  Tr Gamma_L falls exponentially with V_b and n_b, and
+  Scharf point A (E_Z 0.505), phi=pi (old constants, t = 2.488 meV):  Tr Gamma_L falls exponentially with V_b and n_b, and
   kappa sweeps the resonance --  n_b=1: kappa 0.000/0.010/0.152/0.484 at V_b = 1/2.5/5/10 meV
   (Andreev 2.00 -> 0.36);  n_b=2: 0.004/0.410/0.085/0.001 (Andreev 1.99/0.99/0.004/0);
   G <= 3e-4 throughout.  So the complementarity local Andreev <-> nonlocal kappa now comes from a
@@ -130,7 +132,7 @@ See README.md for structure and usage.
   (>0.5). All 10 pass Scharf's own curv_end<0 criterion, yet have end/mid contrast 1.7–3.3
   (vs 7.7–13.0 for the genuine ones) and sit at E_Z ≳ 0.9 E_T — delocalized zero-energy states.
   Caveat: |κ−0.5| alone is a valid POSITIVE only; a genuine Majorana off resonance also gives κ≈0.
-  Maps cached in `computations/scharf_kappa_map_{100,110}.npz` (61×61, ~16 min each).
+  Maps cached in `computations/plot_npz/scharf_kappa_map_{100,110}.npz` (61×61, ~16 min each).
 * soc_axis matters: '110' puts (α−β) on the propagation axis, '100' puts √(α²+β²). With β=7.3
   that halves the effective SOC at '110' — κ>0.05 on 9.6% of the map vs 28.6% at '100'.
 
@@ -231,7 +233,10 @@ own criterion curv_end<0 plus end/mid>3.
 * So for realistic (weak) disorder, the two-pronged test is untouched; disorder only matters
   above ~6 Delta, and fakes only above ~19 Delta.
 * Code: `computations/scharf_disorder.py` -- `measure(W, seed, E_Z, phi)`, `sweep(...)`,
-  `load_or_run(name, ...)`; results in `scharf_disorder_<name>.npz`, arrays (W, seed, E_Z, phi).
+  `load_or_run(name, ...)`; results in `plot_npz/scharf_disorder_<name>.npz`, arrays (W, seed, E_Z, phi).
+* POINT A MOVED: scharf_disorder.py now has A = (E_Z 0.98 meV, phi = pi).  Every number in this
+  Disorder section was measured at A = (0.505, pi).  At 0.98 the clean (old-bond) sweep has a narrow
+  kappa peak 0.502 with |G|/kappa up to ~0.27 nearby (high-field, partly charged) -- check G there.
 
 ## Measurability — can an experimentalist see this?  (conversion: 1 ueV = 11.6 mK)
 ### SCHARF: no.  Checked three ways.
@@ -323,7 +328,7 @@ Measured at phi=pi, L=2000 nm, scanning E_Z in 0.01 meV steps:
   mean 1.9949 throughout.  PP.mu_N = 0.7 sits inside it.  mu_N is GATE-tunable, so this is a
   far stronger experimental claim than the 1D E_Z line: the plateau can be found by sweeping a
   gate at fixed field, and it does not require hitting a field value.
-  Cached: `computations/scharf_mu_{map,line}.npz`, figure `computations/scharf_mu_map.png`.
+  Cached: `computations/plot_npz/scharf_mu_{map,line}.npz`, figure `computations/scharf_mu_map.png`.
 * THE WEDGE CLOSES AS E_Z RISES: the mu_N width goes 0.30 meV (E_Z=0.12-0.32) -> 0.25 (0.36-0.40)
   -> 0.20 (0.44-0.48) -> 0.15 (0.52-0.56) -> 0.10 (0.60) -> 0 by E_Z=0.68.  So LOW field is
   better, which is the opposite of the usual "push the field up to get topological" instinct.
