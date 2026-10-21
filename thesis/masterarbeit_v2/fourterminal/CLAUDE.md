@@ -136,6 +136,108 @@ See README.md for structure and usage.
 * soc_axis matters: '110' puts (α−β) on the propagation axis, '100' puts √(α²+β²). With β=7.3
   that halves the effective SOC at '110' — κ>0.05 on 9.6% of the map vs 28.6% at '100'.
 
+## SCHARF: probe leads, mu_N vs mu_C, lattice constant (2026-10-14/19)
+* NAMING CHANGED: in `PhysParams`, `mu_N` is now the PROBE LEADS (Params.mu_n) and `mu_C` the
+  normal strip between the SCs (Params.mu_c; Scharf's "N").  `mu_C=None` means mu_C = mu_N (the
+  old single-mu behaviour); `pp.mu_centre` returns the effective value and E_T / alpha k_F use it.
+  EVERY "mu_N" in the sections above (0.7 meV working point, the 0.65-0.95 wedge, the subband
+  edge) means the CENTRE, i.e. today's mu_C.  scharf_ldos.PP: mu_N = 3.0 (leads), mu_C = 0.7.
+* WHY: the probes are W-wide hard-wall strips; at mu = 0.7 meV they sit at their first transverse
+  subband (lattice 2t(1-cos(pi/(ny+1))): 0.672 / 0.812 / 0.896 meV at a = 20 / 10 / 5 nm,
+  continuum ~0.99 at W = 100).  Open at a = 20 only by 0.03 meV -- a lattice artefact; CLOSED at
+  a = 10 and 5 (kappa = 6e-11, Andreev 2e-12: a dead contact).  Opening the leads (mu_N = 3) at
+  a = 5, L = 300 restores transport (kappa 0.73-0.78, but G ~ kappa: L < xi_MBS, transparent probe).
+  So the "kappa = 0 below mu_N ~ 0.62" edge in the wedge section is the PROBE closing, not the strip.
+* tc_barr / tc are DIMENSIONLESS (fraction of the lattice hop) -- never divide by t.  But a fixed
+  tc_barr is not a fixed contact: one weak bond has T ~ 4 tc^2 (k_F a)^2, so it gets ~a^2 more
+  opaque on refining the lattice.  An a-independent contact = physical barrier (V_b meV -> barrier_V
+  = V_b/t, d nm -> barrier_n = round(d/a), tc_barr = 1) or the mu_N/mu_C density step.  NOT
+  implemented as PhysParams fields yet.  tc = 1 (S/N) is a bulk bond and a-independent.
+* eta_rel_transport = 1e-5 Delta is 6e-8 t at a = 5 nm, below the eta >= 1e-6 t solver rule; no
+  failed solves seen, but untested territory.
+* LATTICE CONSTANT (pure Rashba, cross-section, phi = pi): gap over all k at W = 100:
+  66.66 / 66.76 / 66.75 ueV for a = 20 / 10 / 5 -- converged.  At W = 300: 33.9 / 29.1 / 28.2 ueV
+  (E_Z 0.323) -- a = 20 is 15-20% off, a = 10 within 3% of a = 5.  Q and the ABS count never change.
+  kappa resonance POSITIONS shift with a by ~0.02-0.03 meV (phase k_F L, worse at larger L);
+  heights and neutrality do not.
+
+## SCHARF: more ABS by widening W (2026-10-19/20) -- it does NOT help kappa
+Code: `computations/scharf_abs.py` (cross-section H(k), Pfaffian Q, finite strip), `scharf_abs_wscan.py`
+(scharf_ldos-style map on a wide junction), `scharf_abs_rashba.py` (beta = 0), `scharf_abs_conv.py`
+(a and L tests, LocalGreen = transport geometry), `scharf_abs_checks.py` (C1-C4).  Caches
+plot_npz/scharf_abs*_*.npz -- names do NOT encode PP: delete them if parameters change.
+* INVARIANT without transport: infinite junction along the interfaces, cut across with 900 nm SC
+  strips + hard walls (Scharf: 450; ABS near Delta converge only from ~900).  Q = sign Pf M(0) Pf M(pi)
+  in the Majorana basis (Pf^2 = det checked).  Agrees with det r: Q = -1 at (0.5, pi), +1 at E_Z = 0.
+* ABS COUNT (distinct levels < 0.9 Delta at E_Z = 0, k = 0, phi = 0) set by Delta/E_T, independent
+  of SOC:  W = 100: 1,  200-500: 2,  800: 3,  900-1000: 4  (E_T = 0.83 ... 0.08 meV).
+* WIDENING CLOSES THE GAP AT FINITE k (trajectories ~ parallel to the interfaces), not at k = 0.
+  Gap over all k at the best topological point, phi = pi:
+      W [nm]   100     300     800     1000
+      beta!=0  38      8       1.7     2.5   ueV   (alpha 14.3, beta 7.3, '100')
+      beta=0   67      34      10      --    ueV   (alpha 16)   <- pure Rashba 2-6x better
+  Q = -1 still holds over a large (E_Z, phi) diamond starting at E_Z ~ 0 (lower field: a plus).
+* RESULT, pure Rashba, weak probe tc_barr = 0.2, phi = pi:
+  - W = 100 (1 ABS), L = 2 um: genuine.  delta 0.7 ueV, next level 74 ueV, LDOS end/mid 23,
+    kappa peaks 0.49-0.50 with G ~ 0 (resonances only above E_Z ~ 0.6: below, delta << Gamma).
+  - W = 300 (2 ABS), L = 2 um: NOT separated (delta 24 vs E_1 28 ueV, flat LDOS), peaks 0.55-0.58
+    CHARGED (|G| 0.2-0.3).  L = 4 um: lowest level 11.5 -> 4.5 ueV, end/mid 0.8 -> 2.2, and EIGHT
+    neutral peaks 0.45-0.498 (|G|/kappa 0.03-0.06); a = 10 nm gives the same (0.494/0.495, |G|/kappa
+    0.03-0.05) at shifted E_Z.  L = 8 um: |G|/kappa 0.002, peaks 0.497 -- but narrower (grid misses
+    most).  xi_MBS ~ 2 um at W = 300 (vs ~0.25 um at W = 100), from 11.5 -> 4.5 ueV over 2 um.
+  - W = 800 (3 ABS): kappa 0.7-1.0, partly charged at L = 2 and 4 um; at L = 8 um the NEUTRAL peaks
+    (|G|/kappa <= 0.01, E_Z 0.20-0.24) are 0.56-0.68 > 1/2: several neutral near-zero channels.
+    Length does not remove them (bulk finite-k modes, not end overlap).
+* THE DOUBLE PEAKS (kappa ~ 1/2, dip, 1/2) are the delta = 0 node of delta ~ cos(k_F L):
+  W = 300, L = 4 um, fine scan: left peak kappa 0.5015 (delta/2 = 1.0 ueV, Andreev 0.56), dip 0.150
+  (delta/2 < 0.2 ueV unresolved, Andreev 1.81), right peak 0.5000 (0.75 ueV, Andreev 0.59).
+  kappa is evaluated AT E = 0 (T -> 0), so this is not an energy-grid effect; the dip does not reach
+  0 on a 0.001 meV grid (node narrower than the step).  Peaks are ~0.005 meV wide in E_Z at 4 um:
+  a 0.0035 meV grid under-samples heights -- use fine scans before quoting a height.
+* So: more ABS trades the protecting gap and the single-channel character for a lower field.
+  Usable for quantised heat: 1-2 ABS (2 ABS needs L >~ 4 um).
+* LARGER DELTA DOES WHAT WIDENING CANNOT (2026-10-20, `scharf_abs_delta.py`, pure Rashba, a = 20,
+  L = 2 um, phi = pi).  The gap over all k is set by W, not Delta or SOC:
+      W = 100:  Delta 0.25 / 0.5 / 0.75 / 1.0 meV -> 1 / 2 / 2 / 2 ABS, gap 67 / 71 / 68 / 65 ueV
+      W = 300:  Delta 0.25 / 0.5 / 0.75 / 1.0 meV -> 2 / 2 / 4 / 4 ABS, gap 34 / 32 / 31 / 29 ueV
+      W = 300, alpha 32 (x2): gap 31 ueV (Delta 0.25), 31 (0.5) -- stronger SOC does NOT help.
+  Transport (neutral = |G|/kappa < 0.05):
+  - W = 100, 2 ABS, L = 2 um: GENUINE.  Delta 0.5: 9/11 peaks neutral, 6 at 0.48-0.498.
+    Delta 0.75: 16/19 neutral, 8 at >= 0.48.  Delta 1.0: 20/23 neutral, 10 at >= 0.48 (0.49-0.493).
+    Resonances get DENSER with Delta and start at low field (0.06-0.1 meV); G grows above ~0.9 meV.
+  - W = 300 at L = 2 um fails for EVERY Delta and alpha (kappa 0.5-0.99, |G|/kappa 0.13-0.76): its
+    ~30 ueV gap needs L >~ 4 um, whatever the ABS count.
+  - 4 ABS (W = 300, Delta 0.75/1.0), `scharf_abs_delta_L.py`: L = 4 um still CHARGED (peaks 0.44-0.66,
+    |G|/kappa 0.17-0.36 -- where 2 ABS at Delta 0.25 was already neutral).  L = 8 um (Delta 0.75):
+    GENUINE -- 14/17 peaks neutral, 0.46-0.49 (5 at >= 0.48), δ=0 double peaks, and NO neutral
+    peak above 0.52 (single channel; contrast W = 800, 3 ABS, 8 um: neutral 0.56-0.68).
+    So more ABS at fixed gap still lengthens the required L (2 ABS: 4 um, 4 ABS: 8 um at W = 300).
+  - Caveat: Delta >= 0.75 approaches mu_S = 1 meV (strong-coupling SC); treat as a trend.
+  Rule: ABS count ~ Delta/E_T, protecting gap ~ f(W); raise Delta for ABS, keep W small for the gap.
+* k_x = 0 (normal incidence) vs ALL k (2026-10-20, `scharf_abs_k0.py`, pure Rashba, a = 20):
+      W [nm]               100          300           800
+      ABS                  1            2             3
+      Q = -1 at phi = pi   0.02-1.25    0.035-0.42    0.005-0.19 and 0.21-0.30 meV
+      max gap at k_x = 0   170          128           76     ueV
+      gap over all k       67           34            10     ueV   (ratio 2.5 / 3.8 / 7.6)
+  Diamond centre at phi = pi = E_T (0.71 / 0.25 / 0.10 meV vs E_T 0.83 / 0.28 / 0.10); period in
+  E_Z = 2 E_T, so W = 800 shows a checkerboard (second diamond from E_Z ~ 0.2).  Semi-infinite
+  ribbons (junction_spectrum_kx) reproduce the 900 nm strip levels at W = 300.  Andreev
+  quantisation explains all of it: N ~ W/(pi xi) + 1, dE ~ pi hbar v_F/(W + xi), gap(k_x=0) <~ dE/2,
+  Delta_top ~ hbar^2/mW^2 (grazing modes; Scharf Sec. III D) -- k_x = 0 sets the phase boundaries,
+  finite k_x sets Delta_top, and the two drift apart with W.
+* THE PROBE COUPLING DOES NOT REPLACE LENGTH (2026-10-20, `scharf_abs_tc.py`, tc_barr_transport
+  0.05/0.1/0.2/0.5/1, phi = pi; Majorana-like = 0.45 <= kappa <= 0.55 and |G|/kappa < 0.05):
+      W 100 L 2 (1 ABS):        3 / 3 / 3 / 0 / 0   Majorana-like peaks
+      W 300 L 4 (2 ABS):        0 / 1 / 6 / 0 / 0
+      W 300 L 2 (2 ABS):        0 everywhere; kappa up to 2.5, |G|/kappa 0.24-0.67 as tc grows
+      W 800 L 4 (3 ABS):        0 everywhere; kappa > 1/2 already at 0.05, up to 7 at tc = 1
+      W 300 D 0.75 L 4 (4 ABS): 0 everywhere; kappa ~ 0.5-0.7 at 0.5 but |G|/kappa ~ 0.2
+  tc only moves Gamma; a clean pair needs delta << E_1, which only L (or a larger Delta_top)
+  provides.  Best tc is 0.1-0.2 even in the working cases; >= 0.5 couples the higher ABS (G != 0).
+  det r < 0 over most of the field range at tc = 1 also in FAILING cases (kappa 2.5): its sign is
+  meaningful only together with neutral kappa = 1/2 or a quantised local Andreev.
+
 ## Numerics — measured on the GRESTA point unless stated
 (eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,
 so it applies to GRESTA, where the ribbons are topological.)

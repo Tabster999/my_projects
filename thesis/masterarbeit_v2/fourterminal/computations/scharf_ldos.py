@@ -103,7 +103,9 @@ class PhysParams:
     m_eff: float = 0.038       # in units of m0
     Delta: float = 0.25        # meV, induced gap in the SC regions
     mu_S: float = 1.0          # meV, chemical potential in the SC regions
-    mu_N: float = 0.7          # meV, chemical potential in the normal region
+    mu_N: float = 0.7          # meV, chemical potential in the normal PROBE LEADS (y = +-L/2)
+    mu_C: float = None         #type: ignore    # meV, the normal strip between the SCs (Scharf's
+                               # N region); None = mu_N, i.e. the old single-mu behaviour
     alpha: float = 16.0        # meV nm, Rashba SOC
     beta: float = 0.0          # meV nm, Dresselhaus SOC
     soc_axis: str = '100'      # '100' (Eq. 1) or '110' (Eq. 17)
@@ -125,6 +127,11 @@ class PhysParams:
 
     # --- derived scales ---
     @property
+    def mu_centre(self):
+        """Chemical potential of the central strip (meV): mu_C, or mu_N if mu_C is None."""
+        return self.mu_N if self.mu_C is None else self.mu_C
+
+    @property
     def t(self):
         """Hopping energy t = hbar^2 / (2 m a^2), in meV."""
         return (_hbar**2 / (2 * self.m_eff * _m0 * (self.a * 1e-9) ** 2)) * (1e3 / _e)
@@ -140,8 +147,8 @@ class PhysParams:
 
     @property
     def E_T(self):
-        """Thouless energy (pi/2) hbar v_F / W, in meV (v_F from mu_N)."""
-        return (np.pi / 2) * 2 * np.sqrt(self.mu_N * self.t) / self.n_across
+        """Thouless energy (pi/2) hbar v_F / W, in meV (v_F of the central strip)."""
+        return (np.pi / 2) * 2 * np.sqrt(self.mu_centre * self.t) / self.n_across
 
     def theta_z_optimal(self, theta_soc=None):
         """In-plane field angle with E_Z perpendicular to n_soc (see the module docstring)."""
@@ -185,7 +192,7 @@ class PhysParams:
         return myf.Params(
             model='rashba', nx=self.nx, ny=self.ny, phi=phi,
             t_n=1.0, t_c=1.0, t_s=1.0,
-            mu_n=self.mu_N / t, mu_c=self.mu_N / t, mu_s=self.mu_S / t,
+            mu_n=self.mu_N / t, mu_c=self.mu_centre / t, mu_s=self.mu_S / t,
             delta=self.Delta / t,
             alpha=self.alpha / (self.a * t), beta=self.beta / (self.a * t),
             tc_top=self.tc, tc_bot=self.tc, tc_barr=self.tc_barr,
@@ -213,6 +220,7 @@ class PhysParams:
         for name, val, unit, val_t in (("Delta", self.Delta, "meV", self.Delta / t),
                                        ("mu_S", self.mu_S, "meV", self.mu_S / t),
                                        ("mu_N", self.mu_N, "meV", self.mu_N / t),
+                                       ("mu_C", self.mu_centre, "meV", self.mu_centre / t),
                                        ("alpha", self.alpha, "meV nm", self.alpha / (self.a * t)),
                                        ("beta", self.beta, "meV nm", self.beta / (self.a * t)),
                                        ("E_Z", self.E_Z, "meV", self.E_Z / t),
@@ -222,7 +230,7 @@ class PhysParams:
         print(f"  E_Z / E_T    = {self.E_Z / self.E_T:8.2f}        (topological diamond is near 1)")
         print(f"  soc_axis     = {self.soc_axis:>8s}        theta_z = {th/np.pi:.3f} pi"
               f"  (optimum {self.theta_z_optimal()/np.pi:.3f} pi)")
-        print(f"  alpha k_F    = {self.alpha / (self.a * t) * np.sqrt(self.mu_N / t) * t:8.3f} meV"
+        print(f"  alpha k_F    = {self.alpha / (self.a * t) * np.sqrt(self.mu_centre / t) * t:8.3f} meV"
               f"     (should exceed E_Z)")
         print(f"  geometry     = {self.n_along} along x {self.n_across} across sites"
               f"   (L = {self.L} nm along y, W = {self.W} nm across x)")
@@ -235,36 +243,37 @@ soc_amp     =   16.0    # nm
 theta_soc   =   0.15 * np.pi     # radians
 alpha       =   soc_amp * np.cos(theta_soc)
 beta        =   soc_amp * np.sin(theta_soc)
-E_z         =   0.46                 
+E_z         =   0.0                 
 
 # Along the S/N interface <-> nx:L (my model x, Paper y)
 # Across the S/N interface <-> ny:W (my model y, Paper x)
 PP = PhysParams(
-                a=20.0, m_eff=0.038, 
-                Delta=0.25, mu_S=1.0, mu_N=0.7, 
+                a=10.0, m_eff=0.038, 
+                Delta=0.25, mu_S=1.0, mu_N=3.0, mu_C=0.7,     # mu_N: probe leads (open at any a), mu_C: junction
                 alpha=alpha, beta=beta, soc_axis='100',
                 g=10.0, B=0.0, theta_z=None, # type: ignore
-                W=100.0, L=2000.0, tc=1.0, tc_barr=0.0, eta_rel=0.05, tc_barr_transport=0.5, eta_rel_transport=1e-5, kT_transport=0.0
+                W=150.0, L=500.0, tc=1.0, tc_barr=0.0, eta_rel=0.05, tc_barr_transport=1.0, eta_rel_transport=1e-5, kT_transport=0.0
                 )                           
 
 PP.B = PP.B_of_E_Z(E_z)           
 PP.theta_z = PP.theta_z_optimal(theta_soc=theta_soc) + np.pi      
 print(f"Zeeman energy = {E_z:.3f} meV  (B = {PP.B:.2f} T, g = {PP.g:g})")
 
-step_sizes = 61
+step_sizes = 51
 B_VALS = np.linspace(0.0, 3.5, step_sizes)
 PHIS = np.linspace(0.0, 2 * np.pi, step_sizes)
 ENERGY_VALS = np.linspace(-1.01 * PP.Delta, 1.01 * PP.Delta, step_sizes)
 SAVE = None
-N_WORKERS = 8                 
-N_END = 5                       # edge
-N_MID = 5                       # bulk: 100 nm, as Scharf Fig. 8(g)
+N_WORKERS = 14                 
+N_END = 5                       # edge: 5 sites -> 5*a nm
+N_MID = 5                       # bulk: 5 sites -> 5*a nm
 END_SIDE = 'low'                # which end: (low: y = -L/2, high: y = +L/2) or 'both'
 COL_END = [0, 1, 2, 3, 4]       # kept for backwards compatibility; unused if N_END is set
 COL_MID_FRAC = 0.5
 
 
-# %% --- 1. THE MAP (Scharf Figs. 8(e), 8(f)) ---
+# %% --- DEFINE WORKERS ---
+# --- 1. THE MAP ---
 def cols_near_end(pp, n=None, side=None):
     """
     Column indices within n sites of a junction END.  Columns run ALONG the interfaces, so
@@ -372,7 +381,7 @@ def run_map(pp=PP, phis=PHIS, b_vals=B_VALS, save=SAVE):
             R[k][i] = out[:, n]
         done[i] = True
         if save:
-            np.savez(save, done=done, phis=phis, b_vals=b_vals, **R)
+            np.savez(save, done=done, phis=phis, b_vals=b_vals, **R) #type: ignore
         print(f"B = {B:.2f} T  (E_Z = {pp.g * _muB * B / 2:.3f} meV) done   ({i + 1}/{len(b_vals)})",
               flush=True)
     n_bad = myf.leads.N_UNRELIABLE - n_bad0
@@ -412,8 +421,16 @@ def run_map_parallel(pp=PP, phis=PHIS, b_vals=B_VALS, n_workers=8, save=SAVE):
     return R
 
 
-def plot_map(R, pp=PP):
-    """Edge and bulk LDOS at E = 0, normalised, vs (E_Z, phi)."""
+def _draw_topo(ax, topo):
+    """Dashed boundary of the topological region: topo = (E_Z, phis, Q), Q of shape (E_Z, phi)."""
+    if topo is not None:
+        EZq, phq, Q = topo
+        ax.contour(EZq, np.asarray(phq) / np.pi, np.asarray(Q).T, levels=[0], colors='k',
+                   linestyles='--', linewidths=1)
+
+
+def plot_map(R, pp=PP, topo=None):
+    """Edge and bulk LDOS at E = 0, normalised, vs (E_Z, phi).  topo: see _draw_topo."""
     phis, EZ = R['phis'], R['E_Z']
 
     fig, axs = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
@@ -424,18 +441,18 @@ def plot_map(R, pp=PP):
         ax.set_xlabel(r"$E_Z$ [meV]", fontsize=10)
         ax.set_ylabel(r"$\phi/\pi$", fontsize=10)
         ax.set_title(title, fontsize=10)
-        ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
         ax.set_yticks([0.0, 0.5, 1, 1.5, 2])
+        _draw_topo(ax, topo)
 
     fig.suptitle(f"[{pp.soc_axis}]  L={pp.L:.0f} nm, W={pp.W:.0f} nm, "
                  f"Delta={pp.Delta} meV, alpha={pp.alpha} meV nm, "
-                 f"beta={pp.beta} meV nm, mu_N={pp.mu_N} meV, "
+                 f"beta={pp.beta} meV nm, mu_C={pp.mu_centre} meV, mu_N(leads)={pp.mu_N} meV, "
                  f"tc_barr={pp.tc_barr};  E_T = {pp.E_T:.2f} meV", fontsize=8)
     plt.tight_layout()
     plt.show()
 
 
-def plot_curvature(R, pp=PP, n_levels=101):
+def plot_curvature(R, pp=PP, n_levels=101, topo=None):
     """Scharf Figs. 8(e),(f): d2(LDOS)/dE2 at E = 0.  Negative (blue) = zero-energy peak."""
     phis, EZ = R['phis'], R['E_Z']
     eta = pp.eta_rel * pp.Delta
@@ -450,8 +467,8 @@ def plot_curvature(R, pp=PP, n_levels=101):
         ax.set_ylabel(r"$\phi/\pi$", fontsize=10)
         ax.set_title(title + r":  $\frac{\partial^2\mathrm{D}}{\partial E^2}$ at $E=0$",
                      fontsize=10)
-        ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
         ax.set_yticks([0.0, 0.5, 1, 1.5, 2])
+        _draw_topo(ax, topo)
 
     fig.suptitle("negative (blue) = zero-energy peak, positive (red) = dip"
                  f"      [{pp.soc_axis}]  L={pp.L:.0f} nm, W={pp.W:.0f} nm, "
@@ -536,7 +553,7 @@ def _show(latex, plain):
     Same mechanism as myf.print_params, so output matches the rest of the project.
     """
     try:
-        from IPython import get_ipython
+        from IPython import get_ipython #type: ignore
         from IPython.display import display, Math
         if get_ipython() is None:
             raise RuntimeError("not interactive")
@@ -588,7 +605,8 @@ def show_summary(pp=PP):
     header = [r"\text{quantity}", r"\text{value}", r"\text{unit}", r"\text{in units of }t"]
     rows = [(r"\Delta", f"{pp.Delta:.3f}", mn, f"{pp.Delta / t:.4f}"),
             (r"\mu_S", f"{pp.mu_S:.3f}", mn, f"{pp.mu_S / t:.4f}"),
-            (r"\mu_N", f"{pp.mu_N:.3f}", mn, f"{pp.mu_N / t:.4f}"),
+            (r"\mu_N\ (\text{leads})", f"{pp.mu_N:.3f}", mn, f"{pp.mu_N / t:.4f}"),
+            (r"\mu_C\ (\text{junction})", f"{pp.mu_centre:.3f}", mn, f"{pp.mu_centre / t:.4f}"),
             (r"\alpha", f"{pp.alpha:.2f}", r"\text{meV\,nm}", f"{pp.alpha / (pp.a * t):.4f}"),
             (r"\beta", f"{pp.beta:.2f}", r"\text{meV\,nm}", f"{pp.beta / (pp.a * t):.4f}"),
             (r"E_Z", f"{pp.E_Z:.3f}", mn, f"{pp.E_Z / t:.4f}"),
@@ -683,7 +701,7 @@ def pick_points(R, n=2, target=0.5, require_phi=None):
     return out
 
 
-def point_report(pp, points, kTs=(0.0, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3), show=True):
+def point_report(pp, points, kTs=(0.0, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3), show=True, every=1):
     """
     For each point (a dict from pick_points, or a plain (E_Z, phi) pair): show the E = 0 channels
     and kappa/G against temperature, and plot the real-space LDOS there (LDOS settings, so the
@@ -695,12 +713,12 @@ def point_report(pp, points, kTs=(0.0, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3), show=True)
         kap, G, ch, n_bad = transport_point(pp, phi, E_Z=E_Z, kTs=kTs)
         _show(*_point_latex(pp, E_Z, phi, ch, kTs, kap, G, n_bad))
         if show:
-            real_space(phi, pp.B_of_E_Z(E_Z), pp=pp, show=True)
+            real_space(phi, pp.B_of_E_Z(E_Z), pp=pp, show=True, every=every)   # every > 1 for wide W
         out.append((kap, G, ch))
     return out
 
 
-def plot_transport(R, pp=PP, toggle_contour=True):
+def plot_transport(R, pp=PP, toggle_contour=True, topo=None):
     """kappa/kappa0 and G/G0 over the (E_Z, phi) map; kappa = 0.5 with G = 0 is the Majorana point."""
     phis, EZ = R['phis'], R['E_Z']
     fig, axs = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
@@ -715,6 +733,7 @@ def plot_transport(R, pp=PP, toggle_contour=True):
         ax.set_xlabel(r"$E_Z$ [meV]", fontsize=10)
         ax.set_ylabel(r"$\phi/\pi$", fontsize=10)
         ax.set_title(label, fontsize=10)
+        _draw_topo(ax, topo)
     fig.suptitle(f"transport: tc_barr={pp.tc_barr_transport:g}, eta={pp.eta_rel_transport:g} Delta"
                  f"   (the LDOS panels use tc_barr={pp.tc_barr:g}, eta={pp.eta_rel:g} Delta)",
                  fontsize=8)

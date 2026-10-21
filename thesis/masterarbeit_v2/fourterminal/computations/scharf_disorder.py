@@ -50,8 +50,8 @@ from scharf_ldos import myf
 
 
 # %% --- SETUP ---
-PP = replace(S.PP, tc_barr_transport=0.2)          # weak probe for kappa and G
-TC_STRONG = 1.0                                    # strong probe for the Andreev peak and det r
+PP = replace(S.PP, tc_barr_transport=0.5)          
+TC_STRONG = 1.0                             
 
 A = (0.98, np.pi)      # (E_Z in meV, phi): topological, on a kappa resonance
 B = (0.505, 0.0)        # trivial: same field, phi = 0
@@ -62,7 +62,8 @@ KEYS = ('kappa', 'G', 'andreev', 'kappa_s', 'G_s', 'andreev_s',
         'candidate', 'det', 'n_bad')
 
 
-# %% --- ONE REALISATION ---
+
+# %% --- FUNCTIONS ---
 def _ldos(pp, phi):
     """Scharf's LDOS at E = 0 and its energy curvature, near both ends and in the middle."""
     parts = {'lo': S.cols_near_end(pp, side='low'), 'hi': S.cols_near_end(pp, side='high'),
@@ -119,7 +120,7 @@ def measure(W, seed, E_Z, phi, invariant=False, pp=None):
     return m
 
 
-# %% --- MANY REALISATIONS ---
+
 def _job(args):
     return measure(*args)
 
@@ -191,7 +192,7 @@ def peaks(k, k_min=0.3):
 # The cells below are guarded with `if __name__ == "__main__":` so that the worker processes,
 # which import this file, do not run them.  In the interactive window they run normally.
 
-# %% --- STUDY 1: point A (topological), kappa against weak disorder W <= Delta ---
+# %% --- point A (topological) ---
 if __name__ == "__main__":
     W_WEAK = [0.0, 0.0125, 0.025, 0.05, 0.1, 0.15, 0.2, 0.25]
     RA = load_or_run('weak_strength', W=W_WEAK, seed=range(64), E_Z=A[0], phi=A[1],
@@ -214,7 +215,7 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-# %% --- STUDY 2: trivial points B, C -- does weak disorder fake a Majorana? ---
+# %% --- trivial points B, C ---
 if __name__ == "__main__":
     for name, (E_Z, phi) in (('B', B), ('C', C)):
         R = load_or_run(f'weak_trivial_{name}', W=[0.1, 0.25], seed=range(128), E_Z=E_Z, phi=phi,
@@ -225,7 +226,7 @@ if __name__ == "__main__":
             print(f"  W = {W} meV: LDOS candidates {int(cand.sum())}/{len(k)},"
                   f"  max kappa {k.max():.1e},  topological {(det < 0).sum()}/{len(k)}")
 
-# %% --- STUDY 3: sweep the field at phi = pi -- do the kappa resonances move? ---
+# %% --- sweep the field at phi = pi ---
 if __name__ == "__main__":
     EZ = np.round(np.arange(0.0, 1.0001, 0.005), 4)        # resonances are ~0.03 meV wide
     R0 = load_or_run('weak_field_clean', W=0.0, seed=0, E_Z=EZ, phi=np.pi, n_workers=14)
