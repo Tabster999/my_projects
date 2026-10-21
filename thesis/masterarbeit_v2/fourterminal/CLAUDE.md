@@ -351,6 +351,38 @@ own criterion curv_end<0 plus end/mid>3.
   (|G|/kappa=0.060) and there kappa(phi=0)=0.335, so the phase contrast is only 0.16 and kappa
   still halves by kT=2 ueV (23 mK).
 * Every configuration is EITHER Majorana-like with no temperature window OR wide but charged.
+* PURE-RASHBA CASES SURVIVE ~10x HOTTER than the numbers above (different SOC, mu and field
+  protocol -- the cause is NOT isolated) (2026-10-21, `scharf_abs_T.py`, a = 20, tc_barr 0.2, best kappa over a
+  small E_Z window around each T = 0 neutral peak; checked against myf.linear_response to 0.4%):
+      T [mK]                0      2      5      10     20     50
+      W 100, L 2 (1 ABS)    0.499  0.498  0.48   0.36-0.37  0.16-0.17  0.03
+      W 100, D 0.5 (2 ABS)  0.498  0.498  0.49   0.40-0.42  0.20-0.23  0.04
+      W 300, L 4 (2 ABS)    0.50   0.48-0.49  0.32-0.35  0.13-0.16  0.04  0.02
+  Half height at ~13 mK (W 100), ~15 mK (Delta 0.5), ~5-6 mK (W 300, L 4): the wider junction needs
+  a longer L, hence smaller delta = Gamma, hence a narrower resonance.  |G| stays <= 0.02 at all T:
+  heating lowers the peak, it does not charge it.  Contrast caveat: at W 100, E_Z ~ 0.7-0.9 meV,
+  phi = 0 is ALSO topological (Q(0) = -1, the lobe centred on phi = 0 opens at E_Z ~ E_T) and its
+  kappa(0) = 0.07-0.49 peaks are neutral (|G|/kappa 0.001-0.02): Majorana too, so kappa(pi) - kappa(0)
+  is NOT a topological contrast there.  W 300, L 4 (E_Z < E_T): Q(0) = +1, kappa(0) ~ 0 -- genuine.
+  NB the window search above UNDERSTATES tc 0.2: a full fine E_Z scan gives 0.43 / 0.32 at 10 / 20 mK.
+* THE COUPLING HAS A TEMPERATURE OPTIMUM (2026-10-21, `scharf_abs_T_tc.py`, W 100, L 2, phi = pi,
+  E_Z 0.55-1.25 in 0.0025 steps; best kappa_T with |G_T|/kappa_T < 0.05 / < 0.10):
+      tc     0 mK          10 mK         20 mK         50 mK
+      0.2    0.499         0.432         0.317         0.174
+      0.3    0.499         0.492         0.439         0.299
+      0.35   0.500         0.500         0.469         0.336
+      0.4    0.500         0.503         0.484         0.349 / 0.398   <- optimum
+      0.45   0.23 / 0.50   0.22 / 0.50   0.18 / 0.48   0.00 / 0.43
+      0.5    0.15 / 0.46   0.15 / 0.46   0.00 / 0.43   0.00 / 0.31  (|G|/kappa ~ 0.07, E_Z 0.905)
+      0.7    0 / 0  (|G|/kappa ~ 0.4);   1.0: |G|/kappa ~ 0.8
+  Larger Gamma widens the resonance (kappa barely moves with T at tc >= 0.5) but charges it as Gamma
+  approaches E_1: the neutral window is tc ~ 0.35-0.4, and the E_Z range with neutral kappa > 0.25
+  shrinks as tc grows (0.15 meV at 0.3 -> 0.05 at 0.4, 20 mK).  Energy grid stops at 35 ueV: fine to
+  50 mK (~2% low), wrong beyond.
+  W 100, Delta 0.5 (2 ABS), E_Z 0.3-1.0, tc 0.2 only (0.3-0.5 stopped, not run): 0.498 / 0.450 /
+  0.348 / 0.200 at 0 / 10 / 20 / 50 mK, all |G|/kappa <= 0.01 -- ~10% above Delta 0.25 at the same tc,
+  neutral window 0.24 vs 0.13 meV at 10 mK.  Whether its larger E_1 tolerates tc > 0.4 is OPEN
+  (rerun scharf_abs_T_tc.py; the finished lines are cached in plot_npz/scharf_absTtc_*).
 * The W lever for Scharf is UNTESTED and is NOT the Gresta ny lever: here W sets the Thouless
   energy, E_T = (pi/2)*2*sqrt(mu_N t)/n_across ~ 1/W, and the topological region sits at
   E_Z ~ E_T, so a WIDER junction needs a WEAKER field (W=100 nm -> 2.9 T, W=200 -> 1.4 T,
