@@ -164,7 +164,7 @@ See README.md for structure and usage.
 ## SCHARF: more ABS by widening W (2026-10-19/20) -- it does NOT help kappa
 CODE (reorganised 2026-10-22): `computations/tools.py` holds everything shared, as plain
 functions (base_params/case, cross-section H(k), Pfaffian Q, gaps, transport_point, channel_point +
-thermal, LDOS, run_scan with functools.partial).  Thin studies import ONLY it: `study_W.py`
+thermal, LDOS, run_scan with functools.partial; save_fig writes computations/plots/<name>.png).  Thin studies import ONLY it: `study_W.py`
 (ABS count, gaps, k_x = 0, optional ldos map), `study_checks.py` (a, double peak,
 long L), `study_delta.py` (+ 4 ABS at long L), `study_tc.py`, `study_T.py`
 (finite T, tc at finite T), `study_transition.py` (LDOS transition, unfinished).  The old

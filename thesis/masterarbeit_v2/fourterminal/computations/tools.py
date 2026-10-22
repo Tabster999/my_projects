@@ -419,6 +419,10 @@ def run_scan(func, grid, cache=None, n_workers=N_WORKERS):
     return myf.scan(func, grid, n_workers=n_workers, save=save)['values']
 
 
+PLOTS = HERE / 'plots'
+
+
 def save_fig(fig, name):
-    """Save a figure as computations/scharf_abs_<name>.png."""
-    fig.savefig(HERE / f'scharf_abs_{name}.png', dpi=110)
+    """Save a figure as computations/plots/<name>.png."""
+    PLOTS.mkdir(exist_ok=True)
+    fig.savefig(PLOTS / f'{name}.png', dpi=110)
