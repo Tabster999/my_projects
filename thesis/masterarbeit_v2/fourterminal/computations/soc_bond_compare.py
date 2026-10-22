@@ -1,5 +1,5 @@
 """
-OLD vs SCALED interface bonds in the Scharf junction -- a copy of scharf_disorder.py with a switch.
+OLD vs SCALED interface bonds in the Scharf junction -- a copy of disorder.py with a switch.
 
 THE ISSUE.  A bond across an interface (probe: tc_barr, ribbon: tc) is built as
     model_hop(p, dir, tc, alpha=bond_alpha)  ->  -tc tau_z  +  SOC(alpha, beta)
@@ -15,7 +15,7 @@ Since 2026-10-13 the package itself uses the scaled bonds (model_hop(..., bond=T
 keeps the OLD variant reproducible: the switch wraps model_hop and is carried by each Params
 instance (attribute scale_soc), so worker processes always build the right variant.
 
-HOW TO USE -- exactly as scharf_disorder.py, plus `scaled`:
+HOW TO USE -- exactly as disorder.py, plus `scaled`:
     m = measure(W=0, seed=0, E_Z=0.505, phi=np.pi, scaled=True)
     R = sweep(W=0, seed=0, E_Z=EZ, phi=np.pi, scaled=True, pp=replace(PP, tc_barr_transport=0.2))
     R = load_or_run('name', ...)      saved as scharf_soc_<name>.npz
@@ -35,8 +35,8 @@ except NameError:                                  # interactive window: run fro
     HERE = Path.cwd()
 sys.path.insert(0, str(HERE))
 DATA = HERE / 'plot_npz'                           # where the .npz results live
-import scharf_ldos as S
-from scharf_ldos import myf
+import ldos as S
+from ldos import myf
 import my_functions.junction as _junction
 import my_functions.spectra as _spectra
 
@@ -80,7 +80,7 @@ KEYS = ('kappa', 'G', 'andreev', 'kappa_s', 'G_s', 'andreev_s',
         'candidate', 'det', 'n_bad')
 
 
-# %% --- ONE REALISATION (as scharf_disorder.py, plus `scaled`) ---
+# %% --- ONE REALISATION (as disorder.py, plus `scaled`) ---
 def _ldos(pp, phi, scaled):
     parts = {'lo': S.cols_near_end(pp, side='low'), 'hi': S.cols_near_end(pp, side='high'),
              'mid': S.cols_near_middle(pp)}
@@ -145,7 +145,7 @@ def sweep(W, seed, E_Z, phi, scaled, invariant=False, n_workers=1, pp=None):
     if n_workers == 1:
         out = list(map(_job, jobs))
     else:
-        import scharf_soc_bond_compare as mod         # workers import _job from the module
+        import soc_bond_compare as mod         # workers import _job from the module
         pool = myf.make_pool(n_workers)
         try:
             out = list(pool.map(mod._job, jobs, chunksize=4))
@@ -265,7 +265,7 @@ if __name__ == "__main__":
 
 # %% --- TEST 4: weak disorder (W <= Delta) with scaled bonds, against the saved old results ---
 if __name__ == "__main__":
-    import scharf_disorder as SD
+    import disorder as SD
     W_WEAK = [0.0, 0.0125, 0.025, 0.05, 0.1, 0.15, 0.2, 0.25]
     old = SD.load('weak_strength')
     new = load_or_run('t4_weak_strength', W_WEAK, range(64), A[0], A[1], True, n_workers=NW)

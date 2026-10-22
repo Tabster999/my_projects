@@ -26,7 +26,7 @@ N_WORKERS = 8
 def _one(args):
     """(mu_N, E_Z) -> (kappa, G, andreev_weak, andreev_strong, n_bad)."""
     mu_N, E_Z = args
-    import scharf_ldos as S
+    import ldos as S
     import my_functions as myf
     n0 = myf.leads.N_UNRELIABLE
     try:
@@ -69,7 +69,7 @@ def grid(mus, EZs, tag):
 
 
 if __name__ == "__main__":
-    import scharf_ldos as S
+    import ldos as S
     t = S.PP.t
     print(f"t = {t:.4f} meV,  nx = {S.PP.n_along}, ny = {S.PP.n_across},  phi = pi")
     print(f"E_T(mu_N) = {(np.pi/2)*2*np.sqrt(t)/S.PP.n_across:.4f} * sqrt(mu_N)  meV\n")

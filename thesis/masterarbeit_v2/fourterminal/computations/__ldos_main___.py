@@ -1,4 +1,4 @@
-import scharf_ldos as S
+import ldos as S
 import numpy as np
 
 Ez_val = 0.4                     

@@ -45,8 +45,8 @@ except NameError:                                  # interactive window: run fro
     HERE = Path.cwd()
 sys.path.insert(0, str(HERE))
 DATA = HERE / 'plot_npz'                           # where the .npz results live
-import scharf_ldos as S
-from scharf_ldos import myf
+import ldos as S
+from ldos import myf
 
 
 # %% --- SETUP ---
@@ -139,9 +139,9 @@ def sweep(W, seed, E_Z, phi, invariant=False, n_workers=1, pp=None):
     else:
         # The workers must import _job from the MODULE: a function defined in the interactive
         # window lives in __main__, which they cannot see.
-        import scharf_disorder
+        import disorder
         pool = myf.make_pool(n_workers)
-        results = pool.map(scharf_disorder._job, jobs, chunksize=4)
+        results = pool.map(disorder._job, jobs, chunksize=4)
     out = []
     try:
         for i, m in enumerate(results):

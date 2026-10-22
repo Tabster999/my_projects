@@ -17,7 +17,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-import scharf_ldos as S          # same folder; brings in my_functions and PhysParams
+import ldos as S          # same folder; brings in my_functions and PhysParams
 
 LAM = 16.0                       # total SOC strength, meV nm
 OUT = "."                        # where figures and .npz files go

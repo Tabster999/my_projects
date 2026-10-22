@@ -8,7 +8,7 @@ See README.md for structure and usage.
 | | Gresta / Domínguez | Scharf |
 |---|---|---|
 | paper | PRB 114, 125405 | PRB 99, 214503 |
-| driven from | `Params` directly | `PhysParams` in `computations/scharf_ldos.py` |
+| driven from | `Params` directly | `PhysParams` in `computations/ldos.py` |
 | units | dimensionless, t = 1 | physical meV/nm, t = 2.507 meV (CODATA; was 2.488) |
 | geometry | nx=80 × ny=12 | nx=100 × ny=5  (L=2000 nm × W=100 nm) |
 | Zeeman | `Bz_s`=0.94, OUT-of-plane, in the RIBBONS | `Bxy_c` in-plane, in the CENTRE; `Bz_s`=0 |
@@ -61,7 +61,7 @@ See README.md for structure and usage.
   (9.07 deg at Scharf) and its axis are exactly the bulk ones for tc <= 1; above 1 the angle shrinks
   (8.25 deg at tc = 1.1), the axis stays.  model_hop raises unless t_n = t_c = t_s = 1, because the
   1.0 in min(tc, 1) IS the lattice hop.  run_all 28/28, tests/test_api.py 5/5.
-* What it changes (computations/scharf_soc_bond_compare.py keeps the OLD variant, scaled=False):
+* What it changes (computations/soc_bond_compare.py keeps the OLD variant, scaled=False):
   - OLD tc_barr = 0.2 behaves like NEW tc_barr ~ 0.26 = sqrt(0.2^2 + 0.16^2): the clean E_Z sweep
     reproduces the old resonance positions and heights.  So every Scharf weak-probe number below
     measured at "tc_barr = 0.2" (or 0.5) belongs to a stronger coupling than its label.
@@ -86,9 +86,9 @@ See README.md for structure and usage.
   Dense H_C previously IGNORED disorder (only RGF/LDOS used column_onsite); fixed with the above.
 * STALE DATA: computations/plot_npz/scharf_disorder_*.npz were computed with the OLD bonds.  Their
   kappa, G, andreev (weak probe) are pre-fix; kappa_s, G_s, andreev_s, det are unaffected.
-  scharf_disorder.load_or_run will return them without noticing -- delete them to recompute.
+  disorder.load_or_run will return them without noticing -- delete them to recompute.
 
-## SCHARF model (`computations/scharf_ldos.py`; Scharf et al., PRB 99, 214503)
+## SCHARF model (`computations/ldos.py`; Scharf et al., PRB 99, 214503)
 * MATCH TO THE PAPER (checked line by line against Eq. 1 / App. B Eq. B6, 2026-10-13): basis, kinetic
   term, the m(alpha^2+beta^2)/2hbar^2 shift, the [100] SOC hops, pairing sign, Zeeman (theta_code =
   pi - theta_Z), mu_N/mu_S, a = 20 nm, 5 x 100 N sites -- all EXACT.  Deliberate differences, kept:
@@ -141,7 +141,7 @@ See README.md for structure and usage.
   normal strip between the SCs (Params.mu_c; Scharf's "N").  `mu_C=None` means mu_C = mu_N (the
   old single-mu behaviour); `pp.mu_centre` returns the effective value and E_T / alpha k_F use it.
   EVERY "mu_N" in the sections above (0.7 meV working point, the 0.65-0.95 wedge, the subband
-  edge) means the CENTRE, i.e. today's mu_C.  scharf_ldos.PP: mu_N = 3.0 (leads), mu_C = 0.7.
+  edge) means the CENTRE, i.e. today's mu_C.  ldos.PP: mu_N = 3.0 (leads), mu_C = 0.7.
 * WHY: the probes are W-wide hard-wall strips; at mu = 0.7 meV they sit at their first transverse
   subband (lattice 2t(1-cos(pi/(ny+1))): 0.672 / 0.812 / 0.896 meV at a = 20 / 10 / 5 nm,
   continuum ~0.99 at W = 100).  Open at a = 20 only by 0.03 meV -- a lattice artefact; CLOSED at
@@ -162,10 +162,17 @@ See README.md for structure and usage.
   heights and neutrality do not.
 
 ## SCHARF: more ABS by widening W (2026-10-19/20) -- it does NOT help kappa
-Code: `computations/scharf_abs.py` (cross-section H(k), Pfaffian Q, finite strip), `scharf_abs_wscan.py`
-(scharf_ldos-style map on a wide junction), `scharf_abs_rashba.py` (beta = 0), `scharf_abs_conv.py`
-(a and L tests, LocalGreen = transport geometry), `scharf_abs_checks.py` (C1-C4).  Caches
-plot_npz/scharf_abs*_*.npz -- names do NOT encode PP: delete them if parameters change.
+CODE (reorganised 2026-10-22): `computations/tools.py` holds everything shared, as plain
+functions (base_params/case, cross-section H(k), Pfaffian Q, gaps, transport_point, channel_point +
+thermal, LDOS, run_scan with functools.partial).  Thin studies import ONLY it: `study_W.py`
+(ABS count, gaps, k_x = 0, optional ldos map), `study_checks.py` (a, double peak,
+long L), `study_delta.py` (+ 4 ABS at long L), `study_tc.py`, `study_T.py`
+(finite T, tc at finite T), `study_transition.py` (LDOS transition, unfinished).  The old
+scharf_abs*.py scripts and logs are in computations/archive/ (reference only; they no longer run
+from there).  base_params() writes the pure-Rashba set out explicitly -- it no longer follows
+ldos.PP.  Caches plot_npz/scharf_abs*_*.npz keep their old names (verified identical) and
+do NOT encode parameters: delete them if parameters change.  The mixed-SOC and finite-strip
+(H_device) code was dropped; it lives only in archive/scharf_abs.py.
 * INVARIANT without transport: infinite junction along the interfaces, cut across with 900 nm SC
   strips + hard walls (Scharf: 450; ABS near Delta converge only from ~900).  Q = sign Pf M(0) Pf M(pi)
   in the Majorana basis (Pf^2 = det checked).  Agrees with det r: Q = -1 at (0.5, pi), +1 at E_Z = 0.
@@ -196,7 +203,7 @@ plot_npz/scharf_abs*_*.npz -- names do NOT encode PP: delete them if parameters 
   a 0.0035 meV grid under-samples heights -- use fine scans before quoting a height.
 * So: more ABS trades the protecting gap and the single-channel character for a lower field.
   Usable for quantised heat: 1-2 ABS (2 ABS needs L >~ 4 um).
-* LARGER DELTA DOES WHAT WIDENING CANNOT (2026-10-20, `scharf_abs_delta.py`, pure Rashba, a = 20,
+* LARGER DELTA DOES WHAT WIDENING CANNOT (2026-10-20, `study_delta.py`, pure Rashba, a = 20,
   L = 2 um, phi = pi).  The gap over all k is set by W, not Delta or SOC:
       W = 100:  Delta 0.25 / 0.5 / 0.75 / 1.0 meV -> 1 / 2 / 2 / 2 ABS, gap 67 / 71 / 68 / 65 ueV
       W = 300:  Delta 0.25 / 0.5 / 0.75 / 1.0 meV -> 2 / 2 / 4 / 4 ABS, gap 34 / 32 / 31 / 29 ueV
@@ -207,14 +214,14 @@ plot_npz/scharf_abs*_*.npz -- names do NOT encode PP: delete them if parameters 
     Resonances get DENSER with Delta and start at low field (0.06-0.1 meV); G grows above ~0.9 meV.
   - W = 300 at L = 2 um fails for EVERY Delta and alpha (kappa 0.5-0.99, |G|/kappa 0.13-0.76): its
     ~30 ueV gap needs L >~ 4 um, whatever the ABS count.
-  - 4 ABS (W = 300, Delta 0.75/1.0), `scharf_abs_delta_L.py`: L = 4 um still CHARGED (peaks 0.44-0.66,
+  - 4 ABS (W = 300, Delta 0.75/1.0), `study_delta.py` cell 3: L = 4 um still CHARGED (peaks 0.44-0.66,
     |G|/kappa 0.17-0.36 -- where 2 ABS at Delta 0.25 was already neutral).  L = 8 um (Delta 0.75):
     GENUINE -- 14/17 peaks neutral, 0.46-0.49 (5 at >= 0.48), δ=0 double peaks, and NO neutral
     peak above 0.52 (single channel; contrast W = 800, 3 ABS, 8 um: neutral 0.56-0.68).
     So more ABS at fixed gap still lengthens the required L (2 ABS: 4 um, 4 ABS: 8 um at W = 300).
   - Caveat: Delta >= 0.75 approaches mu_S = 1 meV (strong-coupling SC); treat as a trend.
   Rule: ABS count ~ Delta/E_T, protecting gap ~ f(W); raise Delta for ABS, keep W small for the gap.
-* k_x = 0 (normal incidence) vs ALL k (2026-10-20, `scharf_abs_k0.py`, pure Rashba, a = 20):
+* k_x = 0 (normal incidence) vs ALL k (2026-10-20, `study_W.py` cell 3, pure Rashba, a = 20):
       W [nm]               100          300           800
       ABS                  1            2             3
       Q = -1 at phi = pi   0.02-1.25    0.035-0.42    0.005-0.19 and 0.21-0.30 meV
@@ -226,7 +233,7 @@ plot_npz/scharf_abs*_*.npz -- names do NOT encode PP: delete them if parameters 
   quantisation explains all of it: N ~ W/(pi xi) + 1, dE ~ pi hbar v_F/(W + xi), gap(k_x=0) <~ dE/2,
   Delta_top ~ hbar^2/mW^2 (grazing modes; Scharf Sec. III D) -- k_x = 0 sets the phase boundaries,
   finite k_x sets Delta_top, and the two drift apart with W.
-* THE PROBE COUPLING DOES NOT REPLACE LENGTH (2026-10-20, `scharf_abs_tc.py`, tc_barr_transport
+* THE PROBE COUPLING DOES NOT REPLACE LENGTH (2026-10-20, `study_tc.py`, tc_barr_transport
   0.05/0.1/0.2/0.5/1, phi = pi; Majorana-like = 0.45 <= kappa <= 0.55 and |G|/kappa < 0.05):
       W 100 L 2 (1 ABS):        3 / 3 / 3 / 0 / 0   Majorana-like peaks
       W 300 L 4 (2 ABS):        0 / 1 / 6 / 0 / 0
@@ -306,7 +313,7 @@ own criterion curv_end<0 plus end/mid>3.
   nor `central_fingerprint` (so scan()/ThermalPoint returned ONE seed's answer for every seed).
   `run_all` now asserts all three paths respond to `disorder_seed`.
 * REVISED 2026-10-12 with the scattering invariant Q = sign det r (left lead, tc_barr=1;
-  `_det_r` in `computations/scharf_disorder.py`; clean A -> -1.00, B -> +1.00).  The bullets above
+  `_det_r` in `computations/disorder.py`; clean A -> -1.00, B -> +1.00).  The bullets above
   hold up to W ~ 3.2 meV, but at STRONG disorder two of them break:
   - "trivial" is no longer a property of the point.  At B with W=6.4 meV, 9/256 realisations are
     TOPOLOGICAL (Q=-1); the kappa=0.478, |G|/kappa=0.006 seed with LDOS peaks at both ends is one of
@@ -334,9 +341,9 @@ own criterion curv_end<0 plus end/mid>3.
   are narrower than the grid; their heights are not resolved at any W.
 * So for realistic (weak) disorder, the two-pronged test is untouched; disorder only matters
   above ~6 Delta, and fakes only above ~19 Delta.
-* Code: `computations/scharf_disorder.py` -- `measure(W, seed, E_Z, phi)`, `sweep(...)`,
+* Code: `computations/disorder.py` -- `measure(W, seed, E_Z, phi)`, `sweep(...)`,
   `load_or_run(name, ...)`; results in `plot_npz/scharf_disorder_<name>.npz`, arrays (W, seed, E_Z, phi).
-* POINT A MOVED: scharf_disorder.py now has A = (E_Z 0.98 meV, phi = pi).  Every number in this
+* POINT A MOVED: disorder.py now has A = (E_Z 0.98 meV, phi = pi).  Every number in this
   Disorder section was measured at A = (0.505, pi).  At 0.98 the clean (old-bond) sweep has a narrow
   kappa peak 0.502 with |G|/kappa up to ~0.27 nearby (high-field, partly charged) -- check G there.
 
@@ -352,7 +359,7 @@ own criterion curv_end<0 plus end/mid>3.
   still halves by kT=2 ueV (23 mK).
 * Every configuration is EITHER Majorana-like with no temperature window OR wide but charged.
 * PURE-RASHBA CASES SURVIVE ~10x HOTTER than the numbers above (different SOC, mu and field
-  protocol -- the cause is NOT isolated) (2026-10-21, `scharf_abs_T.py`, a = 20, tc_barr 0.2, best kappa over a
+  protocol -- the cause is NOT isolated) (2026-10-21, `study_T.py` cell 1, a = 20, tc_barr 0.2, best kappa over a
   small E_Z window around each T = 0 neutral peak; checked against myf.linear_response to 0.4%):
       T [mK]                0      2      5      10     20     50
       W 100, L 2 (1 ABS)    0.499  0.498  0.48   0.36-0.37  0.16-0.17  0.03
@@ -365,7 +372,7 @@ own criterion curv_end<0 plus end/mid>3.
   kappa(0) = 0.07-0.49 peaks are neutral (|G|/kappa 0.001-0.02): Majorana too, so kappa(pi) - kappa(0)
   is NOT a topological contrast there.  W 300, L 4 (E_Z < E_T): Q(0) = +1, kappa(0) ~ 0 -- genuine.
   NB the window search above UNDERSTATES tc 0.2: a full fine E_Z scan gives 0.43 / 0.32 at 10 / 20 mK.
-* THE COUPLING HAS A TEMPERATURE OPTIMUM (2026-10-21, `scharf_abs_T_tc.py`, W 100, L 2, phi = pi,
+* THE COUPLING HAS A TEMPERATURE OPTIMUM (2026-10-21, `study_T.py` cell 2, W 100, L 2, phi = pi,
   E_Z 0.55-1.25 in 0.0025 steps; best kappa_T with |G_T|/kappa_T < 0.05 / < 0.10):
       tc     0 mK          10 mK         20 mK         50 mK
       0.2    0.499         0.432         0.317         0.174
@@ -382,7 +389,7 @@ own criterion curv_end<0 plus end/mid>3.
   W 100, Delta 0.5 (2 ABS), E_Z 0.3-1.0, tc 0.2 only (0.3-0.5 stopped, not run): 0.498 / 0.450 /
   0.348 / 0.200 at 0 / 10 / 20 / 50 mK, all |G|/kappa <= 0.01 -- ~10% above Delta 0.25 at the same tc,
   neutral window 0.24 vs 0.13 meV at 10 mK.  Whether its larger E_1 tolerates tc > 0.4 is OPEN
-  (rerun scharf_abs_T_tc.py; the finished lines are cached in plot_npz/scharf_absTtc_*).
+  (add the couplings to SCAN_CASES in study_T.py; the finished lines are cached in plot_npz/scharf_absTtc_*).
 * The W lever for Scharf is UNTESTED and is NOT the Gresta ny lever: here W sets the Thouless
   energy, E_T = (pi/2)*2*sqrt(mu_N t)/n_across ~ 1/W, and the topological region sits at
   E_Z ~ E_T, so a WIDER junction needs a WEAKER field (W=100 nm -> 2.9 T, W=200 -> 1.4 T,
