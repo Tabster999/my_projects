@@ -15,7 +15,7 @@ T = myf.transmissions(p, np.linspace(-0.01, 0.01, 41))      # channel transmissi
 res = myf.scan(myf.ThermalPoint(p, kT=0.0, phis=(np.pi, 0.0)),
                {"mu_s": [0.1, 0.2], "Bz_s": np.linspace(0.6, 1.4, 17)}, n_workers=8, save="scan.npz")
 ```
-Everything returns arrays; plotting is left to you. Examples: `computations/01…06_*.py`.
+Everything returns arrays; plotting is left to you. Examples: `computations/archive/early_tests/01…07_*.py`.
 
 ## Structure (`my_functions/`)
 | module | contents |
