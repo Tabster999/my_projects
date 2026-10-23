@@ -121,6 +121,11 @@ class PhysParams:
     tc_barr_transport: float = 0.20   # probe coupling for kappa/G (0 gives kappa = 0 exactly)
     eta_rel_transport: float = 1e-5   # broadening for kappa/G; must be << the resonance width
     kT_transport: float = 0.0         # meV; temperature for kappa_kT/G_kT (0 = skip)
+    # --- physical tunnel barrier at each probe contact (a-INVARIANT, unlike tc_barr: a weakened bond's
+    #     transmission falls like a^2).  Height V_barr above the lead band over d_barr nm of lead
+    #     material; use it with tc_barr_transport = 1.  d_barr must be a multiple of a.
+    V_barr: float = 0.0               # meV
+    d_barr: float = 0.0               # nm
     # --- onsite disorder in the NORMAL region only (the ribbons stay clean) ---
     disorder: float = 0.0             # meV, uniform in [-disorder/2, +disorder/2]
     disorder_seed: int = 0            # which realisation
@@ -189,6 +194,9 @@ class PhysParams:
         """The corresponding my_functions.Params (lattice units). E_Z in meV overrides g mu_B B/2."""
         t = self.t
         EZ = self.E_Z if E_Z is None else E_Z
+        n_barr = round(self.d_barr / self.a) if self.V_barr else 0
+        if self.V_barr and abs(n_barr * self.a - self.d_barr) > 1e-9:
+            raise ValueError(f"d_barr = {self.d_barr} nm is not a multiple of a = {self.a} nm")
         return myf.Params(
             model='rashba', nx=self.nx, ny=self.ny, phi=phi,
             t_n=1.0, t_c=1.0, t_s=1.0,
@@ -201,6 +209,7 @@ class PhysParams:
             theta_z=self.theta_z_optimal() if self.theta_z is None else self.theta_z,
             Bxy=0.0, Bxy_c=EZ / t, Bxy_n=0.0, Bxy_s=0.0,
             disorder_W=self.disorder / t, disorder_seed=self.disorder_seed,
+            barrier_V=self.V_barr / t, barrier_n=n_barr, barrier_where='lead',
             eta=self.eta_rel * self.Delta / t)
 
     def params_transport(self, E_Z=None, phi=np.pi):

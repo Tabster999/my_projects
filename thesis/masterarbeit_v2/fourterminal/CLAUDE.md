@@ -244,6 +244,35 @@ do NOT encode parameters: delete them if parameters change.  The mixed-SOC and f
   provides.  Best tc is 0.1-0.2 even in the working cases; >= 0.5 couples the higher ABS (G != 0).
   det r < 0 over most of the field range at tc = 1 also in FAILING cases (kappa 2.5): its sign is
   meaningful only together with neutral kappa = 1/2 or a quantised local Andreev.
+* LDOS THROUGH THE TRANSITION (2026-10-23, study_transition.py, L 2 um, phi pi, eta 0.05 Delta):
+  W 300: inside Q = -1 the MIDDLE LDOS is gapped at E = 0 (a dark diamond following the k = 0 gap) while
+  the END keeps zero-energy weight; real-space LDOS(E = 0) end/middle ~ 2.5 at the best point (0.323 meV).
+  W 800: the middle shows the same checkerboard of levels as the end and the LDOS(E = 0) profile is flat
+  (end/middle ~ 1.2): no end localisation.  NB eta = 12.5 ueV exceeds Delta_top at W 800 (10 ueV), so
+  Scharf's broadening cannot resolve it there anyway; the 'trivial' and 'gap closing' picks of W 800
+  both fall on E_Z = 0 (the first topological field is the second grid point).
+
+## SCHARF: lattice-constant convergence and the probe contact (2026-10-23/24, `study_a.py`)
+* SCALING: PhysParams.params() divides every energy by t = hbar^2/2ma^2, alpha by a t, W and L into
+  sites; mu_S/N/C, Delta, alpha, E_Z, eta, W, L, E_T map back identically for a = 20 ... 2.5 nm.
+* EXCEPT tc_barr: it scales ONE lattice bond, and a weak bond's transmission falls like a^2 (1D:
+  tc_barr 0.2 -> T = 0.074 / 0.023 / 0.006 / 0.0016 at a = 20 / 10 / 5 / 2.5 nm).  Every earlier a-test
+  with fixed tc_barr compared DIFFERENT contacts (a = 10 had ~3x less coupling).  Use the physical
+  barrier instead: PhysParams.V_barr (meV) over d_barr (nm, multiple of a) -> my_functions barrier_V /
+  barrier_n (lead material raised by V, folded into the probe), with tc_barr_transport = 1.
+  1D T: 6 meV x 20 nm ('medium', ~ tc 0.4) 0.323 -> 0.296; 6 meV x 40 nm ('weak', ~ tc 0.2) 0.049 -> 0.039.
+* CROSS-SECTION converged at a = 20: Delta_top 66.66 / 66.76 / 66.75 / 66.75 / 66.75 ueV (E_Z 0.593),
+  gap(k=0) 152.7 -> 150.0 ueV (settled by a = 5); 1 ABS at every a.
+* TRANSPORT (W 100, L 2 um, phi pi, E = 0): kappa heights (~0.50) and the neutral/charged pattern
+  (neutral below ~0.95 meV, |G|/kappa 0.1-0.7 above, both barriers) are the same at every a.
+  PEAK POSITIONS move by up to 0.05-0.07 meV from a = 20 to 5 (cos(k_F L) phase: k_F a = 0.53 at
+  a = 20 gives a ~1% k_F error = ~0.6 rad over 2 um) and converge like a^2 below 5 nm:
+      medium, neutral peaks:  a 5: 0.794 0.838 0.904   a 4: 0.792 0.842 0.906   a 2.5: 0.790 0.850 0.908 meV
+      weak (a 5 vs 4): 0.572/0.578 0.616/0.616 0.724/0.726 0.736/0.738 0.876/0.880 0.882/0.884
+  Rule: a = 20 for physics scans; a <= 5 when the exact resonance fields matter.  Majorana-like peak
+  COUNTS near the 0.45 / 0.05 cuts flip between a values -- compare positions, not counts.
+* Cost per transport point ~ a^-4 (0.2 s / 4 s / 31 s / ~80 s / ~500 s); a = 2.5 needs several GB per
+  worker: 14 workers ran out of 32 GB -> transport_line(..., n_workers=4).
 
 ## Numerics — measured on the GRESTA point unless stated
 (eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,
@@ -390,6 +419,22 @@ own criterion curv_end<0 plus end/mid>3.
   0.348 / 0.200 at 0 / 10 / 20 / 50 mK, all |G|/kappa <= 0.01 -- ~10% above Delta 0.25 at the same tc,
   neutral window 0.24 vs 0.13 meV at 10 mK.  Whether its larger E_1 tolerates tc > 0.4 is OPEN
   (add the couplings to SCAN_CASES in study_T.py; the finished lines are cached in plot_npz/scharf_absTtc_*).
+* MORE KNOBS AT FINITE T (2026-10-23, study_T.py cell 2; best NEUTRAL kappa, |G|/kappa < 0.05,
+  over the whole field scan; 0 / 10 / 20 / 50 mK):
+      W 100 mixed SOC   tc 0.2: 0.498/0.375/0.250/0.126   0.3: 0.499/0.472/0.391/0.244   0.4: 0.500/0.499/0.454/0.06
+      W 100 mu_N 1.0    tc 0.3: 0.497/0.443/0.331/0.187   0.4: 0.499/0.489/0.430/0.285
+      W 100 mu_N 2.0    tc 0.3: 0.499/0.484/0.415/0.272   0.4: 0.500/0.501/0.477/0.343
+      W 100 mu_N 3.0    tc 0.3: 0.499/0.492/0.439/0.299   0.4: 0.500/0.503/0.484/0.349   (default)
+      W 100 mu_N 5.5    tc 0.3: 0.499/0.494/0.450/0.316   0.4: 0.500/0.503/0.487/0.352
+      W 300 L 4         tc 0.2: 0.499/0.335/0.215/0.151   0.3: 0.501/0.451/0.354/0.207   0.4: 0.501/0.480/0.314/0.258
+  - Mixed SOC is 10-20% lower at 20 mK (smaller Delta_top) and has CHARGED kappa ~ 0.57 peaks
+    (|G|/kappa 0.5-0.6) at every tc.  It is NOT why these numbers beat the old Measurability ones:
+    the full field scan and the coupling are.
+  - mu_N (probe lead) acts as another Gamma knob: more open lead subbands (5-site strip: 0.67 / 2.49 /
+    4.98 meV) = larger lead DOS = larger Gamma at fixed tc = slightly more T-robust.  A single-channel
+    lead (mu_N 1-2) does NOT remove the charged peaks (best overall kappa still |G|/kappa ~ 0.27-0.3).
+  - W 300, L 4 also has its optimum at tc ~ 0.3-0.4 but stays ~25% below W 100 at 20 mK (narrower
+    resonances); its 50 mK maxima sit at the window edge E_Z = 0.1 meV -- not reliable.
 * The W lever for Scharf is UNTESTED and is NOT the Gresta ny lever: here W sets the Thouless
   energy, E_T = (pi/2)*2*sqrt(mu_N t)/n_across ~ 1/W, and the topological region sits at
   E_Z ~ E_T, so a WIDER junction needs a WEAKER field (W=100 nm -> 2.9 T, W=200 -> 1.4 T,

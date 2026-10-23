@@ -32,7 +32,18 @@ PEAK_CASES = {'W100 L2 (1 ABS)':      (st.case(100.0), 'scharf_absTC_W100_L2_tc0
 SCAN_CASES = {'W100_L2':      (st.case(100.0), np.round(np.arange(0.55, 1.25 + 1e-9, 0.0025), 5),
                                (0.2, 0.3, 0.35, 0.4, 0.45, 0.5, 0.7, 1.0)),
               'W100_L2_D0.5': (st.case(100.0, Delta=0.5), np.round(np.arange(0.3, 1.0 + 1e-9, 0.0025), 5),
-                               (0.2,))}           # 0.3-0.5 not run yet (stopped 2026-10-21)
+                               (0.2,)),           # 0.3-0.5 not run yet (stopped 2026-10-21)
+              # mixed Rashba + Dresselhaus, same window: is pure Rashba's temperature robustness the SOC?
+              'W100_L2_mixed': (st.case(100.0, alpha=st.mixed_soc()[0], beta=st.mixed_soc()[1]),
+                                np.round(np.arange(0.55, 1.25 + 1e-9, 0.0025), 5), (0.2, 0.3, 0.4)),
+              # probe-lead chemical potential: the 5-site lead strip has subbands from 0.67 / 2.49 / 4.98 meV,
+              # so mu_N = 1-2 is a single-channel probe, 3.0 (default) two channels, 5.5 three
+              **{f'W100_L2_muN{m:g}': (st.replace(st.case(100.0), mu_N=m),
+                                      np.round(np.arange(0.55, 1.25 + 1e-9, 0.005), 5), (0.3, 0.4))
+                 for m in (1.0, 2.0, 5.5)},
+              # the longer 2-ABS junction: narrow resonances, but kappa(phi = 0) ~ 0 (a clean reference)
+              'W300_L4':       (st.case(300.0, L=4000.0), np.round(np.arange(0.1, 0.42 + 1e-9, 0.0025), 5),
+                                (0.2, 0.3, 0.4))}
 T_SCAN = (0.0, 10.0, 20.0, 50.0)
 
 

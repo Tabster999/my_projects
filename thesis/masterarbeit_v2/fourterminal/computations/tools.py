@@ -262,9 +262,10 @@ def transport_point(q, E_Z, phi=np.pi):
                      det_r(rgf, float(phi)), myf.leads.N_UNRELIABLE - n0])
 
 
-def transport_line(q, EZ, cache):
-    """transport_point along E_Z at phi = pi.  Returns dict E_Z, kappa, G, andreev, det."""
-    V = run_scan(partial(transport_point, q), {'E_Z': np.asarray(EZ)}, cache)
+def transport_line(q, EZ, cache, n_workers=None):
+    """transport_point along E_Z at phi = pi.  Returns dict E_Z, kappa, G, andreev, det.
+    n_workers: fewer than N_WORKERS for small a (each worker needs several GB at a = 2.5 nm)."""
+    V = run_scan(partial(transport_point, q), {'E_Z': np.asarray(EZ)}, cache, n_workers=n_workers or N_WORKERS)
     if V.shape[1] == 4:                          # older caches: [kappa, G, andreev, n_bad], no det r
         V = np.insert(V, 3, np.nan, axis=1)
     if np.nansum(V[:, 4]):
