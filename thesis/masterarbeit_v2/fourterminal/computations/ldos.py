@@ -126,6 +126,9 @@ class PhysParams:
     #     material; use it with tc_barr_transport = 1.  d_barr must be a multiple of a.
     V_barr: float = 0.0               # meV
     d_barr: float = 0.0               # nm
+    # ...or a ONE-SITE barrier of fixed strength lam_barr = V * a (meV nm): a delta barrier, the site
+    # height lam_barr / a grows as a shrinks.  Continuum T = 4 k_N k_C / ((k_N + k_C)^2 + (2 m lam / hbar^2)^2).
+    lam_barr: float = 0.0             # meV nm; use instead of V_barr / d_barr
     # --- onsite disorder in the NORMAL region only (the ribbons stay clean) ---
     disorder: float = 0.0             # meV, uniform in [-disorder/2, +disorder/2]
     disorder_seed: int = 0            # which realisation
@@ -197,6 +200,11 @@ class PhysParams:
         n_barr = round(self.d_barr / self.a) if self.V_barr else 0
         if self.V_barr and abs(n_barr * self.a - self.d_barr) > 1e-9:
             raise ValueError(f"d_barr = {self.d_barr} nm is not a multiple of a = {self.a} nm")
+        V_barr = self.V_barr
+        if self.lam_barr:
+            if self.V_barr:
+                raise ValueError("set either lam_barr (one-site barrier) or V_barr / d_barr, not both")
+            n_barr, V_barr = 1, self.lam_barr / self.a
         return myf.Params(
             model='rashba', nx=self.nx, ny=self.ny, phi=phi,
             t_n=1.0, t_c=1.0, t_s=1.0,
@@ -209,7 +217,7 @@ class PhysParams:
             theta_z=self.theta_z_optimal() if self.theta_z is None else self.theta_z,
             Bxy=0.0, Bxy_c=EZ / t, Bxy_n=0.0, Bxy_s=0.0,
             disorder_W=self.disorder / t, disorder_seed=self.disorder_seed,
-            barrier_V=self.V_barr / t, barrier_n=n_barr, barrier_where='lead',
+            barrier_V=V_barr / t, barrier_n=n_barr, barrier_where='lead',
             eta=self.eta_rel * self.Delta / t)
 
     def params_transport(self, E_Z=None, phi=np.pi):

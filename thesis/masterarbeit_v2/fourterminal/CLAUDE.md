@@ -273,6 +273,51 @@ do NOT encode parameters: delete them if parameters change.  The mixed-SOC and f
   COUNTS near the 0.45 / 0.05 cuts flip between a values -- compare positions, not counts.
 * Cost per transport point ~ a^-4 (0.2 s / 4 s / 31 s / ~80 s / ~500 s); a = 2.5 needs several GB per
   worker: 14 workers ran out of 32 GB -> transport_line(..., n_workers=4).
+* ONE-SITE (delta) BARRIER, PhysParams.lam_barr = V a fixed (one site of lam/a; cell 6, tc_barr = 1):
+  converges too, heights ~0.50 and neutral pattern at every a:
+      site120 (lam 120 meV nm): a 20: 0.756 0.862 0.916 | a 10: 0.812 0.910 1.002 | a 5: 0.830 0.928 1.032
+                                | a 4: 0.834 0.930 1.036 meV
+      site240 (lam 240):        a 10: 0.684 0.760 0.868/0.892 | a 5: 0.684/0.712 0.774 0.892/0.914
+                                | a 4: 0.684/0.718 0.776 0.896/0.916 meV
+  The a = 20 -> 5 shift is larger (~0.07 meV) than for the square barrier: at a = 20 the "one site" is a
+  20 nm wide barrier, only at small a a true delta.  Converged positions differ from 'medium' (same
+  V d = 120) because 6 meV x 20 nm is not thin (k_F d ~ 0.7) -- different contacts, both converge.
+* COUPLING = BROADENING: kappa/kappa_0 = 2x^2/(1+x^2)^2, x = eps/Gamma -> height 1/2 independent of the
+  barrier, width in E_Z ~ Gamma/|d eps/dE_Z|; weaker contact (site240, weak) -> narrower peaks and
+  double peaks (split ~2 Gamma/|d eps/dE_Z|) resolved, e.g. site240 lowest peak splits from a = 5 on.
+
+## SCHARF: the constant SOC shift E_so in the onsite energy (2026-10-26, `study_soc_shift.py`)
+* onsite_block adds (alpha^2 + beta^2)/4 (lattice) = E_so = m(alpha^2+beta^2)/2hbar^2, so mu is measured
+  from the bottom of the LOWER SOC band and v_F = sqrt(2 mu/m) is alpha-independent.  SCHARF INCLUDES
+  THE SAME SHIFT (checked by the user), so the code's mu IS the paper's mu.  Without it mu counts from
+  the SOC-free edge and
+  v_F = (hbar/m) sqrt(k_mu^2 + k_so^2).  Same alpha in every region => dropping it == mu_S/N/C + E_so.
+* Effect (a = 20, L 2 um, tc_barr 0.2, phi pi; E_so = 64 ueV at alpha 16, 255 at alpha 32):
+  ABS count, Q region (to one grid step) and Delta_top (66.7/66.5, 94.8/94.1, 33.7/34.3 ueV) unchanged;
+  kappa peak POSITIONS move by ~0.05 meV at W 100 (k_F +4.5% -> cos(k_F L) phase +2.4 rad over 2 um),
+  heights and the neutral-below / charged-above-~0.9 meV pattern stay; W 300 L 2 fails either way.
+  So it is a mu offset, not new physics -- state the convention; only for a paper WITHOUT the shift
+  would mu_code = mu_paper + E_so be needed (not Scharf).
+* DECISION (2026-10-27): KEEP THE SHIFT (Scharf convention); study_soc_shift.py is a side check only.
+* Numerical check (`check_fermi.py`, normal-state electron block of the real lattice blocks, mu_C = 0.7):
+  the lattice converges to k_F = k_mu -+ k_so, hbar v_F = hbar^2 k_mu/m = 52.98 meV nm for BOTH
+  alpha 16 and 32 (a = 1 nm); the no-shift formula (55.35 / 61.90) is ruled out.  At a = 20 the lattice
+  gives hbar v_F = 51.4 (-3%), k_F within 0.2% (alpha 16) / 2% (outer, alpha 32); x and y identical.
+
+## SCHARF: does eps follow Delta_top e^{-L/xi_M} cos(k_osc L)? (2026-10-27, `study_oscillation.py`, UNFINISHED)
+* Context: the kappa ~ 1/2 "plateaus" are two merged eps = Gamma peaks around a maximum of eps(E_Z)
+  (det r inside: max +0.16 -> eps_max/Gamma ~ 1.17).  Widest neutral window if
+  Gamma ~ (0.72-1) eps_max; parity-crossing dips (eps = 0, det r -> -1) cannot be removed at T = 0.
+  Asymmetric Gamma_L != Gamma_R does not help: kappa(E=0) depends only on Gamma_L Gamma_R
+  (two-Majorana model scan, symmetric is always optimal at finite T too).
+* PREDICTION (cached, scharf_absO_evanescent_W100): complex-k E = 0 solution of the cross-section,
+  W 100, a 20, phi pi, E_Z 0.50-1.30 step 0.005 (Q = -1 throughout):
+  k_osc = k of the gap minimum (0.0348 -> 0.0439 1/nm), predicted zero spacing pi/(L dk/dE_Z) ~ 0.15 meV;
+  xi_M 326 (E_Z 0.5) / 728 (0.8) / 1249 (1.0) / 2418 nm (1.3), next mode ~245 nm (bulk xi);
+  hbar v_F/Delta_top agrees only near E_Z 0.9-1.0 (2-2.5x too long at low field).
+* MEASUREMENT not done: the LDOS splitting (cell 2, ~8-9 min per point with 14 workers -> ~1 h 45 for
+  161 points) was stopped after 1 h.  myf.scan saves only when the FIRST chunk (12 points) returns,
+  so nothing was cached -- rerun cell 2 in one go (or shrink the grid / chunks).
 
 ## Numerics — measured on the GRESTA point unless stated
 (eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,

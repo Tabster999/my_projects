@@ -31,10 +31,17 @@ EZ_TR = np.round(np.arange(0.55, 1.25 + 1e-9, 0.002), 5)    # meV, the resonance
 EZ_XS = (0.3, 0.593)                                         # meV, cross-section points
 
 
+SITE_BARRIERS = {'site120': 120.0, 'site240': 240.0}   # lam_barr meV nm: ONE site of lam/a; 1D T ~ 0.28 / 0.09
+A_SITE = (20.0, 10.0, 5.0, 4.0)
+
+
 def junction(a, barrier=None):
-    """W = 100 nm, L = 2 um at lattice constant a, optionally with a physical probe barrier."""
+    """W = 100 nm, L = 2 um at lattice constant a, optionally with a physical probe barrier
+    (square: 'medium'/'weak', or one-site: 'site120'/'site240')."""
     q = st.case(100.0, a=a, tc=1.0 if barrier else 0.2)
-    if barrier:
+    if barrier in SITE_BARRIERS:
+        q = st.replace(q, lam_barr=SITE_BARRIERS[barrier])
+    elif barrier:
         q = st.replace(q, V_barr=BARRIERS[barrier][0], d_barr=BARRIERS[barrier][1])
     return q
 
@@ -138,3 +145,30 @@ if __name__ == "__main__":
     ax.set_xlabel(r'$E_Z$ [meV]'); ax.set_ylabel(r'$\kappa/\kappa_0$'); ax.legend(fontsize=8)
     ax.set_title('medium barrier, W = 100 nm, L = 2 um, phi = pi: convergence of the peak positions', fontsize=9)
     plt.tight_layout(); st.save_fig(fig, 'a_fine_medium'); plt.show()
+
+
+# %% --- 6. the ONE-SITE barrier (lam_barr = V * a fixed): convergence with a ---
+if __name__ == "__main__":
+    SITE = {}
+    for barrier in SITE_BARRIERS:
+        print(f"\none-site barrier '{barrier}' (lam = {SITE_BARRIERS[barrier]:g} meV nm), phi = pi, E = 0")
+        print(" a [nm]  site [meV]  peaks>0.3  Majorana-like  >0.55   peak positions E_Z [meV] / heights / |G|/kappa")
+        for a in A_SITE:
+            t = st.transport_line(junction(a, barrier), EZ_TR, cache=f'scharf_absA_tr_{barrier}_a{a:g}')
+            SITE[(barrier, a)] = t
+            s, pk = st.peak_stats(t), st.kappa_peaks(t)
+            print(f"{a:6.1f}  {SITE_BARRIERS[barrier] / a:8.1f}   {s['n']:6d}     {s['good']:6d}       {s['over']:4d}    "
+                  f"{np.round(t['E_Z'][pk], 3)}")
+            print(f"{'':44s}{np.round(t['kappa'][pk], 3)}  {np.round(np.abs(t['G'][pk]) / t['kappa'][pk], 3)}")
+    for barrier in SITE_BARRIERS:
+        fig, axs = plt.subplots(len(A_SITE), 1, figsize=(11, 2.1 * len(A_SITE)), sharex=True)
+        for ax, a in zip(axs, A_SITE):
+            t = SITE[(barrier, a)]
+            ax.plot(t['E_Z'], t['kappa'], 'k-', lw=1, label=r'$\kappa/\kappa_0$')
+            ax.plot(t['E_Z'], np.abs(t['G']), 'r-', lw=0.8, label=r'$|G|/G_0$')
+            ax.axhline(0.5, color='0.5', ls='--', lw=0.6)
+            ax.set_ylim(0, 1.05); ax.set_ylabel(f'a = {a:g} nm', fontsize=9)
+        axs[0].legend(fontsize=7, ncol=2)
+        axs[-1].set_xlabel(rf'$E_Z$ [meV]   (W = 100 nm, L = 2 $\mu$m, $\phi=\pi$, one-site barrier '
+                           rf'{SITE_BARRIERS[barrier]:g} meV nm)')
+        plt.tight_layout(); st.save_fig(fig, f'a_transport_{barrier}'); plt.show()
