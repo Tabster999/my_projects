@@ -46,6 +46,16 @@ earlier one, and superseded statements are marked SUPERSEDED / LATER in place.  
 * Never let a failed lead solve pass silently (NaN is intended). Report `myf.leads.N_UNRELIABLE` in scans.
 * Computation returns arrays; plotting stays in the scripts.
 
+## FORMULAS: see DERIVATIONS.md (2026-11-06)
+Every computed quantity (model, leads, RGF, channels, kappa, G, Andreev, det r, two-Majorana relations, Gamma, Q,
+xi_M, eps, overlap law, end modes, LDOS): equation, derivation, physics, verified literature source (equation
+numbers checked against the arXiv LaTeX/PDF) and the code lines.  Keep it in sync when a formula changes, and when
+code lines move (the links name line numbers).  The .md is the source: after editing it, rebuild DERIVATIONS.pdf with
+`py derivations_pdf.py` (pandoc + lualatex; the PDF's code links are vscode:// links, its § and arXiv IDs are
+clickable), and keep display equations within the A4 width (break long ones with aligned/gathered).  Found while
+writing it: Gresta et al. Eq. (4) as printed lacks the 3/pi^2 of its own T -> 0 limit (the code uses the normalised
+kernel); the studies evaluate channels R -> L ('left'), which equals L -> R for kappa at E = 0 (unitarity + PHS).
+
 ## CODE LAYOUT of computations/ (merged 2026-11-06 -- keep it small)
 | file | parts (former scripts) |
 |---|---|
