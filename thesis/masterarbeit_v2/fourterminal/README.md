@@ -1,4 +1,4 @@
-# 4_terminal — NEGF transport through a four-terminal Josephson junction
+# fourterminal — NEGF transport through a four-terminal Josephson junction
 
 Central `nx × ny` normal region, superconducting ribbons top/bottom (phase difference φ), normal leads
 left/right. BdG basis (c↑, c↓, c↓†, −c↑†). Two models share all geometry/lead/solver code:
@@ -47,6 +47,6 @@ Everything returns arrays; plotting is left to you. Examples: `computations/arch
 
 ## Checks and tests
 ```
-python -c "from my_functions.checks import run_all; run_all()"    # 19 checks, ~1 min
+python -c "from my_functions.checks import run_all; run_all()"    # 28 checks, ~1 min
 python tests/test_api.py                                         # interface, scan, wrappers
 ```

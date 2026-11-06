@@ -1,5 +1,5 @@
 """Tests of the array-returning interface (compute.py), scan/ThermalPoint and the finite-bias wrappers.
-Run from the 4_terminal folder:  python tests/test_api.py      (about a minute)"""
+Run from the fourterminal folder:  python tests/test_api.py      (about a minute)"""
 import os, sys, tempfile, time
 from pathlib import Path
 from dataclasses import replace

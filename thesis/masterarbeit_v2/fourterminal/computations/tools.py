@@ -23,7 +23,7 @@ delete them (or use a new name) when you change parameters.
 # %% --- IMPORTS ---
 import sys
 from dataclasses import replace
-from functools import partial
+from functools import lru_cache, partial
 from pathlib import Path
 
 import numpy as np
@@ -40,9 +40,8 @@ from my_functions.transport import _kernels        # noqa: E402
 
 
 
-# =============================================================================
+
 # 1. PARAMETERS
-# =============================================================================
 def base_params():
     """
     The parameter set of all ABS studies (pure Rashba).  Every cached result in plot_npz/scharf_abs*
@@ -185,10 +184,40 @@ def invariant(p, n_S):
     return Q
 
 
+def gap_at(p, n_S, k):
+    """Smallest |E| of H_cross(p, k), units of t.  H_cross is block tridiagonal (bandwidth 7): banded solver."""
+    from scipy.linalg import eigvals_banded
+    H = H_cross(p, k, n_S)
+    ab = np.zeros((8, len(H)), complex)
+    for i in range(8):
+        ab[i, :len(H) - i] = np.diagonal(H, -i)
+    return np.abs(eigvals_banded(ab, lower=True)).min()
+
+
 def gaps(p, n_S, ks=K_GRID):
     """(gap at k = 0, smallest gap over all k, the k a where it sits), in units of t."""
-    g = np.array([np.abs(np.linalg.eigvalsh(H_cross(p, k, n_S))).min() for k in ks])
+    g = np.array([gap_at(p, n_S, k) for k in ks])
     return g[0], g.min(), ks[int(np.argmin(g))]
+
+
+def gap_refined(p, n_S, ks=K_GRID):
+    """
+    Smallest gap over all k (units of t) and its k a: the three lowest local minima of the grid, each
+    refined by a 1D minimisation between its neighbours (the dip is ~1/xi_M wide, narrower than the
+    grid, so gaps() overestimates it).
+    """
+    from scipy.optimize import minimize_scalar
+    g = np.array([gap_at(p, n_S, k) for k in ks])
+    gp = np.r_[np.inf, g, np.inf]
+    loc = np.flatnonzero((gp[1:-1] <= gp[:-2]) & (gp[1:-1] <= gp[2:]))
+    best = (g.min(), ks[int(np.argmin(g))])
+    for i in loc[np.argsort(g[loc])][:3]:
+        lo, hi = ks[max(i - 1, 0)], ks[min(i + 1, len(ks) - 1)]
+        r = minimize_scalar(lambda k: gap_at(p, n_S, k), bounds=(lo, hi), method='bounded',
+                            options={'xatol': 1e-7})
+        if r.fun < best[0]:
+            best = (r.fun, r.x)
+    return best
 
 
 def k_grid(a):
@@ -260,6 +289,21 @@ def transport_point(q, E_Z, phi=np.pi):
     c = {k: float(np.asarray(v)[0]) for k, v in rgf.channels_at_phi(float(phi), 'left').items()}
     return np.array([c['ee'] + c['he_cross'], c['ee'] - c['he_cross'], c['eh_local'] + c['he_local'],
                      det_r(rgf, float(phi)), myf.leads.N_UNRELIABLE - n0])
+
+
+def transport_phis(q, E_Z, phis):
+    """transport_point for every phase in phis from ONE RGF set-up (the phase is cheap): (len(phis), 5)."""
+    n0 = myf.leads.N_UNRELIABLE
+    rgf = myf.RGFFourTerminal(myf.FourTerminalJunction(q.params_transport(E_Z=float(E_Z))), np.array([0.0]))
+    rgf.green_blocks = lru_cache(maxsize=1)(rgf.green_blocks)       # channels and det r share one solve
+    out = []
+    for ph in phis:
+        c = {k: float(np.asarray(v)[0]) for k, v in rgf.channels_at_phi(float(ph), 'left').items()}
+        out.append([c['ee'] + c['he_cross'], c['ee'] - c['he_cross'], c['eh_local'] + c['he_local'],
+                    det_r(rgf, float(ph)), 0.0])
+    out = np.array(out)
+    out[:, 4] = myf.leads.N_UNRELIABLE - n0
+    return out
 
 
 def transport_line(q, EZ, cache, n_workers=None):
@@ -389,6 +433,110 @@ def ldos_map_E0(q, E_Z, eta, every=1, phi=np.pi):
     e, h = myf.LocalGreen(myf.FourTerminalJunction(p), np.array([0.0]), cols=cols).ldos(phi)
     x_nm, y_nm = q.coords(cols)
     return y_nm, x_nm, (e + h)[0]
+
+
+class _DoubledEdges:
+    """Subspace for _g0_on_subspace on the DOUBLED columns (2 x 4 ny): rows 0 and ny-1 of both copies."""
+
+    def __init__(self, nx, ny):
+        d = 4 * ny
+        edge = np.r_[0:4, 4 * (ny - 1):4 * ny]                      # top and bottom site of one copy
+        self.nx = nx
+        self.sel_flat = [np.r_[edge, d + edge]] * nx                # copy 1 (8 dof), then copy 2 (8 dof)
+        self.offsets = 16 * np.arange(nx + 1)
+        self.dim_S = 16 * nx
+        o = self.offsets[:-1, None]
+        top, bot = (o + np.arange(4)).ravel(), (o + 4 + np.arange(4)).ravel()
+        self.P1 = np.r_[top, bot]                                   # same order as W: all tops, then all bottoms
+        self.P2 = self.P1 + 8
+
+    def block_slice(self, ix):
+        return slice(int(self.offsets[ix]), int(self.offsets[ix + 1]))
+
+
+def _trace_g0(z, H, V, Sigma_ends, nx):
+    """sum_j Tr g0(j, j) of the column chain (same recursion as _g0_on_subspace, diagonal only)."""
+    inv = np.linalg.inv
+    d = H.shape[-1]
+    I = np.eye(d)
+    A = [z * I - (H[j] if H.ndim == 3 else H) - Sigma_ends.get(j, 0) for j in range(nx)]
+    Vd = V.conj().T
+    gL = [inv(A[0])]
+    for i in range(1, nx):
+        gL.append(inv(A[i] - Vd @ gL[-1] @ V))
+    gR = [None] * nx
+    gR[nx - 1] = inv(A[nx - 1])
+    for i in range(nx - 2, -1, -1):
+        gR[i] = inv(A[i] - V @ gR[i + 1] @ Vd)
+    tr = 0.0
+    for j in range(nx):
+        Aj = A[j] - (Vd @ gL[j - 1] @ V if j > 0 else 0) - (V @ gR[j + 1] @ Vd if j < nx - 1 else 0)
+        tr += np.trace(inv(Aj))
+    return tr
+
+
+def dos_total_phis(q, E_Z, phis, eta, E=0.0):
+    """
+    DOS at energy E (1/meV) summed over ALL sites of the centre, for every phase in phis; probes decoupled
+    (tc_barr = 0).  Exact, without the all-site Green's function (16 GB per energy at a = 5):
+        Tr G = Tr g0 + Tr(K^-1 W (g0^2)_PP W^dag),   K = g_ribbons^-1 - W g0_PP W^dag,
+    P = the edge rows touching the ribbons, W = ribbon coupling (as LocalGreen).  (g0^2)_PP is the
+    off-diagonal block of the inverse of [[A, -1], [0, A]] (A = z - H_C - Sigma_leads), still block
+    tridiagonal, so _g0_on_subspace gives it on the 16 nx edge dofs.
+    """
+    from scipy.linalg import block_diag
+    from my_functions.rgf import _g0_on_subspace
+    from my_functions.leads import surface_eps_pair
+    p = replace(q.params(E_Z=float(E_Z), phi=np.pi), eta=eta / q.t, tc_barr=0.0)
+    J = myf.FourTerminalJunction(p)
+    nx, ny = p.nx, p.ny
+    z = complex(E / q.t, p.eta)
+    zN, zS = z * np.eye(4 * ny)[None], z * np.eye(4 * nx)[None]
+    S_L, S_R = J.lead_L.self_energy(zN)[0], J.lead_R.self_energy(zN)[0]
+    top = J._make_ribbon(0.0, p.tc_top, is_bot=False)            # phi_ref = 0: top == bottom
+    bot = J.ribbon_bot
+    if np.array_equal(top.H_onsite, bot.H_onsite) and np.array_equal(top.V_hop, bot.V_hop):
+        eps_bot, eps_top = surface_eps_pair(bot.H_onsite, bot.V_hop, zS, p, 'sc ribbons')
+    else:
+        eps_top, eps_bot = top.surface_eps(zS), bot.surface_eps(zS)
+    gT_inv, gB_inv = (zS - eps_top)[0], (zS - eps_bot)[0]
+    W = block_diag(top.V_coupling, bot.V_coupling)
+    H, V = J.slice_blocks_x()
+    cols = J.column_onsite()
+    if cols is not None:
+        H = cols
+    d = 4 * ny
+    Id, Zd = np.eye(d), np.zeros((d, d))
+    H2 = (np.array([np.block([[h, Id], [Zd, h]]) for h in H]) if H.ndim == 3
+          else np.block([[H, Id], [Zd, H]]))
+    V2 = np.block([[V, Zd], [Zd, V]])
+    sub = _DoubledEdges(nx, ny)
+    g2 = _g0_on_subspace(np.array([z]), H2, V2,
+                         {0: block_diag(S_L, S_L)[None], nx - 1: block_diag(S_R, S_R)[None]}, sub)[0]
+    import scipy.sparse as sps
+    Ws = sps.csr_matrix(W)                                          # 4x4 blocks per site
+    WMWd = lambda M: (Ws @ (Ws @ M).conj().T).conj().T
+    C_pp = WMWd(g2[np.ix_(sub.P1, sub.P1)])                         # W g0_PP W^dag
+    C_sq = WMWd(g2[np.ix_(sub.P1, sub.P2)])                         # W (g0^2)_PP W^dag
+    tr0 = _trace_g0(z, H, V, {0: S_L, nx - 1: S_R}, nx)
+    # the phase sits only in the top block of K: eliminate the bottom ribbon once (Schur complement
+    # S = K_TT - K_TB K_BB^-1 K_BT), then each phase costs one solve of size nT instead of 2 nT:
+    #   Tr(K^-1 C) = Tr(K_BB^-1 C_BB) + Tr(S^-1 E),   E = (C_TT - Y C_BT) - (C_TB - Y C_BB) X
+    nT = 4 * nx
+    t_, b_ = slice(0, nT), slice(nT, None)
+    Kbb_inv = np.linalg.inv(gB_inv - C_pp[b_, b_])
+    X = Kbb_inv @ -C_pp[b_, t_]                                     # K_BB^-1 K_BT
+    Y = -C_pp[t_, b_] @ Kbb_inv                                     # K_TB K_BB^-1
+    F = C_pp[t_, t_] - C_pp[t_, b_] @ X                             # S = U^dag gT^-1 U - F
+    E = (C_sq[t_, t_] - Y @ C_sq[b_, t_]) - (C_sq[t_, b_] - Y @ C_sq[b_, b_]) @ X
+    tr0 = tr0 + np.einsum('ij,ji->', Kbb_inv, C_sq[b_, b_])
+    out = []
+    for ph in phis:
+        w = np.exp(1j * ph)
+        u = np.tile(np.array([1.0, 1.0, w, w]), nx)
+        S = u.conj()[:, None] * gT_inv * u[None, :] - F
+        out.append(-(tr0 + np.trace(np.linalg.solve(S, E))).imag)
+    return np.array(out) / (np.pi * q.t)
 
 
 def peak_energies(E, D):
