@@ -6,10 +6,12 @@ Links point to the exact lines; in VS Code they open the file at that line, and 
 equations.
 
 **What the source tags mean**
-- **[source, verified]**: the formula is in the cited paper. I checked it against the paper's own LaTeX source
+- **[source, verified]**: the formula is in the cited paper. It was checked against the paper's own LaTeX source
   from arXiv; equation numbers were checked against the printed PDF.
-- **[derived here]**: I derived it myself, from the cited equations or from scratch. These derivations are not in
-  the paper they build on.
+- **[follows from source]**: a few lines of algebra on verified equations, with every step written out. Where a
+  paper states a limit or special case of the result, it is named.
+- **[derived here]**: no paper states it, because it is either a convention of this code (axes, units, basis,
+  storage) or analysis done for this project. The derivation is written out in full.
 - **[model choice]**: a decision made in this code, not a physical law.
 
 Everything is in the lattice units of `my_functions` unless stated otherwise (energies in units of the hopping
@@ -83,8 +85,15 @@ which is the form stated in [ldos.py:45-46](computations/ldos.py#L45-L46) and bu
 [hamiltonians.py:79-80](my_functions/hamiltonians.py#L79-L80) and [:93-94](my_functions/hamiltonians.py#L93-L94).
 
 ### 1.2 Lattice discretisation
-**[derived here]** This is the standard finite-difference lattice; the continuum limit below is the proof that it
-reproduces Eq. (1).
+**[source, verified]** for the Rashba lattice: Mireles & Kirczenow, PRB 64, 024426 (2001), arXiv:cond-mat/0105049,
+Sec. II.C.
+- **Eq. (18)** is the tight-binding Rashba term: a nearest-neighbour hop $\mp t_\mathrm{so}(i\sigma_{y,x})$ with
+  $t_\mathrm{so}=\alpha/2a$, next to the kinetic hop $|t|=\hbar^2/2m^*a^2$ and the onsite energy $4|t|$.
+- **Eqs. (24)–(25)** show that its bands reduce to the continuum Rashba dispersion for small $ka$.
+
+The code uses the same amplitudes: kinetic $t$, onsite $4t$, SOC hop $\alpha/2a$ (and $\beta/2a$ for Dresselhaus).
+**[follows from source]** The continuum limit below repeats their check for the full block, which also covers the
+Dresselhaus term and the BdG hole sector that they do not treat.
 
 **Onsite block** [hamiltonians.py:25-47](my_functions/hamiltonians.py#L25-L47):
 
@@ -168,8 +177,10 @@ $$
 \varepsilon_s=H_0+V\,(z-\varepsilon_s)^{-1}V^\dagger .
 $$
 
-**[derived here]** This holds because removing the surface cell leaves an identical semi-infinite lead. The
-coupling to the centre (hop $V_c$) gives the self-energy and the coupling matrix:
+**[source, verified]** Lewenkopf–Mucciolo (below), Sec. 4.1, **Eqs. (60)–(61)**: "Since adding another slice to a
+semi-infinite lead should not alter its Green's function", $G^L_{1,1}=g_L$, which gives the self-consistency
+condition $g_L=(E-h_1-t_x^2g_L)^{-1}$. That is the equation above, for a scalar hop $t_x$. The coupling to the
+centre (hop $V_c$) gives the self-energy and the coupling matrix:
 
 $$
 \Sigma(z)=V_c^\dagger g_s(z)V_c,\qquad \Gamma=i(\Sigma-\Sigma^\dagger).
@@ -180,9 +191,8 @@ gives $\Gamma_{L,R}=i[\Sigma^r-\Sigma^{r\dagger}]$, **Eq. (17)** gives $\Sigma^r
 **Eq. (18)** defines the surface Green's function.
 
 **Algorithm.** Sancho–Rubio decimation: M. P. López Sancho, J. M. López Sancho and J. Rubio, J. Phys. F 15, 851
-(1985). I did not check that paper's text; it is cited for exactly this method by Lewenkopf–Mucciolo (section on
-the decimation method) and by Gresta et al. (ref. 61). Each iteration eliminates every second cell and
-renormalises
+(1985). That paper's own text was not checked; Lewenkopf–Mucciolo (Sec. 4.3) and Gresta et al. (ref. 61) cite it
+for exactly this method. Each iteration eliminates every second cell and renormalises
 
 $$
 \varepsilon_s\leftarrow\varepsilon_s+\alpha g\beta,\qquad \varepsilon_b\leftarrow\varepsilon_b+\alpha g\beta+\beta g\alpha,
@@ -190,6 +200,15 @@ $$
 $$
 
 starting from $\alpha=V$, $\beta=V^\dagger$. The effective chain length doubles at every step.
+
+**[source, verified]** Lewenkopf–Mucciolo print this recursion in Sec. 4.3, **Eqs. (86)–(93)**.
+- **Their Eq. (91) has a typo.** It reads $\varepsilon^s_k=\varepsilon_{k-1}+\alpha_{k-1}g\,\beta_{k-1}$. Inserting
+  their Eq. (87) for site $2^{k-1}$ into their Eq. (86) gives
+  $(z-\varepsilon^s_{k-1}-\alpha g\beta)G_{0,0}=1+\alpha g\alpha\,G_{2^k,0}$, so the surface term builds on itself:
+  $\varepsilon^s_k=\varepsilon^s_{k-1}+\alpha_{k-1}g\,\beta_{k-1}$, as written above. Their Eq. (92) for the bulk
+  term is correct.
+- The code uses the correct form ([leads.py:71](my_functions/leads.py#L71)). The residual check below would also
+  catch a wrong surface term, since it tests the converged $\varepsilon_s$ against the self-consistency equation.
 
 **Physics.**
 - $\Sigma$ is what the infinite lead does to the centre. Its Hermitian part shifts levels; its anti-Hermitian part
@@ -224,13 +243,21 @@ $$
 
 The off-diagonal blocks follow from $G_{ij}=g^R_iV^\dagger G_{i-1,j}$ for $i>j$ and $G_{ij}=g^L_iVG_{i+1,j}$ for
 $i<j$.
-- **[source, verified]** Lewenkopf–Mucciolo, Sec. 3: built from the Dyson equations $G=G^{(0)}+G^{(0)}VG$, their
-  Eqs. (15)–(16) in their slice notation.
+- **[source, verified]** Lewenkopf–Mucciolo, Sec. 3:
+  - the recursions are built from the Dyson equations $G=G^{(0)}+G^{(0)}VG$ and $G=G^{(0)}+GVG^{(0)}$, their
+    **Eqs. (19)–(20)**;
+  - the left and right recursions above are their **Eqs. (32)** and **(35)**;
+  - the neighbouring off-diagonal blocks are their **Eqs. (38)–(39)**. The code applies them repeatedly.
 - **Code:** [rgf.py:115-169](my_functions/rgf.py#L115-L169); the recursions are
   [:138-144](my_functions/rgf.py#L138-L144).
 
-**Step 2: the two SC ribbons in one Dyson step.** **[derived here]** This is exact algebra: the matrix inversion
-lemma applied to $\Sigma_{T,B}=W^\dagger g_sW$, which lives on the boundary rows $P$.
+**Step 2: the two SC ribbons in one Dyson step.** **[follows from source]** This is Dyson's equation, LM Eq. (19),
+with $G^{(0)}=g_0$. The perturbation is $\Sigma=\Sigma_T+\Sigma_B=W^\dagger g_sW$, which lives only on the boundary
+rows $P$.
+1. On $P$: $G_{PQ}=g_{0,PQ}+g_{0,PP}\Sigma G_{PQ}$, so $G_{PQ}=(1-g_{0,PP}\Sigma)^{-1}g_{0,PQ}$.
+2. On $Q$: $G_{QQ}=g_{0,QQ}+g_{0,QP}\Sigma G_{PQ}$.
+3. The push-through identity
+   $W^\dagger g_sW(1-g_{0,PP}W^\dagger g_sW)^{-1}=W^\dagger(g_s^{-1}-Wg_{0,PP}W^\dagger)^{-1}W$ then gives
 
 $$
 G_{QQ}=g_{0,QQ}+\big(g_{0,QP}W^\dagger\big)\big[g_s^{-1}-Wg_{0,PP}W^\dagger\big]^{-1}\big(Wg_{0,PQ}\big),
@@ -241,6 +268,9 @@ $$
   why it is stable (docstring, [rgf.py:25-34](my_functions/rgf.py#L25-L34)).
 - **Code:** [rgf.py:342-350](my_functions/rgf.py#L342-L350); its pieces are built in
   [:317-319](my_functions/rgf.py#L317-L319).
+- **Checked:** the RGF channels agree with a dense inversion of the whole centre to $10^{-8}$, at
+  $\phi=0,\,1.3,\,\pi$ and for both directions ([checks.py:55-67](my_functions/checks.py#L55-L67)). That covers
+  this step and the phase gauge below.
 
 **The phase costs nothing [derived here].** $\phi$ enters only the top ribbon's pairing. A gauge transformation
 $U=\mathrm{diag}(1,1,e^{i\delta\phi},e^{i\delta\phi})$ per site maps the ribbon at $\phi_\mathrm{ref}$ to the
@@ -306,7 +336,7 @@ $$
 
 At $T\to0$ this gives $G/G_0=\mathcal T^{ee}-\mathcal T^{he}$ at $E=0$.
 
-**Sign [derived here].** The charge current of Klees et al., App. C (the final $I_R$, $J_R$ formula, after their
+**Sign [follows from source].** The charge current of Klees et al., App. C (the final $I_R$, $J_R$ formula, after their
 particle–hole simplification) is
 
 $$
@@ -338,7 +368,7 @@ with the stated $T\to0$ limit $\kappa/\kappa_0=\mathcal T^Q$.
 $\mathcal T_{22}=\mathcal T^{ee}_{RL}+\mathcal T^{eh}_{RL}$. In their words, "a temperature gradient does not
 generate LAR contributions to the thermal current $J_R$".
 
-**Derivation [derived here]** (from the $J_R$ line of Klees et al., App. C):
+**Derivation [follows from source]** (from the $J_R$ line of Klees et al., App. C):
 
 1. Take a thermal bias only: $\mu_L=\mu_R=0$, so for each probe $f^e=f^h=f_T$.
 2. The LAR term $\propto f^e_R-f^h_R$ then vanishes identically, and
@@ -371,13 +401,17 @@ This $\kappa$ is taken at zero voltage. The open-circuit value adds a thermoelec
 `linear_response` [compute.py:35](my_functions/compute.py#L35); finite-$T$ kernels in §4.4.
 
 ### 4.3 Local Andreev conductance
-**[derived here]** from the LAR term of `current()`, [transport.py:63](my_functions/transport.py#L63):
+**[follows from source]** from the LAR term of `current()`, [transport.py:63](my_functions/transport.py#L63), which
+is the $\mathcal T^{eh}_{RR}(f^e_R-f^h_R)$ term of Klees et al., App. C (§4.1):
 - The current is $I^\mathrm{LAR}=\tfrac12\int(R_{eh}+R_{he})(f_e-f_h)$, and $\partial(f_e-f_h)/\partial V=2(-\partial f/\partial E)$.
 - Hence $G_\mathrm{LAR}=G_0\int(R_{eh}+R_{he})(-\partial f/\partial E)\to G_0\,(R_{eh}+R_{he})(0)=2G_0R_{he}(0)$.
 
 **Physics.** An isolated Majorana gives perfect Andreev reflection, $R_{he}(0)=1$, hence $2e^2/h$.
 - **[source, verified]** Law, Lee & Ng, PRL 103, 237001 (2009), arXiv:0907.1909: "the presence of a vortex in the
   superconductor changes the conductance to $2e^2/h$" (resonant Andreev reflection via a Majorana).
+- **[source, verified]** Flensberg, PRB 82, 180516 (2010), arXiv:1009.3533, **Eq. (13)**: for a single isolated
+  Majorana, $dI/dV=\frac{2e^2}{h}\frac{4\Gamma_F^2}{(eV)^2+4\Gamma_F^2}$. That is $2G_0R_{he}(eV)$ with the
+  Lorentzian of §5.2, so the formula above holds at every energy, not only at $E=0$.
 - This quantity needs only one Majorana, so it is not sensitive to the splitting. Its plateau is real but not
   specific to Majoranas (CLAUDE.md, "THE PLATEAU THAT DOES EXIST").
 
@@ -415,8 +449,15 @@ $$
 **Physics.**
 - $\det r=-1$: the probe sees one isolated Majorana (perfect Andreev reflection, §4.3).
 - $\det r=+1$: it sees none, or a hybridised pair.
-- **[derived here]** $\det r=0$ means $r$ is singular, so one eigenchannel is fully transmitted. Then
-  $\kappa=\tfrac12\sum_nT_n\ge\tfrac12$ (the trace over e and h channels counts each process twice).
+- **[source, verified]** $\det r=0$ means one channel is fully transmitted. Akhmerov, Dahlhaus, Hassler, Wimmer &
+  Beenakker, PRL 106, 057001 (2011), arXiv:1009.5542:
+  - **Eq. (3):** $\mathrm{Det}\,r=\prod_n\tanh\lambda_n$, with transmission eigenvalues $T_n=1/\cosh^2\lambda_n$;
+  - the text after it: "at the topological phase transition one of the $\lambda_n$'s vanishes … so the
+    corresponding transmission eigenvalue $T_n=1$";
+  - their thermal conductance is $G_\mathrm{th}=G_0\sum_nT_n$ with $G_0=\pi^2k_B^2\tau_0/6h=\kappa_0/2$.
+
+  So $\kappa/\kappa_0=\tfrac12\sum_nT_n\ge\tfrac12$ at $\det r=0$. The sum runs over the e and h channels and counts
+  each process twice.
 - In a finite junction $\det r$ follows the Majoranas' overlap, not only the bulk phase (§5.1).
 
 **Code:** [tools.py:266-277](computations/tools.py#L266-L277).
@@ -443,7 +484,7 @@ $$
 The general form of Eq. (2) and the particle–hole constraint $S(0)$ real orthogonal for $\mathcal C^2=+1$ are also
 in Beenakker, RMP 87, 1037 (2015), arXiv:1407.2131, section on the scattering matrix (Cayley transform).
 
-**At $E=0$ [derived here]**, writing $x^2=E_M^2/(\Gamma_1\Gamma_2)$, so $Z=E_M^2+\Gamma_1\Gamma_2$:
+**At $E=0$ [follows from source]**, writing $x^2=E_M^2/(\Gamma_1\Gamma_2)$, so $Z=E_M^2+\Gamma_1\Gamma_2$:
 
 $$
 \mathcal T^{ee}=\mathcal T^{he}=|A_{21}|^2=\frac{x^2}{(1+x^2)^2}
@@ -462,6 +503,14 @@ $$
 
 Unitarity check: $R_{ee}+R_{he}+\mathcal T^{ee}+\mathcal T^{he}=[x^4+1+2x^2]/(1+x^2)^2=1$.
 
+What the papers state themselves:
+- **Nilsson et al., the text after their Eq. (8):** for $E,\Gamma_i\ll E_M$ ($x\gg1$), an electron goes to the other
+  lead as an electron or a hole "with equal probabilities $p=\Gamma_1\Gamma_2/E_M^2$". That is the $x\gg1$ limit
+  $\mathcal T^{ee}=\mathcal T^{he}\to1/x^2$ of the closed form above. The closed form itself is not in the paper.
+- **Akhmerov et al., Eq. (3)** (§4.5): $\kappa=\tfrac12(1-\det r^2)$ also follows from it, without the two-Majorana
+  algebra. A lead coupled to only one Majorana has every channel but one fully reflected ($|\tanh\lambda_n|=1$).
+  The remaining channel then has $\tanh\lambda=\pm\det r$, so $T=1-\det r^2$ and $\kappa/\kappa_0=\tfrac12T$.
+
 **Physics.**
 - $\kappa$ reaches ½ **only** at $x=1$ ($\varepsilon=\Gamma$) and is smaller on both sides.
 - $\varepsilon\to0$ gives $\kappa\to0$: the two Majoranas decouple and no heat crosses.
@@ -469,7 +518,7 @@ Unitarity check: $R_{ee}+R_{he}+\mathcal T^{ee}+\mathcal T^{he}=[x^4+1+2x^2]/(1+
 - So $\kappa=\tfrac12$ is a **resonance in $\varepsilon/\Gamma$**, not a protected plateau (CLAUDE.md, "resonance,
   not a topological plateau").
 
-**Finite energy [derived here]** (used by the fingerprint finite-energy cell). For $\Gamma_1=\Gamma_2=\Gamma$:
+**Finite energy [follows from source]** (used by the fingerprint finite-energy cell). For $\Gamma_1=\Gamma_2=\Gamma$:
 - $\kappa(E)=2E_M^2\Gamma^2/|Z|^2$ with $|Z|^2=(E_M^2-E^2+\Gamma^2)^2+4E^2\Gamma^2$.
 - Minimising over $u=E^2$ gives $E^*=\sqrt{E_M^2-\Gamma^2}$ and $|Z|^2_\mathrm{min}=4E_M^2\Gamma^2$.
 - So $\max_E\kappa(E)=\tfrac12$ for every $E_M\ge\Gamma$.
@@ -482,7 +531,7 @@ Unitarity check: $R_{ee}+R_{he}+\mathcal T^{ee}+\mathcal T^{he}=[x^4+1+2x^2]/(1+
   figure [slides_nov.py:417](computations/slides_nov.py#L417).
 
 ### 5.2 Measuring $\Gamma$ directly: the Andreev Lorentzian
-**[derived here]** from Nilsson Eqs. (4)–(6) with $E_M=0$:
+**[follows from source]** from Nilsson Eqs. (4)–(6) with $E_M=0$:
 
 $$
 A_{11}=\frac{-i\Gamma_1}{E+i\Gamma_1}\;\Rightarrow\;R_{he}(E)=|A_{11}|^2=\frac{\Gamma_1^2}{E^2+\Gamma_1^2}.
@@ -491,6 +540,10 @@ $$
 So $\Gamma$ is the **half width at half maximum** of the local Andreev signal at an isolated Majorana (at an
 $\varepsilon$ zero). It is the same $\Gamma$ that enters $x$ in §5.1, so the collapse plot uses no fitted
 parameter.
+
+**[source, verified]** Flensberg, **Eq. (13)**, gives the same line shape for the conductance into an isolated
+Majorana: $dI/dV=\frac{2e^2}{h}\frac{4\Gamma_F^2}{(eV)^2+4\Gamma_F^2}$, with height $2e^2/h$ and half width
+$2\Gamma_F$. His coupling $\Gamma_F$ (**Eq. (9)**) is normalised differently: $\Gamma=2\Gamma_F$.
 - **Code:** `gamma_point` [study_mixed.py:88](computations/study_mixed.py#L88) and `gamma_job`
   [study_tuning.py:489](computations/study_tuning.py#L489) bisect, in $\ln E$, for where
   (`eh_local`+`he_local`)/2 falls to half its $E=0$ value.
@@ -502,8 +555,12 @@ parameter.
     by decades.
 - **$\Gamma\propto\tau^p$:** $p=\ln(x_a/x_b)/\ln(\tau_b/\tau_a)$ at the same points of two maps,
   [study_tuning.py:470-476](computations/study_tuning.py#L470-L476).
-  - Golden-rule expectation **[derived here]**: Nilsson's $\Gamma_i=2\pi w_i^2$ with $w_i\propto\tau\,\psi_M(\text{contact})$
-    at fixed wavefunctions gives $p=2$.
+  - Golden-rule expectation **[follows from source]**:
+    - Flensberg **Eq. (9)** gives $\Gamma=2\pi\sum_{k\sigma}|V_{k\sigma}|^2\delta(\omega-\varepsilon_{k\sigma})$, with
+      $V_{k\sigma}=\int dx\,f_\sigma(x)\,t_k(x)$ (Majorana wavefunction times tunnel amplitude, his Eq. (3) and the
+      text after it).
+    - The probe bond makes $t_k\propto\tau$, so at fixed wavefunctions $\Gamma\propto\tau^2$, i.e. $p=2$.
+    - Nilsson's $\Gamma_i=2\pi w_i^2$ is the same statement.
   - Measured: $p\approx2.6$. Why it differs from 2 has **not** been established.
 - **Plateau point [model choice]:**
   - $|\kappa-\tfrac12|<0.03$ and $|G|<0.1\kappa$: [study_tuning.py:394-396](computations/study_tuning.py#L394-L396);
@@ -561,7 +618,14 @@ invariant measured through a probe, and it tends to $Q$ only for $L\gg\xi_M$.
 ## 7. Lengths and the splitting $\varepsilon$
 
 ### 7.1 Complex momenta: decay length $\xi_M$ and oscillation $k_\mathrm{osc}$
-**[derived here]**
+**[source, verified]** Groth, Wimmer, Akhmerov & Waintal (Kwant), New J. Phys. 16, 063065 (2014), arXiv:1309.2926,
+Sec. 2.2, **Eqs. (5)–(6)**:
+- the modes of a translation-invariant lead are $\phi_n(j)=\lambda_n^j\chi_n$ with
+  $(H_L+V_L\lambda_n^{-1}+V_L^\dagger\lambda_n)\chi_n=E\chi_n$;
+- "the modes with $|\lambda_n|<1$ are evanescent".
+
+Steps 1–2 below are this equation at $E=0$, with $H_1$ the hop to the next slice. The linearisation (step 3) and
+the definitions of $\xi_M$ and $k_\mathrm{osc}$ (step 4) are **[derived here]**.
 1. With nearest-neighbour hopping along the junction, $H(k)=H_0+H_1e^{ik}+H_1^\dagger e^{-ik}$.
 2. A zero-energy solution $\psi_n=\lambda^n\varphi$ with $\lambda=e^{ik}$ (complex $k$) requires
    $$\big(H_1\lambda^2+H_0\lambda+H_1^\dagger\big)\varphi=0 .$$
@@ -572,9 +636,7 @@ invariant measured through a probe, and it tends to $Q$ only for $L\gg\xi_M$.
    $|\psi|\propto e^{-x/\xi_M}$:
    $$\xi_M=-\frac{a}{\ln|\lambda|},\qquad k_\mathrm{osc}=\frac{|\arg\lambda|}{a}.$$
 
-The same mode construction underlies the mode-matching lead solvers that Lewenkopf–Mucciolo list ("eigenchannel
-decomposition or mode matching"). The code's lead fallback [leads.py:123-135](my_functions/leads.py#L123-L135) uses
-it at finite $E$.
+The code's lead fallback [leads.py:123-135](my_functions/leads.py#L123-L135) uses the same modes at finite $E$.
 
 **Getting $H_0$ and $H_1$ from three Bloch matrices [derived here].**
 - $H(0)=H_0+H_1+H_1^\dagger$, $H(\pi)=H_0-H_1-H_1^\dagger$ and $H(\pi/2)=H_0+i(H_1-H_1^\dagger)$.
@@ -656,7 +718,7 @@ the overlap of the two end Majoranas.
 
 ### 7.6 LDOS and total DOS
 - **[source, verified]** Gresta et al., **Eq. (8)**: $\mathrm{LDOS}=\frac1\pi\mathrm{Im\,Tr}\,\mathcal G^a$. That is
-  equivalent to $-\frac1\pi\mathrm{Im\,Tr}\,G^r$, which the code uses
+  equivalent to $-\frac1\pi\mathrm{Im\,Tr}\,G^r$, the form of Lewenkopf–Mucciolo **Eq. (12)**, which the code uses
   ([spectra.py:149](my_functions/spectra.py#L149)).
 - Total DOS **[derived here]**:
   $$\mathrm{Tr}\,G=\mathrm{Tr}\,g_0+\mathrm{Tr}\big(K^{-1}W(g_0^2)_{PP}W^\dagger\big),$$
@@ -671,24 +733,25 @@ the overlap of the two end Majoranas.
 
 | quantity | formula | code | source |
 |---|---|---|---|
-| BdG model | Scharf Eq. (1), discretised | [hamiltonians.py:25](my_functions/hamiltonians.py#L25), [ldos.py:196](computations/ldos.py#L196) | Scharf 2019 Eq. (1) |
+| BdG model | Scharf Eq. (1), discretised | [hamiltonians.py:25](my_functions/hamiltonians.py#L25), [ldos.py:196](computations/ldos.py#L196) | Scharf 2019 Eq. (1); lattice: Mireles–Kirczenow Eqs. (18), (24)–(25) |
 | $E_Z$, $E_T$ | $g\mu_BB/2$, $\frac\pi2\hbar v_F/W$ | [ldos.py:148](computations/ldos.py#L148), [:157](computations/ldos.py#L157) | Scharf, Sec. VII text; Eq. (8) |
 | $\Sigma,\Gamma$ | $V_c^\dagger g_sV_c$, $i(\Sigma-\Sigma^\dagger)$ | [leads.py:239](my_functions/leads.py#L239), [rgf.py:293](my_functions/rgf.py#L293) | Lewenkopf–Mucciolo Eqs. (16)–(17) |
-| $G^r$ (centre) | RGF plus ribbon Dyson step | [rgf.py:115](my_functions/rgf.py#L115), [:342](my_functions/rgf.py#L342) | LM Sec. 3; Dyson step derived here |
+| $g_s$ (lead surface) | $\varepsilon_s=H_0+V(z-\varepsilon_s)^{-1}V^\dagger$, decimation | [leads.py:48](my_functions/leads.py#L48) | LM Eqs. (60)–(61), (86)–(93) (typo in (91)) |
+| $G^r$ (centre) | RGF plus ribbon Dyson step | [rgf.py:115](my_functions/rgf.py#L115), [:342](my_functions/rgf.py#L342) | LM Eqs. (19)–(20), (32), (35), (38)–(39); Dyson step follows from LM Eq. (19) |
 | channels | $\mathrm{Tr}[\Gamma G^r\Gamma G^a]$ projected on e/h | [rgf.py:373](my_functions/rgf.py#L373) | Gresta Eq. (7) |
 | $G$ | $\mathcal T^{ee}-\mathcal T^{he}$ | [tools.py:290](computations/tools.py#L290) | Gresta Eqs. (3), (5) |
 | $\kappa$ | $\mathcal T^{ee}+\mathcal T^{he}$; kernel $\frac{3}{\pi^2}x^2W_\mathrm{el}$ | [tools.py:290](computations/tools.py#L290), [transport.py:118](my_functions/transport.py#L118) | Gresta Eqs. (4), (6); Klees Sec. IV and App. C |
-| local Andreev | $R_{eh}+R_{he}$ | [tools.py:290](computations/tools.py#L290) | derived; Law–Lee–Ng for $2e^2/h$ |
-| $\det r$ | $-1+i\Gamma^{1/2}G_{LL}\Gamma^{1/2}$ | [tools.py:266](computations/tools.py#L266) | LM Eqs. (5), (8); Fulga Table I |
-| two-Majorana $\kappa$, $\det r$ | $\frac{2x^2}{(1+x^2)^2}$, $\frac{x^2-1}{x^2+1}$ | [study_tuning.py:458](computations/study_tuning.py#L458) | Nilsson Eqs. (1)–(6), $E=0$ derived here |
-| $\Gamma$ (direct) | HWHM of $R_{he}(E)$ | [study_mixed.py:88](computations/study_mixed.py#L88) | derived from Nilsson Eqs. (4)–(6) |
+| local Andreev | $R_{eh}+R_{he}$ | [tools.py:290](computations/tools.py#L290) | follows from Klees App. C; Flensberg Eq. (13); Law–Lee–Ng |
+| $\det r$ | $-1+i\Gamma^{1/2}G_{LL}\Gamma^{1/2}$ | [tools.py:266](computations/tools.py#L266) | LM Eqs. (5), (8); Fulga Table I; Akhmerov Eq. (3) |
+| two-Majorana $\kappa$, $\det r$ | $\frac{2x^2}{(1+x^2)^2}$, $\frac{x^2-1}{x^2+1}$ | [study_tuning.py:458](computations/study_tuning.py#L458) | follows from Nilsson Eqs. (1)–(6) (limit stated after their Eq. (8)); $\kappa(\det r)$ also from Akhmerov Eq. (3) |
+| $\Gamma$ (direct) | HWHM of $R_{he}(E)$ | [study_mixed.py:88](computations/study_mixed.py#L88) | follows from Nilsson Eqs. (4)–(6); Flensberg Eq. (13) |
 | $Q$ | $\mathrm{sgn\,Pf}\tilde B(0)\,\mathrm{sgn\,Pf}\tilde B(\pi)$ | [tools.py:177](computations/tools.py#L177) | Kitaev Eq. (26); Wimmer (Parlett–Reid) |
-| $\xi_M$, $k_\mathrm{osc}$ | $-a/\ln\lvert\lambda\rvert$, $\lvert\arg\lambda\rvert/a$ | [study_oscillation.py:69](computations/study_oscillation.py#L69) | derived here |
+| $\xi_M$, $k_\mathrm{osc}$ | $-a/\ln\lvert\lambda\rvert$, $\lvert\arg\lambda\rvert/a$ | [study_oscillation.py:69](computations/study_oscillation.py#L69) | modes: Kwant Eqs. (5)–(6); $\xi_M$, $k_\mathrm{osc}$ derived here |
 | $\xi_\mathrm{hyp}$ | $\hbar v_A/\Delta_\mathrm{out}$ | [study_oscillation.py:90](computations/study_oscillation.py#L90) | derived here |
 | $\varepsilon$ | lowest $\lvert E\rvert$ of the closed box | [study_oscillation.py:118](computations/study_oscillation.py#L118) | (= Nilsson's $E_M$) |
 | overlap law | $A\Delta e^{-L/\xi_M}\lvert\cos(kL+\varphi_0)\rvert$ | [study_oscillation.py:254](computations/study_oscillation.py#L254) | Das Sarma et al. Eqs. (1)–(3); exponent convention derived here |
 | $\varepsilon_\mathrm{RR}$ | Rayleigh–Ritz in $\{\psi_L,\psi_R\}$ | [study_mixed.py:525](computations/study_mixed.py#L525) | derived here |
-| LDOS | $-\frac1\pi\mathrm{Im\,Tr}\,G^r$ | [spectra.py:149](my_functions/spectra.py#L149) | Gresta Eq. (8) |
+| LDOS | $-\frac1\pi\mathrm{Im\,Tr}\,G^r$ | [spectra.py:149](my_functions/spectra.py#L149) | Gresta Eq. (8); LM Eq. (12) |
 
 ## 9. Sources
 All papers were checked against their arXiv LaTeX source; equation numbers were checked against the printed PDF.
@@ -703,9 +766,10 @@ All papers were checked against their arXiv LaTeX source; equation numbers were 
    multiterminal junctions*, PRB 110, 064517 (2024), arXiv:2306.17845. Used: App. C (charge and heat currents),
    Sec. III (particle–hole symmetry of $\mathcal T$), Sec. IV (Onsager coefficients, $\mathcal T_{22}$).
 4. C. H. Lewenkopf, E. R. Mucciolo, *The recursive Green's function method for graphene*, J. Comput. Electron. 12,
-   203 (2013), arXiv:1304.3934. Used: Eqs. (5), (8), (15)–(18), Sec. 3 (RGF).
-5. M. P. López Sancho, J. M. López Sancho, J. Rubio, J. Phys. F 15, 851 (1985). Decimation; not checked in its own
-   text, cited as in refs. 2 and 4.
+   203 (2013), arXiv:1304.3934. Used: Eqs. (5), (8), (12), (15)–(20), (32), (35), (38)–(39) (Sec. 3, RGF),
+   (60)–(61) (Sec. 4.1, lead self-consistency), (86)–(93) (Sec. 4.3, decimation; Eq. (91) has a typo, §2.1).
+5. M. P. López Sancho, J. M. López Sancho, J. Rubio, J. Phys. F 15, 851 (1985). Decimation. Not checked in its own
+   text; it is cited as in refs. 2 and 4, and the recursion was checked as printed in ref. 4.
 6. I. C. Fulga, F. Hassler, A. R. Akhmerov, C. W. J. Beenakker, *Scattering formula for the topological quantum
    number of a disordered multi-mode wire*, PRB 83, 155429 (2011), arXiv:1101.1749. Used: Table I, Sec. III.
 7. J. Nilsson, A. R. Akhmerov, C. W. J. Beenakker, *Splitting of a Cooper pair by a pair of Majorana bound states*,
@@ -724,3 +788,15 @@ All papers were checked against their arXiv LaTeX source; equation numbers were 
     planar Josephson junction*, PRX 7, 021032 (2017), arXiv:1609.09482. The platform, as cited by Scharf.
 14. C. Caroli, R. Combescot, P. Nozières, D. Saint-James, J. Phys. C 4, 916 (1971). The Caroli formula, as cited
     by refs. 2 and 4.
+15. A. R. Akhmerov, J. P. Dahlhaus, F. Hassler, M. Wimmer, C. W. J. Beenakker, *Quantized conductance at the
+    Majorana phase transition in a disordered superconducting wire*, PRL 106, 057001 (2011), arXiv:1009.5542.
+    Used: Eq. (3) and the text after it ($\det r=\prod\tanh\lambda_n$, $T_n=1/\cosh^2\lambda_n$, $G_\mathrm{th}$).
+16. K. Flensberg, *Tunneling characteristics of a chain of Majorana bound states*, PRB 82, 180516 (2010),
+    arXiv:1009.3533. Used: Eqs. (3), (9), (13) (tunnel coupling, $\Gamma$, Andreev Lorentzian).
+17. C. W. Groth, M. Wimmer, A. R. Akhmerov, X. Waintal, *Kwant: a software package for quantum transport*, New J.
+    Phys. 16, 063065 (2014), arXiv:1309.2926. Used: Sec. 2.2, Eqs. (5)–(6) (lead modes, complex $\lambda$).
+18. F. Mireles, G. Kirczenow, *Ballistic spin-polarized transport and Rashba spin precession in semiconductor
+    nanowires*, PRB 64, 024426 (2001), arXiv:cond-mat/0105049. Used: Sec. II.C, Eqs. (18), (24)–(25)
+    (tight-binding Rashba term, $t_\mathrm{so}=\alpha/2a$).
+
+The journal references of refs. 15, 16 and 18 were checked against Crossref.

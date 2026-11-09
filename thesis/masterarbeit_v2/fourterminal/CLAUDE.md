@@ -55,6 +55,9 @@ code lines move (the links name line numbers).  The .md is the source: after edi
 clickable), and keep display equations within the A4 width (break long ones with aligned/gathered).  Found while
 writing it: Gresta et al. Eq. (4) as printed lacks the 3/pi^2 of its own T -> 0 limit (the code uses the normalised
 kernel); the studies evaluate channels R -> L ('left'), which equals L -> R for kappa at E = 0 (unitarity + PHS).
+Lewenkopf-Mucciolo Eq. (91) (decimation surface term) has a typo, eps_{k-1} for eps^s_{k-1}; leads.py uses the
+correct recursion.  Tags (2026-11-06): [source, verified] / [follows from source] (algebra on verified equations) /
+[derived here] (code conventions or own analysis, no paper exists) / [model choice].
 
 ## CODE LAYOUT of computations/ (merged 2026-11-06 -- keep it small)
 | file | parts (former scripts) |
