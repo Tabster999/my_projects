@@ -128,7 +128,7 @@ def _call(args):
     return func(**kw)
 
 
-def scan(func, grid, n_workers=1, save=None, pool=None):
+def scan(func, grid, n_workers=1, save=None, pool=None, chunksize=None):
     """
     Evaluate func(**point) on every point of the grid {name: values, ...} (outer product; the LAST
     parameter varies fastest) and return {'values': array (*grid shape, *result shape), 'done', 'axes'}.
@@ -137,6 +137,8 @@ def scan(func, grid, n_workers=1, save=None, pool=None):
     worker, so a ThermalPoint reuses its central solve along the last axis.  func must then be picklable
     (module level, or a ThermalPoint), and scripts need the `if __name__ == "__main__":` guard.
     save='file.npz' stores the results after every point; rerunning with the same grid skips finished points.
+    In parallel a point comes back only with its whole chunk: the default (an even split, one chunk per worker)
+    saves nothing until the chunks finish, all near the end; chunksize=1 saves after every point.
     """
     import itertools
     names = list(grid)
@@ -167,7 +169,7 @@ def scan(func, grid, n_workers=1, save=None, pool=None):
     else:
         own = pool is None
         pool = pool or make_pool(n_workers)
-        chunk = max(1, -(-len(jobs) // getattr(pool, '_max_workers', n_workers or 1)))
+        chunk = chunksize or max(1, -(-len(jobs) // getattr(pool, '_max_workers', n_workers or 1)))
         try:
             for ix, r in zip(todo, pool.map(_call, jobs, chunksize=chunk)):
                 store(ix, r)

@@ -251,10 +251,10 @@ def tag(mu, t, L):
     return f'mu{mu:g}_tau{t:g}_L{L / 1000:g}'
 
 
-def fine_grid(mu, t, L, ez):
-    """transport_phis on ez x PHI_F -> (len(ez), len(PHI_F), 5): [kappa, G, andreev, det r, n_bad]."""
+def fine_grid(mu, t, L, ez, **kw):
+    """transport_phis on ez x PHI_F -> (len(ez), len(PHI_F), 5): [kappa, G, andreev, det r, n_bad]; kw to run_scan."""
     return st.run_scan(partial(st.transport_phis, junction('mixed', mu, t, L), phis=PHI_F), {'E_Z': np.asarray(ez)},
-                       f'scharf_absPlat_tr_{tag(mu, t, L)}_EZ{ez[0]:g}-{ez[-1]:g}')
+                       f'scharf_absPlat_tr_{tag(mu, t, L)}_EZ{ez[0]:g}-{ez[-1]:g}', **kw)
 
 
 def q_line(mu, E_Z):
@@ -447,6 +447,167 @@ def plot_best(mu, t, L, e, phi_c, run, tr, Q, ez_c, cut, Q_c):
 
 if run_part('plateau'):
     plot_best(mu_b, t_b, L_b, e_b, phi_c, run, tr_b, Q_b, ez_c, cut, Q_c)
+
+
+# %% [plateau] --- 5. L = 3 um, tau 0.5 near phi = pi: the coarse candidate of detr_crossings_mixed (2026-11-10) ---
+# The coarse phi = pi column (study_tuning [tuning] cell 8, step 0.05) has three neutral points, kappa 0.473 / 0.499 /
+# 0.472 at E_Z 0.85 / 0.90 / 0.95, det r -0.23 -> +0.02 -> +0.23.  L 3 was not in stages 1-3 (L 2 +- 0.5 only).
+# Coarse runs have shrunk on refinement before (<= 0.15 meV -> 50 ueV), and L 3 has the densest eps oscillation, so
+# a zero of eps (kappa -> 0) can hide between coarse points.  (a) the cut along E_Z at phi = pi, step 0.0025, with Q;
+# (b) phase lines on 0.80-1.00 (step 0.01, 241 phases) ranked and Q-checked as in stages 1-2.  Compared with the L 2
+# stage-1 grid of the same mu_C, tau.  Figure plots/plateau_mixed_L3.png.
+L3C = (0.7, 0.5, 3000.0)
+EZ_L3 = np.round(np.arange(0.75, 1.05001, 0.0025), 4)
+EZ_L3G = np.round(np.arange(0.80, 1.00001, 0.01), 3)
+if run_part('plateau'):
+    cut_3 = st.run_scan(partial(st.transport_point, junction('mixed', *L3C), phi=np.pi), {'E_Z': EZ_L3},
+                        f'scharf_absPlat_cut_{tag(*L3C)}_phi1.0000pi', chunksize=1)
+    Qc_3 = st.run_scan(partial(st.q_point, junction('mixed', L3C[0]), phi=np.pi), {'E_Z': EZ_L3},
+                       f'scharf_absPlat_Qcut_mu{L3C[0]:g}_phi1.0000pi', chunksize=1)[:, 0]
+    m_3 = plateau_ok(cut_3, Qc_3)
+    k_3 = cut_3[:, 0]
+    in_c = (EZ_L3 >= 0.85) & (EZ_L3 <= 0.95)
+    print(f"\n  L 3 um, tau 0.5, cut along E_Z at phi = pi (step 0.0025):")
+    print("    plateau (|kappa-1/2| < 0.03, neutral, 2M, Q = -1): "
+          + (", ".join(f"{a:.4f}-{b:.4f} ({(b - a) * 1e3:.0f} ueV)" for a, b in spans(EZ_L3, m_3)) or "none"))
+    print("    kappa >= 0.4: " + ", ".join(f"{a:.4f}-{b:.4f} ({(b - a) * 1e3:.0f} ueV)" for a, b in spans(EZ_L3, k_3 >= 0.4)))
+    print(f"    on 0.85-0.95: kappa {k_3[in_c].min():.3f} .. {k_3[in_c].max():.3f}, |G| <= {np.abs(cut_3[in_c, 1]).max():.3f}, "
+          f"Q = -1 on {np.mean(Qc_3 < 0):.0%} of the cut", flush=True)
+
+    G_3 = {L3C: (EZ_L3G, fine_grid(*L3C, EZ_L3G, chunksize=1))}
+    B_3 = q_check(rank_lines(G_3), G_3, "L 3 um candidate (phase lines)")
+    print(f"    best L 3 line: E_Z {B_3[0][4]:.3f}, {B_3[0][0]:.3f} pi with Q = -1  (L 2 winner: 1.37 pi at 0.930)", flush=True)
+
+    fig, axs = plt.subplots(2, 2, figsize=(11.5, 6.4), sharex='col', gridspec_kw=dict(height_ratios=(1.6, 1)))
+    ez2, tr2 = GRIDS[(0.7, 0.5, 2000.0)]
+    jpi = len(PHI_F) // 2                                                  # PHI_F[120] = pi
+    for a in axs.ravel():
+        a.grid(color='#d8d7d2', lw=0.5, alpha=0.6)
+        a.tick_params(colors=INK2, labelcolor=INK)
+        for sp_ in a.spines.values():
+            sp_.set_color('#b5b4ae')
+    a1, a2 = axs[:, 0]
+    a1.axhspan(0.5 - TOL_K, 0.5 + TOL_K, color=C_K, alpha=0.10, lw=0)
+    a1.axhline(0.5, color=INK2, lw=0.8, ls='--')
+    a1.plot(ez2, tr2[:, jpi, 0], color=TRIV, lw=4, solid_capstyle='round', zorder=2)
+    a1.plot(EZ_L3, k_3, color=C_K, lw=2, zorder=3)
+    a1.plot(EZ_L3, np.abs(cut_3[:, 1]), color=C_G, lw=2, zorder=3)
+    a1.plot(EZ_L3[m_3], np.full(m_3.sum(), 0.93), ls='none', marker='s', ms=2.2, color=C_K)
+    a1.text(EZ_L3[0], 0.955, 'plateau points (L 3)', color=INK2, fontsize=8, va='bottom')
+    a1.set_ylim(-0.02, 1.0); a1.set_ylabel('transmission', color=INK)
+    a1.set_title(r'along $E_Z$ at $\phi = \pi$', color=INK, fontsize=10)
+    a2.axhline(0.0, color=INK2, lw=0.8, ls='--')
+    a2.plot(ez2, tr2[:, jpi, 3], color=TRIV, lw=4, solid_capstyle='round')
+    a2.plot(EZ_L3, cut_3[:, 3], color=C_D, lw=2)
+    a2.set_ylim(-1.05, 1.05); a2.set_ylabel(r'$\det r$', color=INK); a2.set_xlabel(r'$E_Z$ (meV)', color=INK)
+    b1, b2 = axs[:, 1]
+    for (ez_, tr_), col, lw, lab in (((ez2, tr2), TRIV, 4, r'L 2 $\mu$m'), (G_3[L3C], C_K, 2, r'L 3 $\mu$m')):
+        b1.plot(ez_, [periodic_run(plateau_ok(r))[0] * DPHI for r in tr_], color=col, lw=lw, label=lab,
+                solid_capstyle='round')
+    b1.plot([r[4] for r in B_3], [r[0] for r in B_3], ls='none', marker='o', ms=5, color=C_K, mec='w',
+            label=r'L 3, with Q = $-1$')
+    b1.plot([0.930], [1.37], ls='none', marker='*', ms=10, color=INK, label=r'best (L 2, $E_Z$ 0.930)')
+    b1.set_ylabel(r'longest plateau run along $\phi$ [$\pi$]', color=INK)
+    b1.set_title(r'plateau extent in phase, per field', color=INK, fontsize=10)
+    b1.legend(fontsize=8, frameon=False)
+    for (ez_, tr_), col, lw in (((ez2, tr2), TRIV, 4), (G_3[L3C], C_K, 2)):
+        b2.plot(ez_, [np.mean(plateau_ok(r)[:-1]) for r in tr_], color=col, lw=lw, solid_capstyle='round')
+    b2.set_ylabel('plateau share of phases', color=INK); b2.set_xlabel(r'$E_Z$ (meV)', color=INK)
+    fig.legend([plt.Line2D([], [], color=C_K, lw=2), plt.Line2D([], [], color=C_G, lw=2),
+                plt.Line2D([], [], color=C_D, lw=2), plt.Line2D([], [], color=TRIV, lw=4)],
+               [r'$\kappa/\kappa_0$, L 3 $\mu$m', r'$|G|/G_0$, L 3', r'$\det r$, L 3', r'L 2 $\mu$m (step 0.01)'],
+               loc='upper center', ncol=4, frameon=False, fontsize=9, bbox_to_anchor=(0.5, 0.995))
+    fig.suptitle(r'Mixed SOC, $\mu_C$ = 0.7 meV, $\tau$ = 0.5, a = 10 nm: the L = 3 $\mu$m candidate vs L = 2 $\mu$m',
+                 color=INK, fontsize=11, y=0.945)
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    st.save_fig(fig, 'plateau_mixed_L3')
+    plt.close(fig)
+    print("figure: plots/plateau_mixed_L3.png", flush=True)
+
+
+# %% [plateau] --- 6. THE BEST POINT ALONG THE GATE (mu_C) vs ALONG THE FIELD (2026-11-10) ---
+# Claim to test: mu_C moves k_osc about as fast as E_Z (dk/dE_Z : dk/dmu_C = E_Z / sqrt(E_so^2 + E_Z^2) ~ 0.8), so
+# the kappa = 1/2 window along the gate is about as narrow as along the field.  Replaces the old mu scan (pre-bond-
+# fix, one mu for probe leads AND strip): only the strip mu_C moves here, the probe leads keep mu_N.  Same point as
+# the stage-4 E_Z cut: E_Z 0.930, phi = PHI_F[209] = 1.7417 pi, tau 0.5, L 2 um.  Figure plots/plateau_mixed_muC.png.
+MU_CUT = np.round(np.arange(0.60, 0.80001, 0.0025), 4)
+MU_Q = np.round(np.arange(0.60, 0.80001, 0.01), 3)
+PH_W, EZ_W = PHI_F[209], 0.930
+# The widest run ALONG E_Z on the stage-1 L 2 grid (0.01 step) is not at the winner's phase: 9 points (0.92-1.00) at
+# phi 1.408-1.433 pi (and 0.083-0.108 pi), a lobe top with det r up to +0.19 (eps_max/Gamma ~ 1.2).  Refined here.
+PH_E = PHI_F[171]                                                          # 1.425 pi
+EZ_E = np.round(np.arange(0.85, 1.05001, 0.0025), 4)
+EZ_EQ = np.round(np.arange(0.85, 1.05001, 0.01), 3)
+
+
+def mu_point(mu_C):
+    """transport_point of the stage-4 winner with the strip chemical potential mu_C (meV)."""
+    return st.transport_point(junction('mixed', float(mu_C), 0.5, 2000.0), EZ_W, PH_W)
+
+
+def mu_q(mu_C):
+    """Q of the cross-section at the winner's (E_Z, phi) with strip chemical potential mu_C."""
+    return st.q_point(junction('mixed', float(mu_C)), EZ_W, PH_W)
+
+
+if run_part('plateau'):
+    cut_mu = st.run_scan(mu_point, {'mu_C': MU_CUT}, 'scharf_absPlat_mucut_tau0.5_L2_EZ0.93_phi1.7417pi', chunksize=1)
+    Q_mu = st.run_scan(mu_q, {'mu_C': MU_Q}, 'scharf_absPlat_muQ_EZ0.93_phi1.7417pi', chunksize=1)[:, 0]
+    Q_muc = Q_mu[np.abs(MU_CUT[:, None] - MU_Q[None]).argmin(1)]           # nearest coarse Q
+    assert abs(phi_c - PH_W) < 1e-12 and abs(e_b - EZ_W) < 1e-9 and (mu_b, t_b, L_b) == (0.7, 0.5, 2000.0)
+    ez_cut, cut_ez, Q_ez = ez_c, cut, Q_c                                   # the stage-4 cut along E_Z
+    cut_e2 = st.run_scan(partial(st.transport_point, junction('mixed', 0.7, 0.5, 2000.0), phi=float(PH_E)),
+                         {'E_Z': EZ_E}, 'scharf_absPlat_cut_mu0.7_tau0.5_L2_phi1.4250pi', chunksize=1)
+    Q_e2 = st.run_scan(partial(st.q_point, junction('mixed', 0.7), phi=float(PH_E)), {'E_Z': EZ_EQ},
+                       'scharf_absPlat_Qcut_mu0.7_phi1.4250pi', chunksize=1)[:, 0]
+    Q_e2c = Q_e2[np.abs(EZ_E[:, None] - EZ_EQ[None]).argmin(1)]
+    print("\n  L 2, tau 0.5: plateau windows through the point (|kappa-1/2| < 0.03, neutral, 2M, Q = -1)")
+    for lab, x, c, QQ, x0 in (('E_Z at phi 1.742 pi (winner)', ez_cut, cut_ez, Q_ez, EZ_W),
+                              ('mu_C at phi 1.742 pi, E_Z 0.93', MU_CUT, cut_mu, Q_muc, 0.7),
+                              ('E_Z at phi 1.425 pi', EZ_E, cut_e2, Q_e2c, 0.96)):
+        m = plateau_ok(c, QQ)
+        sp = [s for s in spans(x, m) if s[0] - 1e-9 <= x0 <= s[1] + 1e-9]
+        sk = [s for s in spans(x, c[:, 0] >= 0.4) if s[0] - 1e-9 <= x0 <= s[1] + 1e-9]
+        print(f"    {lab:26s}: plateau " + (f"{sp[0][0]:.4f}-{sp[0][1]:.4f} ({(sp[0][1] - sp[0][0]) * 1e3:.0f} ueV)" if sp else "none")
+              + "; kappa >= 0.4 " + (f"{sk[0][0]:.4f}-{sk[0][1]:.4f} ({(sk[0][1] - sk[0][0]) * 1e3:.0f} ueV)" if sk else "none")
+              + f"; all plateau windows on the cut: {len(spans(x, m))}, kappa min..max {c[:, 0].min():.3f}..{c[:, 0].max():.3f}"
+              + f"; Q = -1 on {np.mean(QQ < 0):.0%}", flush=True)
+
+    fig, axs = plt.subplots(2, 3, figsize=(15.0, 6.0), sharex=True, gridspec_kw=dict(height_ratios=(1.6, 1)))
+    for col, (x, c, QQ, x0, xl) in enumerate(((ez_cut, cut_ez, Q_ez, EZ_W, r'$E_Z - 0.930$ (meV)'),
+                                             (MU_CUT, cut_mu, Q_muc, 0.7, r'$\mu_C - 0.7$ (meV)'),
+                                             (EZ_E, cut_e2, Q_e2c, 0.96, r'$E_Z - 0.96$ (meV)'))):
+        a1, a2 = axs[:, col]
+        for a in (a1, a2):
+            for s0, s1 in spans(x - x0, QQ > 0):
+                a.axvspan(s0, s1, color=TRIV, lw=0, zorder=0)
+            a.grid(color='#d8d7d2', lw=0.5, alpha=0.6)
+            a.tick_params(colors=INK2, labelcolor=INK)
+            for sp_ in a.spines.values():
+                sp_.set_color('#b5b4ae')
+        a1.axhspan(0.5 - TOL_K, 0.5 + TOL_K, color=C_K, alpha=0.10, lw=0)
+        a1.axhline(0.5, color=INK2, lw=0.8, ls='--')
+        a1.axvline(0.0, color=INK2, lw=0.8, ls=':')
+        a1.plot(x - x0, c[:, 0], color=C_K, lw=2)
+        a1.plot(x - x0, np.abs(c[:, 1]), color=C_G, lw=2)
+        a2.axhline(0.0, color=INK2, lw=0.8, ls='--')
+        a2.plot(x - x0, c[:, 3], color=C_D, lw=2)
+        a1.set_ylim(-0.02, 1.0); a2.set_ylim(-1.05, 1.05); a2.set_xlabel(xl, color=INK)
+        a1.set_title([r'field, $\phi$ = 1.742$\pi$ (best phase run)', r'gate ($\mu_C$), $\phi$ = 1.742$\pi$, $E_Z$ 0.930',
+                      r'field, $\phi$ = 1.425$\pi$ (widest field run)'][col], color=INK, fontsize=10)
+    axs[0, 0].set_xlim(-0.10, 0.10)
+    axs[0, 0].set_ylabel('transmission', color=INK); axs[1, 0].set_ylabel(r'$\det r$', color=INK)
+    fig.legend([plt.Line2D([], [], color=C_K, lw=2), plt.Line2D([], [], color=C_G, lw=2),
+                plt.Line2D([], [], color=C_D, lw=2), plt.Rectangle((0, 0), 1, 1, color=TRIV),
+                plt.Rectangle((0, 0), 1, 1, color=C_K, alpha=0.15)],
+               [r'$\kappa/\kappa_0$', r'$|G|/G_0$', r'$\det r$', 'Q = +1 (bulk trivial)', r'$\kappa = 1/2 \pm 0.03$'],
+               loc='upper center', ncol=5, frameon=False, fontsize=9, bbox_to_anchor=(0.5, 0.995))
+    fig.suptitle(r'Mixed SOC, $\mu_C$ 0.7, $\tau$ 0.5, L 2 $\mu$m, a 10: $\kappa = 1/2$ windows along the field and the '
+                 r'gate (same 0.2 meV span)', color=INK, fontsize=11, y=0.945)
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    st.save_fig(fig, 'plateau_mixed_muC')
+    plt.close(fig)
+    print("figure: plots/plateau_mixed_muC.png", flush=True)
 
 
 # ====================================================================================================================

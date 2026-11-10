@@ -250,9 +250,9 @@ def phase_line(q, EZ, cache, phi=np.pi):
     return dict(E_Z=np.asarray(EZ), Q=V[:, 0], gap0=V[:, 1], gap=V[:, 2], kmin=V[:, 3])
 
 
-def q_map(q, EZ, phis, cache):
-    """Q on the (E_Z, phi) grid, shape (len(EZ), len(phis))."""
-    return run_scan(partial(q_point, q), {'E_Z': np.asarray(EZ), 'phi': np.asarray(phis)}, cache)[..., 0]
+def q_map(q, EZ, phis, cache, **kw):
+    """Q on the (E_Z, phi) grid, shape (len(EZ), len(phis)); kw (n_workers, chunksize) go to run_scan."""
+    return run_scan(partial(q_point, q), {'E_Z': np.asarray(EZ), 'phi': np.asarray(phis)}, cache, **kw)[..., 0]
 
 
 def best_topological(line):
@@ -475,10 +475,11 @@ def _trace_g0(z, H, V, Sigma_ends, nx):
     return tr
 
 
-def dos_total_phis(q, E_Z, phis, eta, E=0.0):
+def dos_total_phis(q, E_Z, phis, eta, E=0.0, tau=0.0):
     """
-    DOS at energy E (1/meV) summed over ALL sites of the centre, for every phase in phis; probes decoupled
-    (tc_barr = 0).  Exact, without the all-site Green's function (16 GB per energy at a = 5):
+    DOS at energy E (1/meV) summed over ALL sites of the centre, for every phase in phis.  Probes decoupled
+    (tau = 0, the default) or attached by the probe bond tau (tc_barr; same bond model as tc_barr_transport).
+    Exact, without the all-site Green's function (16 GB per energy at a = 5):
         Tr G = Tr g0 + Tr(K^-1 W (g0^2)_PP W^dag),   K = g_ribbons^-1 - W g0_PP W^dag,
     P = the edge rows touching the ribbons, W = ribbon coupling (as LocalGreen).  (g0^2)_PP is the
     off-diagonal block of the inverse of [[A, -1], [0, A]] (A = z - H_C - Sigma_leads), still block
@@ -487,7 +488,7 @@ def dos_total_phis(q, E_Z, phis, eta, E=0.0):
     from scipy.linalg import block_diag
     from my_functions.rgf import _g0_on_subspace
     from my_functions.leads import surface_eps_pair
-    p = replace(q.params(E_Z=float(E_Z), phi=np.pi), eta=eta / q.t, tc_barr=0.0)
+    p = replace(q.params(E_Z=float(E_Z), phi=np.pi), eta=eta / q.t, tc_barr=float(tau))
     J = myf.FourTerminalJunction(p)
     nx, ny = p.nx, p.ny
     z = complex(E / q.t, p.eta)
@@ -559,19 +560,20 @@ def splitting(q, E_Z, half_window=0.02, n=161, eta=0.2e-3):
 N_WORKERS = 14
 
 
-def run_scan(func, grid, cache=None, n_workers=N_WORKERS):
+def run_scan(func, grid, cache=None, n_workers=N_WORKERS, chunksize=None):
     """
     func(**point) on every point of grid {name: values} in parallel; returns the values array,
     shape (*grid shape, *result shape).  cache='name' stores/loads plot_npz/name.npz (resumable).
+    chunksize=1 saves after every point (default: one chunk per worker, saved only near the end).
     """
     save = str(DATA / f'{cache}.npz') if cache else None
-    return myf.scan(func, grid, n_workers=n_workers, save=save)['values']
+    return myf.scan(func, grid, n_workers=n_workers, save=save, chunksize=chunksize)['values']
 
 
 PLOTS = HERE / 'plots'
 
 
-def save_fig(fig, name):
+def save_fig(fig, name, dpi=110):
     """Save a figure as computations/plots/<name>.png."""
     PLOTS.mkdir(exist_ok=True)
-    fig.savefig(PLOTS / f'{name}.png', dpi=110)
+    fig.savefig(PLOTS / f'{name}.png', dpi=dpi)

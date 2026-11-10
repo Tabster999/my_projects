@@ -6,6 +6,7 @@ PARTS (one per former script; the cells of each part are tagged [part]):
   topology     (was study_topology.py)  STUDY: can the topological regime be reached with the coupling-study parameters (study_coupling.py)?
   coupling     (was study_coupling.py)  STUDY: how the S/N interface coupling tc (tc_top = tc_bot; 1 = bulk bond, Scharf) and the probe coupling
   tuning       (was study_tuning.py)  STUDY: can mu_C and the spin-orbit coupling make the kappa = 1/2 regions larger?
+  maps         (2026-11-09)  thesis figures: total DOS(E = 0) and kappa on (E_Z, phi) at a = 5 nm, mixed SOC, three probe bonds
 
 Run one part:   python study_tuning.py topology      (several: list them; no argument: every part, in order)
 In the interactive window the cells run as usual.  run_part(part) replaces the old `if __name__ == "__main__":`
@@ -20,7 +21,7 @@ from functools import partial
 import tools as st
 from study_oscillation import slowest_mode
 
-PARTS = ('topology', 'coupling', 'tuning')
+PARTS = ('topology', 'coupling', 'tuning', 'maps')
 _SELECTED = {a for a in sys.argv[1:] if a in PARTS}
 
 
@@ -853,3 +854,101 @@ if run_part('tuning'):
     axs[1].set_title(rf'$\phi = \pi$ column of the tc_barr 0.5 maps (grid step {dEZ:g} meV)', fontsize=9)
     axs[1].legend(fontsize=7, ncol=2)
     st.save_fig(fig, 'detr_crossings_mixed'); plt.close(fig)
+
+
+# ====================================================================================================================
+# PART 'maps'  (2026-11-09)
+# ====================================================================================================================
+# THESIS FIGURES: the total DOS at E = 0 and kappa on the (E_Z, phi) plane at a = 5 nm, for three probe couplings.
+# Junction: the mixed SOC (16 meV nm, theta 0.15 pi; the thesis case), mu_C 0.7, S/N bond t_c 1, W 100, L 2 um.
+# Probe bond tau = tc_barr_transport 0.2 / 0.5 / 1.0 (1 = a bulk bond: the probe is fully open).
+#   DOS    tools.dos_total_phis with the probes ATTACHED (bond tau), summed over all sites of the centre (BdG, e and h),
+#          eta = 0.1 ueV (2.5e-6 t, above the 1e-6 t solver rule), so the probes set the line widths and the three
+#          DOS maps differ by the coupling.  Checked against a dense -Im Tr G / pi of the centre to 4e-12 (2026-11-09).
+#   kappa  tools.transport_phis: E = 0, T = 0, eta_rel_transport 1e-5 Delta.
+#   Q      infinite cross-section at a = 5 (no probes, one map for all six figures): dashed boundary of Q = -1.
+# Six single-panel figures plots/maps_mixed_a5_{dos,kappa}_tau*.png, linear colour scales; caches scharf_absMap_*.
+
+# %% [maps] --- PARAMETERS ---
+A_MAP = 5.0
+TAUS_MAP = (0.2, 0.5, 1.0)
+EZ_MAP = np.round(np.arange(0.0, 2.0001, 0.025), 4)              # 81 fields
+PHI_MAP = np.linspace(0.0, 2 * np.pi, 121)                         # phases are nearly free: one set-up per field
+EZ_MAP_Q = EZ_MAP[::2]                                             # Q on half the grid (step 0.05, 41 fields):
+PHI_MAP_Q = np.linspace(0.0, 2 * np.pi, 31)                        # only the dashed line; 44 s per point (see below)
+ETA_MAP = 1e-4                                                     # meV, DOS broadening
+WORKERS_MAP = 8                                                    # a = 5: 2.8 GB per worker
+# Timing at a = 5, one field and 121 phases: 145 s transport / 91 s DOS with all BLAS threads, but ~11 / ~7 min on a
+# one-thread worker (measured: the tau 0.2 kappa scan took 2 h on 8 workers) -> ~3.2 h per tau, ~10 h in all.  The
+# laptop throttles under this load (95 C, ~1 GHz): up to ~24 min per kappa field.  Q: 8 s with all threads, 44 s on one
+# thread under load -> the full (81 x 61) grid would take ~4.5 h on 14 workers, the half grid ~1.1 h.
+# chunksize 1 (one row per task for Q) saves every finished field, so an interrupted run resumes where it stopped.
+
+
+def junction_map(tau):
+    """The thesis junction at a = 5 nm with probe bond tau."""
+    alpha, beta = st.mixed_soc(16.0, 0.15 * np.pi)
+    return st.replace(st.case(100.0, L=2000.0, alpha=alpha, beta=beta, a=A_MAP), tc=1.0, mu_C=0.7,
+                      tc_barr_transport=tau)
+
+
+# %% [maps] --- 1. SCANS (cached in plot_npz/scharf_absMap_*) ---
+if run_part('maps'):
+    TR_MAP, DOS_MAP = {}, {}
+    for tau in TAUS_MAP:
+        TR_MAP[tau] = st.run_scan(partial(st.transport_phis, junction_map(tau), phis=PHI_MAP), {'E_Z': EZ_MAP},
+                                  f'scharf_absMap_tr_mixed_a5_tau{tau:g}', n_workers=WORKERS_MAP, chunksize=1)
+        print(f"maps: kappa tau {tau:g} done", flush=True)
+        DOS_MAP[tau] = st.run_scan(partial(st.dos_total_phis, junction_map(tau), phis=PHI_MAP, eta=ETA_MAP, tau=tau),
+                                   {'E_Z': EZ_MAP}, f'scharf_absMap_dos_mixed_a5_tau{tau:g}', n_workers=WORKERS_MAP,
+                                   chunksize=1)
+        print(f"maps: DOS tau {tau:g} done", flush=True)
+    Q_MAP = st.q_map(junction_map(TAUS_MAP[0]), EZ_MAP_Q, PHI_MAP_Q, 'scharf_absMap_Q_mixed_a5',
+                     chunksize=len(PHI_MAP_Q))
+    print("maps: Q done", flush=True)
+
+
+# %% [maps] --- 2. NUMBERS ---
+if run_part('maps'):
+    print(f"\n  Q = -1 on {np.mean(Q_MAP < 0):.1%} of the (E_Z <= {EZ_MAP_Q[-1]:g}, phi) map")
+    print("  tau   kappa max   kappa > 0.25   neutral of those   plateau (also Q = -1)   DOS min .. max [1/meV]   failed")
+    Qi = Q_MAP[np.ix_(np.abs(EZ_MAP[:, None] - EZ_MAP_Q[None, :]).argmin(1),
+                      np.abs(PHI_MAP[:, None] - PHI_MAP_Q[None, :]).argmin(1))]      # nearest Q point per map point
+    for tau in TAUS_MAP:
+        k, G, d = TR_MAP[tau][..., 0], TR_MAP[tau][..., 1], DOS_MAP[tau]
+        hot, P = k > 0.25, plateau(TR_MAP[tau])
+        print(f"  {tau:3g}   {np.nanmax(k):.3f}       {hot.mean():6.1%}         "
+              f"{np.mean(np.abs(G[hot]) < 0.1 * k[hot]) if hot.any() else np.nan:5.2f}             "
+              f"{P.mean():5.1%} ({np.mean(P & (Qi < 0)):5.1%})          {np.nanmin(d):.3g} .. {np.nanmax(d):.3g}"
+              f"          {int(np.nansum(TR_MAP[tau][..., 4]))}")
+
+
+# %% [maps] --- FIGURES: one PNG per quantity and probe bond ---
+def map_figure(Z, cmap, label, title, name, vmax=None):
+    """One (E_Z, phi) map, linear colour scale from 0, dashed Q = -1 boundary; saved as plots/<name>.png."""
+    from matplotlib import patheffects as pe
+    fig, ax = plt.subplots(figsize=(5.6, 4.5), layout='constrained')
+    top = np.nanmax(Z) if vmax is None else vmax
+    im = ax.pcolormesh(PHI_MAP / np.pi, EZ_MAP, Z, shading='nearest', cmap=cmap, vmin=0, vmax=top, rasterized=True)
+    cs = ax.contour(PHI_MAP_Q / np.pi, EZ_MAP_Q, Q_MAP, levels=[0], colors='w', linewidths=1.2, linestyles='--')
+    cs.set(path_effects=[pe.withStroke(linewidth=2.6, foreground='k')])
+    ax.set_xticks(np.arange(0, 2.01, 0.5))
+    ax.set_xlabel(r'$\phi/\pi$')
+    ax.set_ylabel(r'$E_Z$ [meV]')
+    ax.set_title(title + '\n' + r'mixed SOC, $\mu_C$ = 0.7 meV, W = 100 nm, L = 2 $\mu$m, a = 5 nm'
+                 + '\n' + r'dashed: boundary of the bulk $Q = -1$ region', fontsize=9)
+    fig.colorbar(im, ax=ax, label=label, extend='max' if np.nanmax(Z) > top else 'neither')
+    st.save_fig(fig, name, dpi=200); plt.close(fig)
+
+
+if run_part('maps'):
+    # Linear scales.  kappa: 0..1 (same colour for 1/2 on every map), up to the 99.9th percentile where kappa > 1
+    # (tau 1: 1.32; its max 1.90 is ONE pixel, the gap closing at E_Z = 0, phi = pi, with G = kappa).
+    # DOS: 0..99th percentile -- the max is set by a few pixels on the gap-closing lines, and the Majorana peak in
+    # the V scales as 2/(pi Gamma): ~1000 / ~170 / ~20 per meV at tau 0.2 / 0.5 / 1, so one common scale cannot work.
+    for tau in TAUS_MAP:
+        k = TR_MAP[tau][..., 0]
+        map_figure(k, 'viridis', r'$\kappa/\kappa_0$', rf'Thermal conductance, probe bond $\tau$ = {tau:g}',
+                   f'maps_mixed_a5_kappa_tau{tau:g}', vmax=max(1.0, np.nanpercentile(k, 99.9)))
+        map_figure(DOS_MAP[tau], 'magma', r'total DOS($E = 0$) [1/meV]', rf'Total DOS at $E = 0$, probe bond $\tau$ = {tau:g}',
+                   f'maps_mixed_a5_dos_tau{tau:g}', vmax=np.nanpercentile(DOS_MAP[tau], 99))

@@ -65,7 +65,7 @@ correct recursion.  Tags (2026-11-06): [source, verified] / [follows from source
 | `tools.py`, `ldos.py` | shared functions; PhysParams |
 | `study_rashba.py` | W, delta, tc, checks, T, transition, soc_shift, fermi (check_fermi), a -- pure Rashba, mostly a = 20 |
 | `study_oscillation.py` | oscillation, branches, fingerprint -- eps(E_Z), pure Rashba a = 20 |
-| `study_tuning.py` | topology, coupling, tuning -- a = 10 couplings / topology / survey maps |
+| `study_tuning.py` | topology, coupling, tuning, maps -- a = 10 couplings / topology / survey maps; a = 5 (E_Z, phi) maps |
 | `study_mixed.py` | oscillation, plateau, amplitude -- the mixed SOC (thesis case) |
 | `slides_nov.py`, `figures.py`, `disorder.py` | advisor-deck figures, Scharf paper figures (own parameters), disorder -- CAUTION: disorder.py takes ldos.PP, now an a = 10 sandbox, NOT its documented junction |
 * `python study_mixed.py plateau` runs one part (several: list them; none: all, in order).  `run_part('part')`
@@ -529,6 +529,16 @@ kc +- 0.02; xi_poly = NaN when the poly has no complex zero.
   (0.0091 vs 0.0094 1/nm over that range).  k_F,out solves E_kin(k) - sqrt(E_so(k)^2 + E_Z^2) = 0.636 meV
   (lattice dispersion; E_Z = the sigma coefficient).  The inner branch empties at E_Z ~ 0.64 meV: one Fermi
   point per direction above.  The 7% offset is not explained (strip width / mixing with the S region?).
+  [derived 2026-11-10 from this dispersion] dk/dE_Z : dk/dmu_C = E_Z / sqrt(E_so(k)^2 + E_Z^2) (spin canting), ~0.8
+  at E_Z ~ 0.93 (E_so ~ 16 x 0.045 ~ 0.72 meV): mu_C and E_Z move k_osc at COMPARABLE rates (E_Z is the sigma
+  coefficient, so NOT "E_Z at most half as fast").  CHECKED (full model, slowest complex-k mode, mixed a 10, E_Z 0.93,
+  phi 1.742 pi): dk/dE_Z 0.00819, dk/dmu_C 0.01094 1/(nm meV) -> ratio 0.75 (formula 0.80); predicted zero spacing at
+  L 2: 192 / 144 ueV, measured on the transport cuts >= 185 / ~139.  k_F,out is a normal-state (Delta = 0) quantity,
+  but k_osc is NOT exactly phi-independent: 0.03985 / 0.03926 / 0.03931 / 0.03986 / 0.03993 1/nm at phi 0 / 0.5 /
+  1 / 1.5 / 1.742 pi (1.7 % -> k L shifts <= 0.43 pi over the whole phase, ~0.08 meV of E_Z; transport zeros on the
+  L 2 grid move 0.85-0.93 with phi), xi_M 695 / 1427 / 1394 / 703 / 669 nm -- at 0.5 and 1 pi another (slower) mode
+  looks to take over; 5 phases only, not resolved.  Stronger SOC lowers the ratio -> wider E_Z lobes (alpha 48
+  spacing 0.218 vs ~0.145 meV).
 
 * FINITE ENERGY (2026-11-03, cell 6, plots/fingerprint_finite_energy): two-Majorana model (from Nilsson et al.
   PRL 101, 120403, Eqs. 4-6: P_ET = P_CAR = E_M^2 G1 G2 / |Z|^2) -> max_E kappa(E) = 1/2 exactly at E* = sqrt(eps^2 - G^2)
@@ -641,6 +651,21 @@ plots/plateau_mixed_best.png; caches scharf_absPlat_*.  Plateau point = |kappa-1
   sets the temperature scale (finite T not computed).
 * phi = pi at 0.930 is NOT part of it: kappa 0.469 but G 0.107 (0.23 kappa), box eps 0.41 ueV vs det-r x 0.76 ->
   not two-Majorana (box zero 0.93; the NEGF det r minimum sits ~0.01 meV lower).
+* L 3 um, tau 0.5, phi = pi (2026-11-10, [plateau] cell 5, plots/plateau_mixed_L3.png): the coarse column (step 0.05)
+  looked like the best plateau yet -- kappa 0.473 / 0.499 / 0.472 at 0.85 / 0.90 / 0.95, neutral, det r monotonic.
+  ALIASING: the fine cut (step 0.0025) has eps zeros at ~0.877 and ~0.97 (kappa 0.02 / 0.07, det r -> -1) between
+  the coarse points, which sat on three SEPARATE eps = Gamma windows.  Plateau windows 23 / 12 / 10 / 5 ueV (vs 50
+  at the L 2 winner); phase extent <= 0.24 pi (0.99 meV) vs 1.37 pi.  Longer L = denser oscillation in field
+  (zero spacing ~0.09 meV here) = narrower windows.  Never read a plateau width off the 0.05 coarse maps.
+* FIELD vs GATE (2026-11-10, [plateau] cell 6, plots/plateau_mixed_muC.png; only the strip mu_C moves, probes keep
+  mu_N -- replaces the old pre-fix mu scan).  Plateau windows (neutral, 2M, Q = -1) through the point:
+      E_Z at phi 1.742 pi (the winner)       50 ueV (0.17 T)   kappa >= 0.4: 85 ueV   lobe top x_max 0.88 (det r -0.13)
+      mu_C at phi 1.742 pi, E_Z 0.930        35 ueV            kappa >= 0.4: 62 ueV   same lobe top
+      E_Z at phi 1.425 pi (0.9113-1.0012)    90 ueV (0.31 T)   kappa >= 0.4: 110 ueV  x_max 1.2 (det r +0.19), two
+                                                                                       merged eps = Gamma peaks
+  The 1.425 pi line is the widest run ALONG E_Z on the stage-1 grid (also at 0.08-0.11 pi); it is the notes'
+  optimum Gamma ~ (0.72-1) eps_max.  The phase-run winner and the field-run winner are different points.
+  Gate windows ~0.7 x field windows (k_osc moves 1/0.75 x faster in mu_C).  No plateau beyond one lobe top on any axis.
 
 ## SCHARF: kappa peaks and the sign of det r -- bulk transition or eps = Gamma? (2026-11-04, study_tuning cell 8)
 * Mixed SOC, mu_C 0.7, L 1/1.5/2/3 um x tau 0.3387/0.5/0.7 coarse maps; bulk Q on the same grid
@@ -661,6 +686,13 @@ plots/plateau_mixed_best.png; caches scharf_absPlat_*.  Plateau point = |kappa-1
   both sides (xi_M >> L: the finite junction cannot see it).  The crossing moves towards the bulk boundary as L
   grows, as Akhmerov's large-L limit requires; Q-boundary links with a det r crossing nearby: 60 -> 70 %
   (tau 0.3387) and 76 -> 94 % (tau 0.7) from L 1 to 3 um.
+* WHY the det r = 0 lines look smoother at strong tau (2026-11-10, cache read only, inside Q = -1).  Two-Majorana:
+  det r goes -1 -> +1 while eps goes ~Gamma/3 -> 3 Gamma, so the det r < 0 strip around an eps zero is ~2 Gamma /
+  |grad eps| wide -- at weak tau narrower than the grid step (E_Z 0.05, phi 2pi/30).  Median |det r| jump across a
+  sign change 1.08-1.30 (tau 0.3387) vs 0.70-0.86 (tau 0.7); links resolved (jump < 1) 28-44 % vs 72-88 %; det r < 0
+  pieces 6-16 vs 2-5.  BUT neutral links (|G| < 0.1 kappa both ends) are 57-69 % / 30-40 % / 0-1 % at tau
+  0.3387 / 0.5 / 0.7: the smooth tau 0.7 lines are CHARGED, not eps = Gamma (det r = 0 only means one channel fully
+  transmitted).  Untested reason: Gamma no longer << Delta_top, so the probe transmits through gapped states too.
 
 ## SCHARF: "resonance, not a topological plateau" -- advisor figures, mixed SOC (2026-11-06, slides_nov.py)
 * collapse_mixed (plots/slides/mixed_collapse.png; caches scharf_absOM_*, L 2 um, a 10, phi pi): NEGF kappa vs
@@ -711,6 +743,34 @@ plots/plateau_mixed_best.png; caches scharf_absPlat_*.  Plateau point = |kappa-1
   xi_M /10.  At L = 2 um only tc ~ 1 gives separated end modes (L/xi_M > 3); tc 0.75 needs L ~ 4-7 um,
   tc 0.5 L >~ 15 um (from L/xi_M = 3-5; NOT checked in transport).  tc 0.5's gap is below the DOS eta 12.5 ueV.
   Not done: a = 5 (the same tc is a different interface there).
+
+## SCHARF: (E_Z, phi) maps of kappa and total DOS at a = 5 (2026-11-10, `study_tuning.py` [maps])
+* Mixed SOC, mu_C 0.7, tc 1, W 100, L 2 um, a 5; probe bond tau 0.2 / 0.5 / 1; E_Z 0-2 step 0.025 (81) x phi 121;
+  eta 1e-4, LINEAR colour scales.  Total DOS(E = 0) = -Im Tr G / pi WITH the probes attached (tools.dos_total_phis
+  tau=).  Q (Pfaffian) on the half grid (E_Z step 0.05 x 31 phases) -- the dashed line is stair-stepped by that.
+  Caches scharf_absMap_{tr,dos}_mixed_a5_tau*, scharf_absMap_Q_mixed_a5; plots maps_mixed_a5_{kappa,dos}_tau*.png.
+* Q = -1 on 45.6 % of the map.  Boundary: a V from phi = pi, E_Z ~ 0.025 to phi = 0 at 0.575, and a nearly FLAT
+  top at 1.225 (phi 0) .. 1.375 (phi 0.75-1.25 pi) -- only the LOWER half of the Pientka diamond (PRX 7, 021032);
+  Q = -1 at every phase for E_Z 0.6-1.2.  The bright gap-closing lines of the DOS (clearest at tau 1) lie ON the Q
+  boundary: the edges are sharp k_x = 0 closings, not smeared.  Own reading, UNTESTED: mu_C 0.7 is not >> E_Z and the
+  inner spin band empties near 0.64 (pure Rashba a = 20 value), so above it no two-band compensation condition ->
+  phi-independent.  Test: the Q map at mu_C ~ 1.5-2 should recover more of the upper half.
+      tau   kappa max   kappa > 0.25   neutral of those   plateau (also Q = -1)   DOS min .. max [1/meV]
+      0.2   0.782         5.9 %         0.98              1.1 % (1.1 %)          0.052 .. 2320
+      0.5   0.971        13.5 %         0.88              2.7 % (2.4 %)          0.129 .. 1630
+      1     1.896        45.6 %         0.01              0.1 % (0.0 %)          3.57 .. 1060
+  (tau 1 max: ONE pixel, the gap closing at E_Z 0, phi pi, G = kappa; 1.40 without it.  0 failed solves anywhere.)
+* Inside Q = -1: bright DOS plateau = 2/(pi Gamma) (eps << Gamma, kappa ~ 0); the fan of rays / horizontal stripes
+  with kappa ~ 1/2 and isolated DOS spikes = the oscillating eps crossing Gamma / zero (study_oscillation) -- NOT phase
+  boundaries.  Dark above ~0.6 where xi_M grows.  At tau 1 kappa ~ 1 is CHARGED (neutral 0.01): a tongue from
+  (pi, 0) via phi ~ 0.75 pi up into the trivial region.  NOT worked out: why the rays run diagonally and mainly at
+  phi < pi; the curved + vertical lines and the ring pattern ABOVE the top boundary (trivial, 1.3-2 meV).
+* Running it: ~11 min per kappa field / ~7 min per DOS field on a one-thread worker (121 phases), up to ~24 min when the
+  laptop throttles (95 C, ~1 GHz under 8 workers -- nothing to do in software); Q 44 s per point under load.
+  scan / run_scan take chunksize=: the default (one chunk per worker) returns NOTHING until the chunks end, so a killed
+  run loses everything; chunksize=1 saves every point and resumes.  Background tasks die with the Claude session, so
+  long runs were launched detached (WMI Win32_Process Create with Win32_ProcessStartup ShowWindow = 0 -- with a
+  visible console, closing that window kills the run; it did twice).
 
 ## Numerics — measured on the GRESTA point unless stated
 (eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,
