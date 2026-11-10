@@ -1,4 +1,150 @@
-\chapter{Idefk}
-\label{idefk
-\section{}
+\chapter{Theoretical background}
+\label{ch:theory}
 
+% PLAN.  Formulas, derivations and verified sources: masterarbeit_v2/fourterminal/DERIVATIONS.md (section numbers
+% in brackets below).  Only theory the results chapter uses; everything else can be one sentence and a citation.
+The contents of this chapter are ordered followingly. The first section \ref{sec:sc} is devoted to fundamental concepts of superconductivity. First BCS theory, named after Bardeen, Cooper and Schrieffer [ref BCS], and afterwards the Bogoliubov-de-Gennes (BdG) formalism are introduced. Last in this section, topological superconductivity is introduced. The Kitaev chain is given as a simple model, which can show topological superconductivity and host Majorana Fermions. 
+
+Afterwards, in sections \ref{sec:jj} - \ref{sec:planar_jj}, Josephson junctions (JJs) and important aspects of those, such as Andreev bound states (ABS) are discussed. In the last section \ref{sec:thermo} we are going to talk about thermoelectric transport, and how MF contribute to thermoelectric transporrt, which is a central part of the thesis. 
+
+\section{Superconductivity}
+\label{sec:sc}
+% BCS pairing and the s-wave gap.  Coherence length xi_0 = hbar v_F/(pi Delta): say explicitly that this is NOT
+% the Majorana length xi_M of Ch.~\ref{ch:results}.
+\subsection{BCS theory}
+\label{sec:BCS}
+BCS theory gives the first microscopic explanation of conventional superconductivity. By showing that even a very small, but positive, interaction bewteen electrons leads to the destabilization of the Fermi sea and formation of bound electron pairs, so called Cooper pairs. The attractive interaction stems from the local deformation of the crystal lattice, casued by a single electron propagating through it. When a second electron now travels through the deformed region shortly afterwards, it feels an attractive interaction, which is transmitted by phonons. The Hamiltonian describing such a system is given by [cite{tinkham}]
+\begin{equation}
+	\mathrm{H}_\text{BCS} = \sum_{\mathbf{k},\sigma} \epsilon_\mathbf{k} c_{\sigma \mathbf{k}}^\dagger c_{\sigma \mathbf{k}}+ \sum_{\mathbf{k,k^\prime}} V_\mathbf{kk^\prime} c_{\mathbf{k}\uparrow}^\dagger c_{-\mathbf{k}\downarrow}^\dagger c_{-\mathbf{k^\prime}\downarrow}c_{\mathbf{k^\prime}\uparrow}.
+	\label{eq:bcs}
+\end{equation}
+$c_{\sigma,\mathbf{k}}$ and $c_{\sigma, \mathbf{k}}^\dagger$ are fermionic destruction and creation operators respectively, $\sigma = \uparrow\,\downarrow$ is the particle spin, onsite energy $\epsilon_\mathbf{k} = \xi_\mathbf{k} - \mu$, with kinetic energy $\xi_{\mathbf{k}} = \frac{\hslash^2\mathbf{k}^2}{2m}$, mass $m$, momentum $k$, and chemical potential $\mu$. Since the system hosts a large number of particles, and correspindingly particle fluctuations are small, we can employ a mean field approximation  
+\begin{equation}
+	\begin{aligned}
+		b_\mathbf{k} &= \left< c_{-\mathbf{k}, \downarrow} c_{\mathbf{k}, \uparrow} \right> \\
+		\Delta_\mathbf{k} &= -\sum_\mathbf{k^\prime} V_\mathbf{k,k^\prime} b_\mathbf{k^\prime} = -\sum_\mathbf{k^\prime} V_\mathbf{k,k^\prime} \left< c_{-\mathbf{k}, \downarrow} c_{\mathbf{k^\prime}, \uparrow} \right>.
+		\label{eq:mean_field_approx},
+    \end{aligned}
+\end{equation}
+with effective potential strenght $b_\mathbf{k}$ and pairing potential $\Delta_\mathbf{k}$ of the Cooper pairs. A consequence of this approximation is the appearance of an energy gap of $2\Delta_\mathbf{k}$ in the spectrum of \eqref{eq:bcs}, implying an energy gain by the formation of Cooper pairs, and consequently a condensation to a new BCS ground state. Substituting \eqref{eq:mean_field_approx} into the Hamiltonian \eqref{eq:bcs} yields
+\begin{equation}
+	\mathrm{H}_\text{MF}=\sum_{\mathbf{k},\sigma} \epsilon_{\mathbf{k}} c_{\mathbf{k} \sigma}^\dagger c_{\mathbf{k} \sigma}-\sum_{\mathbf{k}}\left(\Delta_{\mathbf{k}} c_{\mathbf{k} \uparrow}^\dagger c_{-\mathbf{k} \downarrow}^\dagger+\Delta_{\mathbf{k}}^\star c_{-\mathbf{k} \downarrow} c_{\mathbf{k} \uparrow}-\Delta_{\mathbf{k}} b_{\mathbf{k}}^\dagger\right).
+	\label{eq:bcs_mean_field}
+\end{equation}
+WE can neglect the last term, since it is a constant energy shift and does not effect the physics of the system. We can also notice that particle number is not perserved anymore, due to the terms $c_{\mathbf{k} \uparrow}^\dagger c_{-\mathbf{k}}$ und $c_{-\mathbf{k} \downarrow} c_{\mathbf{k} \uparrow}$, which describe the creation and destruction of Cooper pairs respectively. 
+
+\subsection{Bogoliubov--de Gennes equations}
+\label{sec:bdg}
+% Nambu basis (psi_up, psi_dn, psi_dn^dag, -psi_up^dag) as in the code [1.1]; particle-hole symmetry, the doubled
+% spectrum +-E, Bogoliubov quasiparticles.  Andreev reflection at an NS interface: e -> h, charge 2e into the
+% condensate, no energy.
+To gain a deeper understanding of, it is useful to not only consider electronic degrees of freedom, but also hole degrees of freedom. Therefore we introduce the Nambu-Spinor 
+\begin{equation}
+    \psi_\mathbf{k}^\dagger = \left(\hat{c}_\mathbf{k, \uparrow}^\dagger, \hat{c}_{-\mathbf{k}, \downarrow}\right)
+    \label{eq:nambu_spinor},
+\end{equation} 
+and by substituting this into \eqref{eq:bcs_mean_field} we get 
+\begin{equation}
+	\mathrm{H}_\text{MF} = \sum_k \Psi^\dagger_\mathbf{k} \underbrace{\scriptstyle{\begin{pmatrix} \epsilon_\mathbf{k}&\Delta \\ -\Delta^*  &-\epsilon_\mathbf{k}\end{pmatrix}}}_{\mathcal{H}_\text{BdG}} \Psi_\mathbf{k}.
+	\label{eq:bdg_ham},
+\end{equation}
+adapting a matrix form, called BdG-Hamiltonian $\mathcal{H}_\text{BdG}$. As we will shortly see, $\mathcal{H}_\text{BdG}$ can be diagonalized using the BdG transformation
+\begin{equation}
+	\Psi_\mathbf{k}	 = \begin{pmatrix} u_\mathbf{k}^\star & v_\mathbf{k} \\ -v_\mathbf{k}^\star & u_\mathbf{k} \end{pmatrix} \begin{pmatrix} \gamma_{\mathbf{k}\uparrow} \\ \gamma_{-\mathbf{k}\downarrow}^\dagger \end{pmatrix} = \mathbf{U} \begin{pmatrix} \gamma_{\mathbf{k}\uparrow} \\ \gamma_{-\mathbf{k}\downarrow}^\dagger \end{pmatrix},
+	\label{eq:bdg_transformation},
+\end{equation}
+where $\gamma_{\mathbf{k}\uparrow}$ and $\gamma_{-\mathbf{k}\downarrow}^\dagger$ are fermionic operators, describing the destruction and creation of BdG quasiparticles respectively. These BdG quasiparticles are a linear combination of electrons and holes, and generally differ from $\hat{c}_\mathbf{k, \uparrow}^\dagger, \hat{c}_{-\mathbf{k}}$. The coefficients $u_\mathbf{k}, v_\mathbf{k}$ describe the electron and hole contribution to the quasiparticle and obey the normalization condition $|u_\mathbf{k}|^2 + |v_\mathbf{k}|^2 = 1$. By switching into the BdG quasiparticles basis we diagonalize $\mathcal{H}_\text{BdG}$ 
+\begin{equation}
+	\mathbf{U}^\dagger \mathcal{H}_\text{BdG} \mathbf{U} = \mathbf{D} = \scriptstyle{\begin{pmatrix} E_{\mathbf{k}+} & 0 \\ 0 & E_{\mathbf{k}-} \end{pmatrix}}.
+	\label{eq:diagonal_bdg}
+\end{equation}
+Here we can see how every eigenstate $\left|\gamma_\mathbf{k} \right\rangle$ with eigenenergy $E(k)$, there exists a second eigenstate $\left| \gamma_{-\mathbf{k}} \right\rangle$ with eigenenergy $-E(-k)$, reflecting the PHS inherent to the BdG formalism. 
+
+\subsection{Spin--orbit coupling and Zeeman field}
+\label{sec:soc}
+% Rashba + Dresselhaus in a 2DEG ([100] orientation), spin-split bands, the E_so shift convention (Scharf's, mu
+% counted from the bottom of the lower band) [1.1], in-plane Zeeman E_Z = g mu_B B/2 \cite{scharf2019}.
+
+\subsection{Topological superconductivity and Majorana bound states}
+\label{sec:topo}
+% Kitaev chain \cite{kitaev2001}: Majorana operators gamma = gamma^dag, end zero modes, splitting ~ e^{-L/xi}.
+% Effective p-wave from s-wave + SOC + Zeeman.  Class D, Z2 invariant: Pfaffian Q \cite{kitaev2001, wimmer2012}
+% [6.2] and the scattering invariant det r \cite{fulga2011, akhmerov2011} [4.5].
+Majorana Fermions are particles, who are their own antiparticle, and get their name from Ettore Majorana [Quelle], who postulated such particles in the field of particle physics. In solid state physics they are also sometimes called Majorana bound states (MBS) or Majorana zero modes (MZMs), and correspond to exotic quasiaprticles, and can be theoretically be hosted in topological superconductors. It is useful for us to introduce the Kitaev model [quelle], which gives a rather intuitive picture on how these MFs form. 
+
+For this we look at a onedimensional superconducting chain with $N \gg 1$ lattice sites, each hosting one spinless fermion. The Hamiltonian describing the system is given by 
+\begin{equation}
+	\mathrm{H} = -\mu \sum_{x=1}c_x^{\dagger} c_x-\frac{1}{2} \sum\left(t c_x^{\dagger} c_{x+1}+t c_{x+1}^\dagger c_x+\Delta e^{i \phi} c_x c_{x+1}+ \Delta^\star e^{-i \phi} c_{x+1}^\dagger c_j^\dagger \right),
+	\label{eq:kitaev_ham}
+\end{equation}
+
+where $t$ is the hopping parameter, $\mu$ the chemical potential, $\Delta$ the superconducting pairing, and $\phi$ the superconducting phase. The operator $\hat{c}_x^\dagger (\hat{c}_x)$  creates (destructs) a fermion at lattice site $x$. To now get MFs out of this model, $\hat{c}_x$ and $\hat{c}_x^\dagger$ each are transformed into a pair of Majorana operators $\gamma_{A,x}$ and $\gamma_{B,x}$ 
+
+\begin{equation}
+	\begin{aligned}
+		\hat{c}_x &= \frac{\exp^{-i\phi/2}}{2} \left( \gamma_{B,x} + i\gamma_{A,x}\right) \\
+		\hat{c}_x^\dagger &=  \frac{\exp^{i\phi/2}}{2} \left( \gamma_{B,x} - i\gamma_{A,x}\right).
+	\end{aligned}
+	\label{eq:majorana_operators}.
+\end{equation}
+
+The index $A,B$ reflects the position at a certain lattice site (A left, B right) [BILD EINFÜGEN]. The Majorana operators further obey the relations 
+
+\begin{equation}
+	\gamma_{\alpha,x} = \gamma_{\alpha,x^\prime}^\dagger	\quad	\left\{\gamma_{\alpha,x},\gamma_{\beta,x^\prime}\right\}=2\delta_{\alpha\beta}\delta_{xx^\prime} 
+	\label{vertauschungsrelation majorana-operatoren}.
+\end{equation}
+
+Now we are in a position to look at two insightful limiting cases. The first limit we look at is $\mu < 0$, $T=\Delta=0$, which simplifies \eqref{eq:kitaev_ham} to
+
+\begin{equation}
+	\mathrm{H}=-\frac{\mu}{2} \sum_{x=1}^N \left( 1+i\gamma_{B,x}\gamma_{A,x}\right)
+	\label{eq:kitaev_limit1}. 
+\end{equation}
+
+This is the trivial regime. Here every pair of Majoranas at the same lattice site $x$ couples and forms one ordinary fermion $\hat{c_\mathbf{k}^\dagger}$. 
+The second limiting case happens for $\mu=0, t=\Delta \neq 0$, where \eqref{eq:kitaev_ham} adapts the form 
+\begin{equation}
+	\mathrm{H} = -i\frac{t}{2}\sum_{x=1}^{N-1} \left( \gamma_{B,x} \gamma_{A,x+1}\right)
+	\label{eq:kitaev_limit2}.
+\end{equation}
+Now instead of Majorana $A,B$ coupling at the same lattice site, they couple between different lattice sites $x, x+1$. 
+
+
+\section{Josephson junctions}
+\label{sec:jj}
+
+\subsection{Andreev bound states}
+\label{sec:abs}
+% SNS junction, phase-dependent bound states, Thouless energy E_T; the ABS count ~ Delta/E_T.
+
+\subsection{Planar topological Josephson junctions}
+\label{sec:planar_jj}
+% \cite{pientka2017}: phase phi and E_Z both tune, diamond-shaped phase diagram, topological from low field at
+% phi = pi.  \cite{scharf2019}: Rashba/Dresselhaus ratio and field direction.  Two kinds of Majorana: chiral and
+% propagating (Gresta: out-of-plane exchange field in the ribbons) vs localised at the junction ends (Scharf:
+% in-plane field in the normal region).
+
+\section{Thermoelectric transport}
+\label{sec:thermo}
+
+\subsection{Linear response in a multiterminal junction}
+\label{sec:onsager}
+% Charge and heat currents, Landauer--Buettiker in Nambu space, Onsager matrix and reciprocity
+% \cite{klees2024} [4].
+
+\subsection{Electrical and thermal conductance}
+\label{sec:G_kappa}
+% G and kappa; thermal conductance quantum kappa_0 = pi^2 k_B^2 T/(3h); Wiedemann--Franz and why Andreev
+% reflection breaks it.  A Majorana channel: kappa = kappa_0/2 \cite{akhmerov2011, gresta2026}.
+
+\subsection{Seebeck and Nernst coefficients}
+\label{sec:seebeck}
+% Definitions from the Onsager matrix.  No Seebeck or Nernst results have been computed in this work so far:
+% keep this short, or compute S from the existing T(E) channels.  Check in \cite{klees2024} what particle-hole
+% symmetry implies for the thermopower of a Majorana pair before writing anything about it.
+
+\subsection{Transport through a pair of Majorana bound states}
+\label{sec:two_majorana}
+% \cite{nilsson2008, flensberg2010} [5]: kappa/kappa_0 = 2x^2/(1+x^2)^2 with x = eps/Gamma, det r = (x^2-1)/(x^2+1),
+% so kappa = (1 - det r^2)/2; electron transfer = crossed Andreev, hence G = 0.  Maximum 1/2 at eps = Gamma.

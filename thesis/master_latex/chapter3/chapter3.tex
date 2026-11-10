@@ -1,0 +1,112 @@
+\chapter{Methods}
+\label{ch:methods}
+In this chapter we will discuss Green's functions (GF) and how they are used in the numerical computation of observables, such as thermoelectric conductance and the density of state. This chapter starts off with equilibrium GF in \ref{sec:eq_gf} and afterwards non-equilibrium Green's function (NEGF) in \ref{sec:negf}. Thereafter the computation of GF using recursive mthods (recursive Green's functions, RGF for short) will be introduced in \ref{sec:rgf}. Following the introduction of RGF, we will derive a version of RGF in \ref{sec:subspace_rgf}, which follows from the Dyson equation. 
+% PLAN.  Every formula, with derivation, source and code line: masterarbeit_v2/fourterminal/DERIVATIONS.md
+% (section numbers in brackets).
+
+\section{Tight-binding model of the four-terminal junction}
+\label{sec:model}
+% Continuum Hamiltonian, lattice discretisation \cite{mireles2001} [1.1-1.3].  Geometry figure: two S ribbons, the
+% normal strip W x L, two normal probes at the junction ends.  Parameter table (a, m*, alpha, beta, g, Delta,
+% mu_S, mu_C, mu_N, W, L, t_SN, tau) and units.
+
+\section{Green's functions}
+\label{sec:gf}
+Green's functions characterize the dynamics of single particles within a many-body system. GF can be understood as elemntary response functions [cite coleman?], since they describe the propagation of quasiaprticles when the system is perturbed.
+\subsection{Equilibrium Green's functions and Dyson equation}
+\label{sec:eq_gf}
+Generally GF are defined as the inverse of a differential equation. Following [QUELLE:CUEVAS] let us consider the Schrödinger equation 
+\begin{equation}
+    \mathrm{H}(x)\psi(x) = E\psi(x) \Rightarrow \left(E - \mathrm{H}(x)\right) \mathrm{G}(x, x^\prime) = \delta(x - x^\prime)
+    \label{eq:def_gf_by_se},
+\end{equation}
+and followingly 
+\begin{equation}
+    \mathrm{G}^{r/a}(x, x^\prime) = \left(E \pm i \eta - \mathrm{H} \right)^{-1}
+    \label{eq:gf_as_inverse_to_h},
+\end{equation}
+where the superscribt denotes the retarded / advanced GF, which is determined by the positive or negative imaginary part respectively. 
+% Retarded/advanced Green's function, LDOS [7.6]. follows cuevas 5.2 oder so 
+To now derive the Dyson equation, consider a perturbed system described by 
+\begin{equation}
+    \mathrm{H} = \mathrm{H}_0 + \mathrm{V}
+    \label{eq:equi_gf_ham},
+\end{equation}
+where $\mathrm{H}_0$ is the unperturbed Hamiltonian and $\mathrm{V}$ is a perturbation. The GF of the \textbf{unperturbed} system is then given by 
+\begin{equation}
+    \mathrm{g}^{r/a}= \left(E \pm i \eta - \mathrm{H}_0 \right)^{-1}
+    \label{eq:unperturbed_g0_equilibrium},
+\end{equation}
+and for the \textbf{perturbed} system by 
+\begin{equation}
+    \mathrm{G}^{r/a}= \left(E \pm i \eta - \mathrm{H}_0  - \mathrm{V}\right)^{-1}
+    \label{eq:perturbed_g_equilibrium},
+\end{equation}
+where small and capital letters are used to differentiate between the two. Relating the inverses of \eqref{eq:unperturbed_g0_equilibrium} and \eqref{eq:perturbed_g_equilibrium} and multiplying from the right by $\mathrm{G}$ and from the left with $\mathrm{g}$ we arrive at the so called Dyson euqation 
+\begin{equation}
+    \mathrm{G}^{r/a} = \mathrm{g}^{r/a} + \mathrm{g}^{r/a} \mathrm{V} \mathrm{G}^{r/a}
+    \label{eq:dyson_eq_derivation}.
+\end{equation}
+The Dyson equation is the basis of recursive algorithms, used to compute GF, and they are explained later on in this chapter. 
+
+
+\subsection{Device with leads and Self-energy}
+\label{sec:selfenergy}
+% Dyson #1.  Split H into the centre C and a lead l with coupling V_c, and project the Dyson equation onto C:
+% G_C = (z - H_C - Sigma)^{-1},  Sigma = V_c^dag g_s V_c,  Gamma = i(Sigma - Sigma^dag)  \cite{lewenkopf2013} Eqs. (16)-(18).
+% Physics only here: Re Sigma shifts levels, Gamma is the escape rate (broadening).  How g_s is computed:
+% Sec.~\ref{sec:rgf}.  [DERIVATIONS 2.1]
+% Mein Plan: folge der summary in mozilla lesezeichen. Erst Dyson-Gleichung enführen und dann self energies herleiten
+% This will probably follow cuevas 8.1 somewhat
+
+\section{Non-equilibrium Green's functions and transport}
+\label{sec:negf}
+% Answers: which Green's function do the observables need?  Result: only G^r of the centre, on the probe columns.
+
+\subsection{Keldysh formalism and the Caroli formula}
+\label{sec:keldysh}
+% Keldysh contour, G^< and G^>.  Keldysh equation G^< = G^r Sigma^< G^a with Sigma^<_alpha = i f_alpha Gamma_alpha;
+% exact for a quadratic Hamiltonian in the steady state (mean-field BdG with fixed Delta is one).
+% [sources to check: Cuevas; Meir & Wingreen, PRL 68, 2512 (1992)]
+% Current into a lead -> T = Tr[Gamma_R G^r Gamma_L G^a] \cite{caroli1971}; normal-state form \cite{lewenkopf2013} Eq. (15).
+
+\subsection{Transmission channels and observables}
+\label{sec:channels}
+% \cite{gresta2026} Eq. (7): project Gamma and G onto e/h -> elastic cotunnelling (ee, hh), crossed Andreev (he_cross),
+% local Andreev (he_local); table in DERIVATIONS 3.  PHS: T^{t1 t2}(E) = T^{bar t1, bar t2}(-E) \cite{klees2024}.
+% Observables from the channels: G, kappa and the local Andreev conductance; finite-temperature kernels
+% \cite{klees2024, gresta2026} [4.1-4.4]; det r [4.5].
+
+\section{Recursive Green's functions}
+\label{sec:rgf}
+\label{sec:subspace_rgf} % referenced in the chapter intro; now the same section
+% Answers: how is G^r of the centre computed?  Every step is the Dyson equation \eqref{eq:dyson_eq_derivation} with a
+% different split of H.  Target: G^r = (z - H_C - Sigma_L - Sigma_R - Sigma_T - Sigma_B)^{-1}, on the probe columns
+% only [2.2].  One pipeline, in this order (use a geometry figure showing what is attached when):
+%
+% 1. Surface Green's function of the leads.  Dyson #2: adding a cell does not change a semi-infinite lead ->
+%    eps_s = H_0 + V (z - eps_s)^{-1} V^dag  \cite{lewenkopf2013} Eqs. (60)-(61).  Sancho-Rubio decimation \cite{sancho1985},
+%    recursion as printed in \cite{lewenkopf2013} Eqs. (86)-(93) (their Eq. (91) has a typo, DERIVATIONS 2.1).
+%    Residual check; NaN on failure.
+% 2. Recursion along the junction.  Dyson #3: A_0 = z - H_C - Sigma_L - Sigma_R is block-tridiagonal in the columns;
+%    left and right sweeps g^L_i = (A_ii - V^dag g^L_{i-1} V)^{-1},  g^R_i = (A_ii - V g^R_{i+1} V^dag)^{-1}; off-diagonal
+%    blocks.  \cite{lewenkopf2013} Eqs. (19)-(20), (32), (35), (38)-(39).  Cost grows linearly with the number of slices.
+% 3. Attaching the superconducting ribbons in one Dyson step.  Dyson #4: the perturbation Sigma_T + Sigma_B = W^dag g_s W
+%    lives only on the boundary rows P; push-through identity ->
+%    G_QQ = g_0,QQ + (g_0,QP W^dag) [g_s^{-1} - W g_0,PP W^dag]^{-1} (W g_0,PQ),  Q = probe columns  [2.2, step 2].
+%    Uses g_s^{-1}, which stays finite at a Majorana pole of the ribbon at E = 0 -> numerically stable.
+% 4. Closing paragraph, the phase as a gauge transformation: phi enters only the top ribbon's pairing;
+%    U = diag(1, 1, e^{i dphi}, e^{i dphi}) commutes with W -> g_T^{-1}(phi) = U^dag g_T^{-1}(phi_ref) U, so the ribbon
+%    decimation runs once per field [2.2].
+
+\section{The infinite junction and its length scales}
+\label{sec:infinite}
+% Bloch Hamiltonian, gaps, Pfaffian Q [6].  Complex momenta \cite{groth2014} -> xi_M and k_osc [7.1]; the gap dip
+% [7.2]; the closed box for eps [7.3].
+
+\section{Numerical details and convergence}
+\label{sec:numerics}
+% eta acts as absorption, solver limits (CLAUDE.md "Numerics"); lattice constant a = 20/10/5 nm (Delta_top
+% converged, peak positions move by 0.02-0.07 meV); cost per point ~ a^-4; energy grids; tests.
+% RGF check, one sentence: the channels agree with a dense inversion of the whole centre to 1e-8 at phi = 0, 1.3, pi,
+% both directions [2.2].

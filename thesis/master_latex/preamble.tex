@@ -4,17 +4,18 @@
 \usepackage{a4wide}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
-\usepackage[english]{babel}
-\usepackage{ae,aecompl}
-\usepackage{ae}
+\usepackage[ngerman,english]{babel} % english is the main language; ngerman for the Zusammenfassung
+\usepackage{lmodern} % replaces the obsolete ae/aecompl fonts (same Computer Modern look, T1-encoded)
 \usepackage{graphicx}
+\graphicspath{{figures/}} % thesis figures go into master_latex/figures/
 \usepackage{bibgerm}
 % \usepackage{mathptmx} %Schriftart Times New Roman
 
 \usepackage{dsfont} 
 
-\usepackage{subfigure}
 \usepackage{caption}
+\usepackage{subcaption} % replaces the obsolete subfigure package: \begin{subfigure}{0.48\textwidth}
+\usepackage{siunitx} % units: \SI{2.3}{\micro\electronvolt}, \SI{20}{\milli\kelvin}
 \usepackage{fancyhdr}
 
 \usepackage{amssymb}

@@ -1,0 +1,101 @@
+\chapter{Results}
+\label{ch:results}
+
+% PLAN.  Study case: mixed SOC, tools.mixed_soc(16, 0.15 pi) ('100'), a = 10 nm, W 100 nm, mu_C 0.7, mu_S 1, t_SN 1,
+% phi = pi unless stated.  Pure Rashba (alpha 16) is the comparison case.  Status tag per item:
+%   [mixed]   data/figure exist for the mixed SOC
+%   [Rashba]  exists only for pure Rashba -> rerun for the mixed SOC, or present Rashba as the clean reference
+%   [old]     computed before the 2026-10-13 interface-bond fix -> rerun before quoting numbers
+% Figure paths are relative to masterarbeit_v2/fourterminal/computations/plots/.  The slides/ figures are pure Rashba
+% and in slide format; thesis figures need \textwidth size and ~10 pt fonts.
+
+\section{Reproduction of the reference papers}
+\label{sec:reproduction}
+% Short: what was reproduced, one figure each, and the deliberate differences.
+
+\subsection{Rashba and Dresselhaus spin--orbit coupling in a planar Josephson junction}
+\label{sec:repro_scharf}
+% \cite{scharf2019}: phase diagram (Q over E_Z, phi), LDOS at the end vs the middle.  Differences kept:
+% semi-infinite S ribbons (Scharf: W_S 450 nm, hard walls), Lorentzian eta (Scharf: Gaussian, 0.05 Delta),
+% phi -> -phi convention.
+
+\subsection{Limits of thermal conductance quantization}
+\label{sec:repro_gresta}
+% \cite{gresta2026}: kappa_0/2 plateau of the chiral Majorana, connected in (B_z,s, mu_s).  Own side results worth a
+% paragraph: eta acts as absorption (fake decay with length); ny = 8 triples the temperature window of ny = 12;
+% the exchange field it needs (0.67 meV at Delta 0.25 meV -> EuS/Al); Gresta + Scharf do not combine.
+
+\section{The four-terminal junction}
+\label{sec:setup}
+% Geometry and the question: does heat go from probe 1 to probe 2 through the end Majoranas?
+% Infinite junction: Q = -1 region, Delta_top.  [mixed: Q map, cache scharf_absTune_Q_mixed_mu0.7]
+% [Rashba: topology_muC.png, topology_muS.png]
+
+\section{Length scales of the end Majoranas}
+\label{sec:lengths}
+% The central result.  xi_M and k_osc come from the slowest E = 0 complex-k mode, not from hbar v_F/Delta_top.
+% - xi_M = hbar v_A/Delta_out: the narrow gap dip at the outer Fermi point, hbar v_A = sqrt(Delta_out E'').
+% - k_osc follows the outer Fermi point (0.92-0.93 k_F,out), also where the global gap minimum moves to k ~ 0.
+% - hbar v_F/Delta_top is off by 0.41-1.5x.  Real-space check: the box Majorana decays with xi_M to 1-2 %.
+% [mixed: oscillation_mixed.png, tuning_mixed_xi.png; xi_M 0.28-0.5 um (E_Z 0.1-0.6), 0.9 (0.8), 1.8 (1.0), 7.2 (1.3)]
+% [Rashba: slides/slide6_lengths.png, oscillation.png, branches.png (outer branch wins up to alpha 64)]
+
+\section{The Majorana splitting}
+\label{sec:splitting}
+% eps from the closed box vs eps ~ A Delta_out e^{-L/xi_M} |cos(k_osc L + phi_0)|.
+% - Rashba: zeros and their spacing parameter-free, A ~ 1.65-1.70 for L/xi_M >~ 3.5; fit rms 3.4 %, wrong
+%   ingredients 4-10x worse.
+% - mixed: the phase holds (zeros, spacing), the single-envelope amplitude does not (per-lobe A drifts by ~4x);
+%   the lobe heights are still the end-mode overlap (Rayleigh-Ritz 0.9999 for L/xi_M >= 3).  One paragraph.
+% [Rashba: slides/slide5_oscillation.png, oscillation_A_vs_L.png]  [mixed: oscillation_mixed.png, amplitude_mixed.png]
+
+\section{Heat through the Majorana pair: a resonance at \texorpdfstring{$\varepsilon=\Gamma$}{epsilon = Gamma}}
+\label{sec:resonance}
+% Two-Majorana model of Sec.~\ref{sec:two_majorana} tested against the full NEGF model:
+% - parameter-free test kappa = (1 - det r^2)/2: residual 2e-4 to 1e-3 on neutral points inside Q = -1;
+% - NEGF kappa collapses on x = eps_box/Gamma with Gamma measured from the Andreev Lorentzian (no fit);
+% - finite energy: max_E kappa(E) = 1/2 at E* = sqrt(eps^2 - Gamma^2) \cite{nilsson2008};
+% - so kappa_0/2 is a resonance, not a protected plateau; better-separated Majoranas give kappa -> 0, det r -> -1.
+% [mixed: slides/mixed_collapse.png, oscillation_mixed_transport.png, slides/mixed_length_detr.png]
+% [Rashba: slides/slide4_resonances.png, fingerprint.png, coupling_2M_test.png, fingerprint_finite_energy.png]
+
+\section{Designing the junction}
+\label{sec:design}
+
+\subsection{Length}
+\label{sec:length}
+% Window 2.5 <~ L/xi_M <~ ln(A Delta_out/Gamma) ~ 3.8 at tau 0.2; neutral 1/2 switches on at L/xi_M ~ 3.8 for every L.
+% [Rashba: slides/kappa_vs_L.png]  [mixed: tuning_mixed_length.png, slides/mixed_length_detr.png]
+
+\subsection{Width}
+\label{sec:width}
+% W sets E_T (the field scale) and Delta_top; more ABS need a longer L; W 100 nm (1 ABS) is best.  [Rashba, a 20]
+
+\subsection{S/N interface}
+\label{sec:sn}
+% t_SN buys gap and a shorter xi_M, not Q area.  [Rashba: slides/slide9_SN_coupling.png, coupling_*.png, topology_*.png]
+
+\subsection{Probe coupling}
+\label{sec:probe}
+% Gamma ~ tau^2.6 (mixed: 2.56); a weaker probe does not enlarge the plateau area; best tau 0.34-0.5.
+% [Rashba: tuning_tau_opt.png]  [mixed: Sec.~\ref{sec:best}]
+
+\section{Temperature}
+\label{sec:temperature}
+% Needs kT << Gamma (2.3 ueV = 27 mK at tau 0.2); coupling optimum tau 0.35-0.4 at 20 mK; heating lowers the peak but
+% does not charge it, and it does not move charged peaks to lower field (Delta fixed, thermal smearing only).
+% [Rashba: slides/slide10_temperature.png, T_tc_W100_L2.png]  [mixed: T_tc_W100_L2_mixed.png (a 20)]
+% Missing: finite T at the best mixed point (Gamma ~ 3.8 ueV ~ 44 mK).
+
+\section{Majorana or fake?}
+\label{sec:fake}
+% Two prongs: neutral kappa ~ 1/2 rejects disorder-localised trivial states (kappa ~ 1e-7); G ~ 0 rejects ordinary
+% channels; plus kappa = (1 - det r^2)/2.  The local 2e^2/h plateau exists, but disorder fakes it, and the strong
+% contact it needs kills the nonlocal signal.  det r sign changes on the Q boundary stay put when tau changes (bulk
+% transitions); interior ones move with Gamma (eps = Gamma).
+% [mixed: detr_kappa_mixed.png, detr_crossings_mixed.png]  [old: disorder, local Andreev plateau -> rerun]
+
+\section{The best \texorpdfstring{$\kappa_0/2$}{kappa0/2} region of the mixed junction}
+\label{sec:best}
+% mu_C 0.7, tau 0.5, L 2 um, E_Z 0.930 meV: kappa 0.476-0.4998 over 1.37 pi of phase with |G| <= 0.047, but only
+% 50 ueV wide in field: the eps = Gamma resonance held along phi, not a protected plateau.  [mixed: plateau_mixed_best.png]
