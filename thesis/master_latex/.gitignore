@@ -1,0 +1,27 @@
+# LaTeX build output (pdflatex / latexmk / bibtex / makeindex)
+*.aux
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.idx
+*.ilg
+*.ind
+*.nlo
+*.nls
+*.synctex.gz
+*.synctex(busy)
+*.xdv
+
+# generated from uni-siegel2.eps by epstopdf
+*-eps-converted-to.pdf
+
+# the compiled thesis; rebuild with latexmk -pdf main.tex
+main.pdf
