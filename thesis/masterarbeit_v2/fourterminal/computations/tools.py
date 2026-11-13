@@ -195,19 +195,25 @@ def gap_at(p, n_S, k):
 
 
 def gaps(p, n_S, ks=K_GRID):
-    """(gap at k = 0, smallest gap over all k, the k a where it sits), in units of t."""
+    """
+    (gap at ks[0] = 0, smallest gap over all k, the k a where it sits), in units of t.  The minimum is
+    gap_refined's (same grid, then refined): the plain grid minimum overestimates it, by 2.4x at mixed
+    a 10, E_Z 1.15 (18.8 vs 7.79 ueV).  Caches made before 2026-11-11 hold the plain grid minimum.
+    """
     g = np.array([gap_at(p, n_S, k) for k in ks])
-    return g[0], g.min(), ks[int(np.argmin(g))]
+    return (g[0],) + tuple(gap_refined(p, n_S, ks, g=g))
 
 
-def gap_refined(p, n_S, ks=K_GRID):
+def gap_refined(p, n_S, ks=K_GRID, g=None):
     """
     Smallest gap over all k (units of t) and its k a: the three lowest local minima of the grid, each
     refined by a 1D minimisation between its neighbours (the dip is ~1/xi_M wide, narrower than the
-    grid, so gaps() overestimates it).
+    grid, so the plain grid minimum overestimates it).  g: gap_at on ks if already computed.
+    Checked 2026-11-11 against a brute-force scan (k a step 2e-4, then Brent): equal to 4 digits in ueV
+    at mixed a 10, E_Z 0.3-1.3 (phi pi and 1.742 pi) and Rashba a 20, E_Z 1.15.
     """
     from scipy.optimize import minimize_scalar
-    g = np.array([gap_at(p, n_S, k) for k in ks])
+    g = np.array([gap_at(p, n_S, k) for k in ks]) if g is None else g
     gp = np.r_[np.inf, g, np.inf]
     loc = np.flatnonzero((gp[1:-1] <= gp[:-2]) & (gp[1:-1] <= gp[2:]))
     best = (g.min(), ks[int(np.argmin(g))])
@@ -540,6 +546,87 @@ def dos_total_phis(q, E_Z, phis, eta, E=0.0, tau=0.0):
     return np.array(out) / (np.pi * q.t)
 
 
+_RIB_CACHE = {}
+
+
+def _ribbon_sigmas(q, E_Z, dE):
+    """Top (phase 0) and bottom ribbon self-energies on the centre edge rows (4 nx x 4 nx, units of t) at E = 0, and
+    their E-derivative (central difference over +-dE meV), transport parameters; cached per (q, E_Z, dE)."""
+    key = (repr(q), float(E_Z), float(dE))
+    if key not in _RIB_CACHE:
+        p = replace(q.params_transport(E_Z=float(E_Z)), phi=0.0)
+        J = myf.FourTerminalJunction(p)
+        z = np.array([0.0, dE / q.t, -dE / q.t]) + 1j * p.eta
+        zS = z[:, None, None] * np.eye(4 * p.nx)[None]
+        top = J._make_ribbon(0.0, p.tc_top, is_bot=False)
+        sT, sB = top.self_energy(zS), J.ribbon_bot.self_energy(zS)
+        dT, dB = (sT[1] - sT[2]) / (2 * dE / q.t), (sB[1] - sB[2]) / (2 * dE / q.t)
+        _RIB_CACHE.clear()
+        _RIB_CACHE[key] = (sT[0], sB[0], dT, dB)
+    return _RIB_CACHE[key]
+
+
+def nh_spectrum(q, E_Z, phis, tau_L, tau_R, k=8, dE=2e-3):
+    """
+    Complex spectrum of the OPEN junction near E = 0: the k poles closest to zero of
+        G(E) = [E - H_C - Sigma_top(E) - Sigma_bot(E) - Sigma_L(E) - Sigma_R(E)]^-1,
+    the self-energies of transport_point / dos_total_phis (semi-infinite SC ribbons, normal probes), with the
+    probes attached by SEPARATE bonds tau_L (left) and tau_R (right) (0 = detached).  The probes enter at E = 0
+    (normal leads, flat on the ueV scale; their anti-Hermitian part is the loss); the ribbons are linearised,
+    Sigma(E) ~ Sigma(0) + E Sigma'(0) (scale Delta, poles ~ueV), which gives the generalised problem
+        (H_C + Sigma(0)) psi = E M psi,   M = 1 - Sigma_rib'(0)  (Hermitian part; >= 1: quasiparticle weight).
+    The top ribbon at phase phi is the gauge rotation of phase 0 (as dos_total_phis).
+    Returns poles (len(phis), k) complex, ueV, sorted by |Re E| (rounded to 1e-3 ueV), then |E| -- the first two are the
+    Majorana pair --, and the overlap |psi_1^dag psi_2| / (|psi_1| |psi_2|) of those two (len(phis),) -> 1 where two
+    eigenvectors coalesce (exceptional point).
+    """
+    import scipy.sparse as sps
+    import scipy.sparse.linalg as spla
+    p = q.params_transport(E_Z=float(E_Z))
+    nx, ny = p.nx, p.ny
+    d = 4 * ny
+    J = myf.FourTerminalJunction(replace(p, phi=0.0))
+    Hs, V = J.slice_blocks_x()
+    zN = np.array([1j * p.eta])[:, None, None] * np.eye(d)[None]
+    S_L = (myf.FourTerminalJunction(replace(p, tc_barr=float(tau_L))).lead_L.self_energy(zN)[0] if tau_L > 0
+           else np.zeros((d, d), complex))
+    S_R = (myf.FourTerminalJunction(replace(p, tc_barr=float(tau_R))).lead_R.self_energy(zN)[0] if tau_R > 0
+           else np.zeros((d, d), complex))
+    sT0, sB, dT0, dB = _ribbon_sigmas(q, E_Z, dE)
+    off = sps.diags(np.ones(nx - 1), 1)
+    H0 = (sps.kron(sps.eye(nx), sps.csr_matrix(Hs)) + sps.kron(off, sps.csr_matrix(V))
+          + sps.kron(off.T, sps.csr_matrix(V.conj().T))).tolil()
+    H0[:d, :d] = H0[:d, :d].toarray() + S_L
+    H0[-d:, -d:] = H0[-d:, -d:].toarray() + S_R
+    H0 = H0.tocsr()
+    top = (np.arange(nx)[:, None] * d + np.arange(4)[None]).ravel()                  # row iy = 0 of every column
+    bot = (np.arange(nx)[:, None] * d + 4 * (ny - 1) + np.arange(4)[None]).ravel()     # row iy = ny - 1
+    n = nx * d
+    edge = np.r_[top, bot]
+    Rows, Cols = np.meshgrid(edge, edge, indexing='ij')
+    poles, ovl = [], []
+    for ph in phis:
+        u = np.tile(np.array([1.0, 1.0, np.exp(1j * ph), np.exp(1j * ph)]), nx)
+        g = lambda A: (u.conj()[:, None] * A) * u[None, :]           # ribbon at phi = gauge rotation of phi = 0
+        sT, dT = g(sT0), g(dT0)
+        blk = np.zeros((2 * 4 * nx, 2 * 4 * nx), complex)
+        blk[:4 * nx, :4 * nx], blk[4 * nx:, 4 * nx:] = sT, sB
+        dblk = np.zeros_like(blk)
+        dblk[:4 * nx, :4 * nx], dblk[4 * nx:, 4 * nx:] = dT, dB
+        A = (H0 + sps.csr_matrix((blk.ravel(), (Rows.ravel(), Cols.ravel())), shape=(n, n))).tocsc()
+        Md = -(dblk + dblk.conj().T) / 2
+        M = (sps.eye(n, format='csr') + sps.csr_matrix((Md.ravel(), (Rows.ravel(), Cols.ravel())), shape=(n, n))).tocsc()
+        w, vec = spla.eigs(A, k=k, M=M, sigma=0.0, which='LM')
+        # order by |Re E| first: the Majorana pair has |Re E| <= eps (0 between EPs), the bulk poles sit at |Re E| ~ Delta_top;
+        # ordering by |E| swapped in a bulk pole once the lossy pole's width exceeded it (tau_L 0.8: Im -45 vs Re 40 ueV)
+        o = np.lexsort((np.abs(w), np.round(np.abs(w.real) * q.t * 1e3, 3)))
+        w, vec = w[o], vec[:, o]
+        v1, v2 = vec[:, 0], vec[:, 1]
+        poles.append(w * q.t * 1e3)
+        ovl.append(abs(np.vdot(v1, v2)) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
+    return np.array(poles), np.array(ovl)
+
+
 def peak_energies(E, D):
     """Non-negative energies of the local maxima of D(E), lowest first."""
     i = np.flatnonzero((D[1:-1] > D[:-2]) & (D[1:-1] >= D[2:])) + 1
@@ -574,6 +661,15 @@ PLOTS = HERE / 'plots'
 
 
 def save_fig(fig, name, dpi=110):
-    """Save a figure as computations/plots/<name>.png."""
+    """Save a figure as computations/plots/<name>.png.  Retries for ~10 s: on Windows an open preview of the PNG (e.g.
+    the editor's image tab) can make the write fail with OSError 22 for a moment."""
+    import time
     PLOTS.mkdir(exist_ok=True)
-    fig.savefig(PLOTS / f'{name}.png', dpi=dpi)
+    for attempt in range(10):
+        try:
+            fig.savefig(PLOTS / f'{name}.png', dpi=dpi)
+            return
+        except OSError:
+            if attempt == 9:
+                raise
+            time.sleep(1.0)

@@ -7,6 +7,9 @@ PARTS (one per former script; the cells of each part are tagged [part]):
   coupling     (was study_coupling.py)  STUDY: how the S/N interface coupling tc (tc_top = tc_bot; 1 = bulk bond, Scharf) and the probe coupling
   tuning       (was study_tuning.py)  STUDY: can mu_C and the spin-orbit coupling make the kappa = 1/2 regions larger?
   maps         (2026-11-09)  thesis figures: total DOS(E = 0) and kappa on (E_Z, phi) at a = 5 nm, mixed SOC, three probe bonds
+  leads        (2026-11-11)  STUDY: the mixed-SOC junction vs BOTH lead couplings -- S/N bond tc (SC leads) and probe bond tau
+  spectrum     (2026-11-13)  STUDY: DOS(E, phi) at one field through a bright E = 0 DOS spot, vs the probe bond tau (a = 10)
+  ep           (2026-11-13)  STUDY: exceptional points of the open junction (poles with the probe leads), asymmetric tau_L, tau_R
 
 Run one part:   python study_tuning.py topology      (several: list them; no argument: every part, in order)
 In the interactive window the cells run as usual.  run_part(part) replaces the old `if __name__ == "__main__":`
@@ -16,12 +19,13 @@ Names that collided between parts were renamed (see each PART header); cache nam
 # %% --- IMPORTS AND THE PART SELECTOR ---
 import sys
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from functools import partial
 import tools as st
 from study_oscillation import slowest_mode
 
-PARTS = ('topology', 'coupling', 'tuning', 'maps')
+PARTS = ('topology', 'coupling', 'tuning', 'maps', 'leads', 'spectrum', 'ep')
 _SELECTED = {a for a in sys.argv[1:] if a in PARTS}
 
 
@@ -952,3 +956,824 @@ if run_part('maps'):
                    f'maps_mixed_a5_kappa_tau{tau:g}', vmax=max(1.0, np.nanpercentile(k, 99.9)))
         map_figure(DOS_MAP[tau], 'magma', r'total DOS($E = 0$) [1/meV]', rf'Total DOS at $E = 0$, probe bond $\tau$ = {tau:g}',
                    f'maps_mixed_a5_dos_tau{tau:g}', vmax=np.nanpercentile(DOS_MAP[tau], 99))
+
+
+# %% [maps] --- 3. IS Q = -1 GAPPED? (2026-11-12) ---
+# In the mixed SOC Q = -1 does not imply a gap: the middle BdG pair can tilt across zero at finite k (study_mixed [angle]
+# 1); the [deck] (mu_C, E_Z) maps are 52-56 % gapless inside Q = -1.  The Q map above counts such points as topological.
+# Delta_top (tools.gaps: k_grid(5), refined) on every Q = -1 point of Q_MAP; gapless = below 0.01 ueV as in [deck].
+# ~28 s per point on one thread.  Figure plots/maps_mixed_a5_gap.png.
+MAP_GAPLESS = 1e-5                                                  # meV
+
+
+def map_gap_case(n, pts):
+    """[gap at k = 0, Delta_top (meV), k a of it] at pts[n] = (E_Z, phi) for the a = 5 junction (no invariant)."""
+    q = junction_map(TAUS_MAP[0])
+    p = q.params(E_Z=float(pts[int(n)][0]), phi=float(pts[int(n)][1]))
+    g0, g, k = st.gaps(p, st.n_S_of(q), st.k_grid(q.a))
+    return np.array([g0 * q.t, g * q.t, k])
+
+
+if run_part('maps'):
+    iq = np.argwhere(Q_MAP < 0)
+    PTS = tuple((float(EZ_MAP_Q[a]), float(PHI_MAP_Q[b])) for a, b in iq)
+    GQ = st.run_scan(partial(map_gap_case, pts=PTS), {'n': np.arange(len(PTS))}, 'scharf_absMap_gap_mixed_a5',
+                     n_workers=6, chunksize=2)
+    GAP_MAP = np.full(Q_MAP.shape, np.nan)
+    GAP_MAP[tuple(iq.T)] = GQ[:, 1]
+    gpd, gls = (Q_MAP < 0) & (GAP_MAP >= MAP_GAPLESS), (Q_MAP < 0) & ~(GAP_MAP >= MAP_GAPLESS)
+    mid = np.sum((GQ[:, 1] >= 1e-6) & (GQ[:, 1] < 8e-5))
+    print(f"\n  a = 5 Q map (E_Z 0-2 step 0.05 x 31 phases, all columns as for the 45.6 %): Q = -1 {np.mean(Q_MAP < 0):.1%}, "
+          f"gapped (>= 0.01 ueV) {gpd.mean():.1%}, gapless {gls.mean():.1%} (= {gls.sum() / max((Q_MAP < 0).sum(), 1):.0%} "
+          f"of Q = -1); Delta_top max {np.nanmax(GAP_MAP) * 1e3:.1f} ueV; values between 1e-3 and 0.08 ueV: {mid}")
+    print("  gapped Q = -1 per field (phases out of 30):  " + "  ".join(
+        f"{e:.2f}:{int(gpd[i, :-1].sum())}/{int((Q_MAP[i, :-1] < 0).sum())}" for i, e in enumerate(EZ_MAP_Q)
+        if (Q_MAP[i, :-1] < 0).any()))
+    from matplotlib.colors import ListedColormap
+    from matplotlib import patheffects as pe
+    fig, ax = plt.subplots(figsize=(5.6, 4.5), layout='constrained')
+    ax.pcolormesh(PHI_MAP_Q / np.pi, EZ_MAP_Q, np.where(Q_MAP > 0, 1.0, np.nan), shading='nearest',
+                  cmap=ListedColormap(['#e4e3df']), vmin=0, vmax=1)
+    ax.pcolormesh(PHI_MAP_Q / np.pi, EZ_MAP_Q, np.where(gls, 1.0, np.nan), shading='nearest',
+                  cmap=ListedColormap(['#f5c9b3']), vmin=0, vmax=1)
+    im = ax.pcolormesh(PHI_MAP_Q / np.pi, EZ_MAP_Q, np.where(gpd, GAP_MAP * 1e3, np.nan), shading='nearest', cmap='Blues',
+                       vmin=0, rasterized=True)
+    cs = ax.contour(PHI_MAP_Q / np.pi, EZ_MAP_Q, Q_MAP, levels=[0], colors='w', linewidths=1.2, linestyles='--')
+    cs.set(path_effects=[pe.withStroke(linewidth=2.6, foreground='k')])
+    ax.set_xticks(np.arange(0, 2.01, 0.5))
+    ax.set_xlabel(r'$\phi/\pi$')
+    ax.set_ylabel(r'$E_Z$ [meV]')
+    ax.set_title(r'Topological gap $\Delta_{top}$ of the infinite junction' + '\n' + r'mixed SOC, $\mu_C$ = 0.7 meV, W = 100 nm, '
+                 r'a = 5 nm' + '\n' + f'gapped {gpd.mean():.1%} of the map, $Q = -1$ {np.mean(Q_MAP < 0):.1%}', fontsize=9)
+    fig.colorbar(im, ax=ax, label=r'$\Delta_{top}$ [$\mu$eV]  (grey: trivial; orange: $Q = -1$ but gapless)')
+    st.save_fig(fig, 'maps_mixed_a5_gap', dpi=200)
+    plt.close(fig)
+    print("figure: plots/maps_mixed_a5_gap.png", flush=True)
+
+
+# ====================================================================================================================
+# PART 'leads'  (2026-11-11)
+# ====================================================================================================================
+# STUDY: how the MIXED-SOC junction (thesis case: W 100, L 2 um, mu_C 0.7, mu_S 1, Delta 0.25, a 10) depends on BOTH
+# lead couplings.  The pure-Rashba version is [topology] + [coupling]; the mixed SOC had only tc = 1 and tau 0.3387 /
+# 0.5 / 0.7 ([tuning] cell 7, study_mixed [oscillation]).
+#   SC leads    = the S/N bond tc (tc_top = tc_bot; 1 = bulk bond = Scharf; 1.25 = STRONGER than a bulk bond, model only)
+#   probe leads = the probe bond tau = tc_barr_transport (enters only Gamma: the bulk cannot see it)
+#   1. SC leads, infinite junction, phi = pi: Q and Delta_top (refined) along E_Z; xi_M at six fields (slowest_mode,
+#      ~4 min per point on one thread); Q on a coarse (E_Z, phi) map -> topological area.
+#   2. SC leads, transport (tau 0.5): kappa, G, det r on the [tuning] coarse grid (E_Z 0.05 x 31 phases) per tc.
+#   3. probe leads (tc 1): Gamma(tau) from the local-Andreev Lorentzian at the eps zeros E_Z 0.285 / 0.345 (phi pi);
+#      coarse maps for tau 0.2 and 1 (0.3387 / 0.5 / 0.7 exist); phi = pi lines (step 0.01) for tau 0.2 / 0.7 / 1
+#      (0.3387 / 0.5 exist, cache names of study_mixed [oscillation]).
+#   4. numbers; figure plots/leads_mixed.png.
+#   5. checks (2026-11-12): tc > 1 vs the control tc 0.8 (bound levels, normal-state transmission, phi = pi ABS,
+#      bulk lines / Q maps for tc 0.8 and 1.1); the tau charge vs Delta_top < Gamma.  Figure plots/leads_checks_mixed.png.
+# Every scan is cached per point (chunksize), so an interrupted run resumes.
+TC_LEADS = (0.5, 0.75, 0.9, 1.0, 1.25)
+TAU_LEADS = (0.2, 0.3387, 0.5, 0.7, 1.0)
+EZ_LB = np.round(np.arange(0.0, 1.6001, 0.05), 3)               # bulk line, phi = pi
+EZ_LXI = (0.2, 0.4, 0.6, 0.8, 1.0, 1.2)                        # xi_M fields
+EZ_LQ = np.round(np.arange(0.0, 2.0001, 0.1), 3)                # Q map (21 x 16)
+PHI_LQ = np.linspace(0.0, 2 * np.pi, 16)
+EZ_LT = np.round(np.arange(0.10, 1.3501, 0.005), 3)[::2]       # = study_mixed EZ_T: phi = pi lines, step 0.01
+GAMMA_FIELDS = (0.285, 0.345)                                  # eps zeros at tc 1, L 2 (study_mixed [oscillation])
+CLOSED_L = 1e-5     # meV: refined Delta_top below 0.01 ueV = gapless (a band crosses E = 0 at finite k; checked tc 0.5)
+# GAPLESS: slowest_mode drops |lam| = 1 (propagating) modes and returns the field-independent 2nd complex-k mode
+# (257 nm, k 0.0404/nm); xi_M is then undefined (infinite), not 257 nm.  Masked via the bulk line.
+
+
+def junction_leads(tc=1.0, tau=0.5):
+    """The thesis junction (mixed SOC, mu_C 0.7, L 2 um, a 10) with S/N bond tc and probe bond tau."""
+    return st.replace(junction('mixed', 0.7, tau, 2000.0), tc=tc)
+
+
+def leads_xi_point(q, E_Z, phi=np.pi):
+    """[Q, xi_M (nm), k_osc (1/nm)] of the infinite junction (slowest E = 0 complex-k mode)."""
+    p, n_S = q.params(E_Z=float(E_Z), phi=float(phi)), st.n_S_of(q)
+    lam = slowest_mode(p, n_S)
+    return np.array([st.invariant(p, n_S), -q.a / np.log(np.abs(lam)), np.abs(np.angle(lam)) / q.a])
+
+
+def leads_xi_case(k, cases):
+    """leads_xi_point for cases[k] = (tc, E_Z): all tc in one scan (the ~4 min points fill every worker)."""
+    tc, E_Z = cases[int(k)]
+    return leads_xi_point(junction_leads(tc), E_Z)
+
+
+def leads_gamma_point(k, cases):
+    """[Gamma (ueV), local Andreev (E = 0)/2]: half width of the local-Andreev Lorentzian at an isolated Majorana,
+    cases[k] = (tau, E_Z), phi = pi, tc 1 (bisection in ln E, as study_mixed.gamma_point)."""
+    t, E_Z = cases[int(k)]
+    q = junction_leads(1.0, t)
+
+    def A(E):
+        c = dict(zip(st.CHANNELS, st.channel_point(q, E_Z, E)))
+        return float(np.ravel((np.asarray(c['eh_local']) + np.asarray(c['he_local'])) / 2)[0])
+    A0, lo, hi = A(0.0), 1e-5, 1e-1
+    for _ in range(14):
+        mid = np.sqrt(lo * hi)
+        lo, hi = (mid, hi) if A(mid) > A0 / 2 else (lo, mid)
+    return np.array([np.sqrt(lo * hi) * 1e3, A0])
+
+
+def leads_summary(tr, Qi):
+    """Map numbers: plateau fraction (all / inside Q = -1), kappa > 0.25 area, neutral share of it, max neutral kappa,
+    two-Majorana residual median on neutral kappa > 0.3 inside Q = -1."""
+    k, G, d = tr[..., 0], tr[..., 1], tr[..., 3]
+    P, hot, neu = plateau(tr), k > 0.25, np.abs(G) < 0.1 * k
+    big = (k > 0.3) & neu & (Qi < 0)
+    return dict(plat=P.mean(), plat_q=(P & (Qi < 0)).mean(), hot=hot.mean(),
+                neutral=np.mean(neu[hot]) if hot.any() else np.nan,
+                kmax_neu=np.nanmax(np.where(neu & (Qi < 0), k, np.nan)),
+                res2m=np.median(np.abs(k - (1 - d**2) / 2)[big]) if big.any() else np.nan,
+                failed=int(np.nansum(tr[..., 4])))
+
+
+def q_on_grid(Qm):
+    """Coarse Q map (EZ_LQ x PHI_LQ) -> the transport grid (EZ x PHI), nearest point."""
+    return Qm[np.abs(EZ[:, None] - EZ_LQ[None]).argmin(1)][:, np.abs(PHI[:, None] - PHI_LQ[None]).argmin(1)]
+
+
+# %% [leads] --- 1. SC LEADS: infinite junction; PROBE LEADS: Gamma(tau) ---
+if run_part('leads'):
+    BULK_L, XI_L, QM_L = {}, {}, {}
+    for tc in TC_LEADS:
+        BULK_L[tc] = st.run_scan(partial(topo_point, junction_leads(tc)), {'E_Z': EZ_LB},
+                                 f'scharf_absLeads_bulk_tc{tc:g}', chunksize=1)
+        print(f"leads: bulk line tc {tc:g} done", flush=True)
+    GAMMA_CASES = tuple((t, e) for t in TAU_LEADS for e in GAMMA_FIELDS)
+    GAM_L = st.run_scan(partial(leads_gamma_point, cases=GAMMA_CASES), {'k': np.arange(len(GAMMA_CASES))},
+                        'scharf_absLeads_gamma', chunksize=1).reshape(len(TAU_LEADS), len(GAMMA_FIELDS), 2)
+    print("leads: Gamma(tau) done", flush=True)
+    for tc in TC_LEADS:
+        QM_L[tc] = st.q_map(junction_leads(tc), EZ_LQ, PHI_LQ, f'scharf_absLeads_Q_tc{tc:g}', chunksize=len(PHI_LQ))
+        print(f"leads: Q map tc {tc:g} done", flush=True)
+    XI_CASES = tuple((tc, e) for tc in TC_LEADS for e in EZ_LXI)
+    XI_ALL = st.run_scan(partial(leads_xi_case, cases=XI_CASES), {'k': np.arange(len(XI_CASES))}, 'scharf_absLeads_xi',
+                         chunksize=1).reshape(len(TC_LEADS), len(EZ_LXI), 3)
+    XI_L = {tc: XI_ALL[i] for i, tc in enumerate(TC_LEADS)}
+    # 'gapless' at an xi field: Q = -1 but refined Delta_top < CLOSED_L on the bulk line
+    GAPLESS_L = {tc: np.array([BULK_L[tc][np.argmin(np.abs(EZ_LB - e)), 1] < CLOSED_L for e in EZ_LXI])
+                 for tc in TC_LEADS}
+    print("leads: xi_M done", flush=True)
+
+# %% [leads] --- 2. SC LEADS: transport (tau 0.5); 3. PROBE LEADS: maps and phi = pi lines (tc 1) ---
+if run_part('leads'):
+    TR_L, TRT_L, LN_L = {}, {}, {}
+    for tc in TC_LEADS:
+        name = tr_name('mixed', 0.7, 0.5, 2000.0) if tc == 1.0 else f'scharf_absLeads_tr_tc{tc:g}_tau0.5'
+        TR_L[tc] = st.run_scan(partial(st.transport_phis, junction_leads(tc, 0.5), phis=PHI), {'E_Z': EZ}, name,
+                               chunksize=1)
+        print(f"leads: transport map tc {tc:g} done", flush=True)
+    for t in TAU_LEADS:
+        TRT_L[t] = st.run_scan(partial(st.transport_phis, junction('mixed', 0.7, t, 2000.0), phis=PHI), {'E_Z': EZ},
+                               tr_name('mixed', 0.7, t, 2000.0), chunksize=1)
+        print(f"leads: transport map tau {t:g} done", flush=True)
+    for t in TAU_LEADS:
+        LN_L[t] = st.run_scan(partial(st.transport_point, junction('mixed', 0.7, t, 2000.0), phi=np.pi),
+                              {'E_Z': EZ_LT}, f'scharf_absOM_line_mixed_tau{t:g}', chunksize=1)
+        print(f"leads: phi = pi line tau {t:g} done", flush=True)
+
+# %% [leads] --- 4. NUMBERS ---
+if run_part('leads'):
+    print("\n  SC LEADS (S/N bond tc), mixed SOC, a 10: phi = pi line, coarse Q map, tau 0.5 transport map")
+    print("  tc     Q=-1 area  Q=-1 at pi for E_Z   max Delta_top [ueV] (E_Z)   xi_M [nm] at E_Z 0.2/0.4/0.6/0.8/1.0/1.2"
+          "    max L/xi_M")
+    SUM_TC = {}
+    for tc in TC_LEADS:
+        b, x, gl = BULK_L[tc], XI_L[tc], GAPLESS_L[tc]
+        topo = b[:, 0] < 0
+        gmax = np.where(topo, b[:, 1], -1.0)
+        i = int(np.argmax(gmax))
+        xi_txt = ' '.join('   (+)' if q_ > 0 else ('  gpls' if g_ else f"{v:6.0f}")
+                          for q_, v, g_ in zip(x[:, 0], x[:, 1], gl))
+        ok = (x[:, 0] < 0) & ~gl
+        lmax = np.max(2000.0 / x[ok, 1]) if ok.any() else np.nan
+        rng = f"{EZ_LB[topo].min():.2f}-{EZ_LB[topo].max():.2f}" if topo.any() else "   none  "
+        print(f"  {tc:4.2f}   {np.mean(QM_L[tc] < 0):5.0%}      {rng}          {gmax[i] * 1e3:6.1f} ({EZ_LB[i]:.2f})"
+              f"            {xi_txt}    {lmax:5.2f}")
+        SUM_TC[tc] = leads_summary(TR_L[tc], q_on_grid(QM_L[tc]))
+    print("\n  tc     plateau (all / Q=-1)   kappa>0.25   neutral of those   max neutral kappa in Q=-1   2M residual   failed")
+    for tc in TC_LEADS:
+        s = SUM_TC[tc]
+        print(f"  {tc:4.2f}   {s['plat']:5.1%} / {s['plat_q']:5.1%}       {s['hot']:5.1%}        {s['neutral']:4.2f}"
+              f"               {s['kmax_neu']:.3f}                  {s['res2m']:.1e}      {s['failed']}")
+    gam = GAM_L[..., 0]
+    p_fit = np.polyfit(np.log(TAU_LEADS), np.log(gam.mean(1)), 1)[0]
+    print(f"\n  PROBE LEADS (tc 1): Gamma = local-Andreev half width at E_Z {GAMMA_FIELDS}, phi pi;"
+          f" fit Gamma ~ tau^{p_fit:.2f}")
+    loc_p = np.diff(np.log(gam.mean(1))) / np.diff(np.log(TAU_LEADS))
+    print("  local exponent d ln Gamma / d ln tau between neighbouring tau: "
+          + ' '.join(f"{v:.2f}" for v in loc_p) + "  (not one power law)")
+    print("  tau     Gamma [ueV] at the 2 fields  [mK]   A(0)/2   plateau (all / Q=-1)  kappa>0.25  neutral  | phi = pi "
+          "line: kappa = 1/2 windows, widest [ueV of E_Z], neutral share of kappa > 0.25, failed")
+    SUM_TAU = {}
+    for j, t in enumerate(TAU_LEADS):
+        s = SUM_TAU[t] = leads_summary(TRT_L[t], q_on_grid(QM_L[1.0]))
+        ln = LN_L[t]
+        okl = (np.abs(ln[:, 0] - 0.5) < 0.03) & (np.abs(ln[:, 1]) < 0.1 * ln[:, 0])
+        runs, i0 = [], None
+        for i, v in enumerate(np.r_[okl, False]):
+            if v and i0 is None:
+                i0 = i
+            if not v and i0 is not None:
+                runs.append(EZ_LT[i - 1] - EZ_LT[i0] + 0.01)
+                i0 = None
+        hot = ln[:, 0] > 0.25
+        neu_l = np.mean(np.abs(ln[hot, 1]) < 0.1 * ln[hot, 0]) if hot.any() else np.nan
+        print(f"  {t:6.4f}  {gam[j, 0]:6.2f} {gam[j, 1]:6.2f}  {gam[j].mean() * 11.6:6.0f}   {GAM_L[j, :, 1].mean():.3f}"
+              f"   {s['plat']:5.1%} / {s['plat_q']:5.1%}      {s['hot']:5.1%}     {s['neutral']:4.2f}   |  {len(runs):2d},"
+              f" {max(runs) * 1e3 if runs else 0:4.0f}, {neu_l:.2f}, {int(np.nansum(ln[:, 4]))}")
+
+# %% [leads] --- FIGURE ---
+if run_part('leads'):
+    INKL, INK2L, GRIDL, C_CH = '#0b0b0b', '#52514e', '#d8d7d2', '#eb6834'
+    cmap_l = plt.get_cmap('Blues')
+    col_tc = {tc: cmap_l(0.4 + 0.6 * i / (len(TC_LEADS) - 1)) for i, tc in enumerate(TC_LEADS)}
+    col_tau = {t: cmap_l(0.4 + 0.6 * i / (len(TAU_LEADS) - 1)) for i, t in enumerate(TAU_LEADS)}
+    fig, axs = plt.subplots(2, 3, figsize=(16, 9.2), layout='constrained')
+    for a in axs.ravel():
+        a.grid(color=GRIDL, lw=0.5, alpha=0.6)
+        a.tick_params(colors=INK2L, labelcolor=INKL)
+    a = axs[0, 0]
+    for tc in TC_LEADS:
+        b = BULK_L[tc]
+        a.plot(EZ_LB, np.where(b[:, 0] < 0, b[:, 1], np.nan) * 1e3, '-o', ms=3, lw=1.8, color=col_tc[tc],
+               label=f'tc {tc:g}' + (' (> bulk bond)' if tc > 1 else ''))
+    a.text(1.62, 20.5, 'tc 0.5: gapless at every field\n(a band crosses E = 0 at finite k)', fontsize=8,
+           color=INK2L, va='bottom', ha='right')
+    a.set_xlabel(r'$E_Z$ (meV)', color=INKL)
+    a.set_ylabel(r'$\Delta_{top}$ ($\mu$eV), inside Q = $-1$', color=INKL)
+    a.set_title(r'SC leads: protecting gap ($\phi = \pi$, infinite junction)', color=INKL, fontsize=10)
+    a.legend(fontsize=8, frameon=False)
+    a = axs[0, 1]
+    for tc in TC_LEADS:
+        x = XI_L[tc]
+        ok = (x[:, 0] < 0) & ~GAPLESS_L[tc]
+        if ok.any():
+            a.plot(np.array(EZ_LXI), np.where(ok, x[:, 1], np.nan) / 1000, '-o', ms=4, lw=1.8, color=col_tc[tc],
+                   label=f'tc {tc:g}')
+    a.axhline(2.0 / 3, color=INK2L, lw=0.8, ls='--')
+    a.text(0.2, 2.0 / 3 * 1.08, r'L/3 (L = 2 $\mu$m)', fontsize=8, color=INK2L)
+    a.text(0.2, 0.2, r'tc 0.5 and tc 0.75 at $E_Z$ 1.2: gapless, $\xi_M$ undefined' + '\n'
+           r'tc 1.25 below $E_Z$ 1.0: Q = +1', fontsize=8, color=INK2L, va='bottom')
+    a.set_yscale('log')
+    a.set_ylim(0.18, 7)
+    a.set_yticks([0.2, 0.5, 1, 2, 5])
+    a.set_yticklabels(['0.2', '0.5', '1', '2', '5'])
+    a.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+    a.set_xlabel(r'$E_Z$ (meV)', color=INKL)
+    a.set_ylabel(r'$\xi_M$ ($\mu$m)', color=INKL)
+    a.set_title(r'SC leads: Majorana decay length ($\phi = \pi$)', color=INKL, fontsize=10)
+    a.legend(fontsize=8, frameon=False, loc='upper left', ncols=2)
+    a = axs[0, 2]
+    tcs = np.array(TC_LEADS)
+    a.plot(tcs, [SUM_TC[tc]['plat_q'] * 100 for tc in TC_LEADS], '-o', color=col_tc[1.0], lw=2, ms=6, mec='w')
+    for tc in TC_LEADS:
+        a.annotate(f"Q=$-1$ area {np.mean(QM_L[tc] < 0):.0%}\nneutral {SUM_TC[tc]['neutral']:.2f}",
+                   (tc, SUM_TC[tc]['plat_q'] * 100), textcoords='offset points',
+                   xytext={0.5: (-20, 8), 0.75: (-20, 8), 0.9: (6, 6), 1.0: (-62, -24), 1.25: (-24, -28)}[tc], fontsize=7,
+                   color=INKL)
+    a.set_xlabel('S/N bond tc (1 = bulk bond)', color=INKL)
+    a.set_ylabel(r'$\kappa = 1/2$ plateau inside Q = $-1$ (% of map)', color=INKL)
+    a.set_ylim(0, 6.5)
+    a.set_xlim(0.4, 1.35)
+    a.set_title(r'SC leads: transport ($\tau$ 0.5, L 2 $\mu$m); neutral = share of $\kappa > 0.25$', color=INKL,
+                fontsize=10)
+    a = axs[1, 0]
+    taus = np.array(TAU_LEADS)
+    gm = gam.mean(1)
+    a.plot(taus, gm, '-', color=col_tau[0.5], lw=1.4)
+    for f, mk in zip(range(len(GAMMA_FIELDS)), ('o', 's')):
+        a.plot(taus, gam[:, f], mk, color=col_tau[0.5], ms=6, mec='w', label=rf'$E_Z$ = {GAMMA_FIELDS[f]} meV')
+    tt = np.linspace(taus.min(), taus.max(), 50)
+    a.plot(tt, gm[0] * (tt / taus[0])**2, color=INK2L, lw=1, ls='--', label=r'$\tau^2$ (golden rule) from $\tau$ 0.2')
+    for j, v in enumerate(loc_p):
+        tm = np.sqrt(taus[j] * taus[j + 1])
+        a.annotate(f"{v:.1f}", (tm, np.sqrt(gm[j] * gm[j + 1])), textcoords='offset points', xytext=(-14, 4),
+                   fontsize=8, color=INKL)
+    a.set_xscale('log')
+    a.set_yscale('log')
+    a.set_xticks(taus)
+    a.set_xticklabels([f'{t:g}' for t in taus])
+    a.xaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+    a.set_xlabel(r'probe bond $\tau$', color=INKL)
+    a.set_ylabel(r'$\Gamma$ ($\mu$eV)', color=INKL)
+    a.set_title(r'probe leads: $\Gamma$ (local Andreev width); numbers = local slope d ln$\Gamma$/d ln$\tau$',
+                color=INKL, fontsize=10)
+    a.legend(fontsize=8, frameon=False)
+    a = axs[1, 1]
+    for j, t in enumerate((0.2, 0.5, 1.0)):
+        ln = LN_L[t]
+        ch = (np.abs(ln[:, 1]) >= 0.1 * ln[:, 0]) & (ln[:, 0] > 0.05)
+        a.plot(EZ_LT, ln[:, 0] + 1.2 * j, color=col_tau[t], lw=1.6)
+        a.plot(EZ_LT[ch], ln[ch, 0] + 1.2 * j, 'o', ms=2.5, color=C_CH)
+        a.axhline(0.5 + 1.2 * j, color=INK2L, lw=0.6, ls=':')
+        a.text(1.37, 1.2 * j + 0.05, rf'$\tau$ {t:g}', fontsize=8, color=INKL)
+    a.set_xlabel(r'$E_Z$ (meV)', color=INKL)
+    a.set_ylabel(r'$\kappa$ (traces offset by 1.2; dotted: $\kappa = 1/2$)', color=INKL)
+    a.set_title(r'probe leads: $\kappa$ at $\phi = \pi$, tc 1 (orange: charged, $|G| \geq 0.1\kappa$)', color=INKL,
+                fontsize=10)
+    a = axs[1, 2]
+    a.plot(taus, [SUM_TAU[t]['plat_q'] * 100 for t in TAU_LEADS], '-o', color=col_tau[0.5], lw=2, ms=6, mec='w')
+    for j, t in enumerate(TAU_LEADS):
+        a.annotate(rf"$\Gamma$ {gm[j]:.2g} $\mu$eV" + f"\nneutral {SUM_TAU[t]['neutral']:.2f}",
+                   (t, SUM_TAU[t]['plat_q'] * 100), textcoords='offset points',
+                   xytext=(8, -20) if j in (0, 1) else (5, 6), fontsize=7, color=INKL)
+    a.set_xlabel(r'probe bond $\tau$', color=INKL)
+    a.set_ylabel(r'$\kappa = 1/2$ plateau inside Q = $-1$ (% of map)', color=INKL)
+    a.set_ylim(0, 3.2)
+    a.set_xlim(0.15, 1.12)
+    a.set_title(r'probe leads: transport (tc 1, L 2 $\mu$m); neutral = share of $\kappa > 0.25$', color=INKL,
+                fontsize=10)
+    fig.suptitle(r'Mixed SOC junction vs the lead couplings: W 100 nm, L 2 $\mu$m, $\mu_C$ 0.7 meV, a 10 nm, $E$ = 0',
+                 color=INKL, fontsize=12)
+    st.save_fig(fig, 'leads_mixed', dpi=150)
+    plt.close(fig)
+    print("figure: plots/leads_mixed.png", flush=True)
+
+
+# %% [leads] --- 5. CHECKS (2026-11-12): why tc > 1 loses protection; does the tau 1 charge start at Delta_top < Gamma? ---
+# (a) tc > 1.  Control tc 0.8: ONE bond x and 1/x transmit equally in the normal state (T(x) = T(1/x) at every k; checked
+#     below, column 'one bond').  So 0.8 vs 1.25 separates "the bond is a barrier" from what only a STRONG bond does.
+#     Cross-section at k 0 (H_cross): junction-bound normal-state levels, the phi = pi ABS at E_Z 0; normal-state
+#     transmission across the whole junction (S | tc | N strip | tc | S, electron blocks, semi-infinite S); bulk lines
+#     and Q maps for tc 0.8 / 1.1 (cached as the [leads] ones).
+# (b) tau.  From the cached phi = pi lines: median G/kappa in E_Z windows (kappa > 0.05) for every tau, against where
+#     Delta_top(E_Z) drops below Gamma(tau); at tau 1 T_ee and T_he against exp(-2L/xi_M).
+TC_CHECK = (0.8, 1.0, 1.1, 1.25)
+TC_DENSE = np.round(np.geomspace(0.5, 1.6, 41), 4)
+
+
+def leads_band_bottom():
+    """Bottom of the bulk S band at k 0 along the junction (normal state, E_Z 0), meV: min over k_y of the S chain."""
+    q = junction_leads(1.0)
+    p = st.replace(q, Delta=0.0).params(E_Z=0.0, phi=0.0)
+    e = slice(0, 2)
+    Vx = st.model_hop(p, 'x', p.t_s, p.m0, alpha=st.region_alpha(p, 's'))
+    h = (st.model_onsite(p, 's') + Vx + Vx.conj().T)[e, e]
+    Vy = st.model_hop(p, 'y', p.t_s, p.m0, alpha=st.region_alpha(p, 's'))[e, e]
+    return min(np.linalg.eigvalsh(h + Vy * np.exp(1j * k) + Vy.conj().T * np.exp(-1j * k))[0]
+               for k in np.linspace(-0.4, 0.4, 4001)) * q.t
+
+
+def leads_cross_section(tc, bottom):
+    """Normal state (Delta 0, E_Z 0, k 0): the junction-bound occupied levels = those below the bulk S band bottom
+    `bottom` (meV; one per Kramers pair), their weight within 100 nm of the strip and their site weights; BdG at
+    E_Z 0, phi pi, k 0: the lowest level (meV)."""
+    q = junction_leads(tc)
+    n_S = st.n_S_of(q)
+    p = st.replace(q, Delta=0.0).params(E_Z=0.0, phi=np.pi)
+    E, V = np.linalg.eigh(st.H_cross(p, 0.0, n_S))
+    E = E * q.t
+    w = np.abs(V.reshape(-1, 4, V.shape[1])) ** 2
+    ele, ws = w[:, :2].sum((0, 1)), w.sum(1)
+    b = np.flatnonzero((ele > 0.99) & (E < bottom - 1e-4))
+    prof = (ws[:, b[0::2]] + ws[:, b[1::2]]) / 2
+    near = prof[n_S - 10:n_S + p.ny + 10].sum(0)
+    abs0 = np.abs(np.linalg.eigvalsh(st.H_cross(q.params(E_Z=0.0, phi=np.pi), 0.0, n_S))).min() * q.t
+    return E[b[0::2]], near, prof, abs0
+
+
+def leads_TN(tc, single=False):
+    """Normal-state transmission per spin at E_F, normal incidence (k 0): across the junction S | tc | N strip | tc | S,
+    or across one bond S | tc | S (single).  Electron blocks of model_onsite / model_hop, semi-infinite S leads."""
+    from my_functions.leads import sancho_rubio
+    q = junction_leads(tc)
+    p = st.replace(q, Delta=0.0).params(E_Z=0.0, phi=0.0)
+    e = slice(0, 2)
+
+    def ons(r):
+        Vx = st.model_hop(p, 'x', p.t_s if r == 's' else p.t_c, p.m0 if r == 's' else p.m0_c, alpha=st.region_alpha(p, r))
+        return (st.model_onsite(p, r) + Vx + Vx.conj().T)[e, e]
+    VyS = st.model_hop(p, 'y', p.t_s, p.m0, alpha=st.region_alpha(p, 's'))[e, e]
+    VyC = st.model_hop(p, 'y', p.t_c, p.m0_c, alpha=st.region_alpha(p, 'c'))[e, e]
+    Vb = st.model_hop(p, 'y', tc, st.bond_m0(p.m0, p.m0_c), bond=True)[e, e]
+    hS = ons('s')
+    sites, hops, c = ([hS, hS], [Vb], VyS) if single else ([ons('c')] * p.ny, [VyC] * (p.ny - 1), Vb)
+    n = len(sites)
+    H = np.zeros((2 * n, 2 * n), complex)
+    for j, h in enumerate(sites):
+        H[2*j:2*j+2, 2*j:2*j+2] = h
+    for j, v in enumerate(hops):
+        H[2*j:2*j+2, 2*j+2:2*j+4], H[2*j+2:2*j+4, 2*j:2*j+2] = v, v.conj().T
+    z = 1e-9j * np.eye(2)
+    eps_p, eps_m = sancho_rubio(hS, VyS, z[None])
+    SL = c.conj().T @ np.linalg.inv(z - eps_m[0]) @ c          # lead to the left, coupled to centre site 0
+    SR = c @ np.linalg.inv(z - eps_p[0]) @ c.conj().T          # lead to the right, coupled to the last site
+    Sig = np.zeros_like(H)
+    Sig[:2, :2], Sig[-2:, -2:] = SL, SR
+    G = np.linalg.inv(1e-9j * np.eye(2 * n) - H - Sig)[:2, -2:]
+    GL, GR = 1j * (SL - SL.conj().T), 1j * (SR - SR.conj().T)
+    return float(np.trace(GL @ G @ GR @ G.conj().T).real / 2)
+
+
+if run_part('leads'):
+    BULK_C, QM_C = {}, {}
+    for tc in TC_CHECK:
+        BULK_C[tc] = BULK_L.get(tc)
+        if BULK_C[tc] is None:
+            BULK_C[tc] = st.run_scan(partial(topo_point, junction_leads(tc)), {'E_Z': EZ_LB},
+                                     f'scharf_absLeads_bulk_tc{tc:g}', chunksize=1)
+        QM_C[tc] = QM_L.get(tc)
+        if QM_C[tc] is None:
+            QM_C[tc] = st.q_map(junction_leads(tc), EZ_LQ, PHI_LQ, f'scharf_absLeads_Q_tc{tc:g}', chunksize=len(PHI_LQ))
+    BOT_C = leads_band_bottom()
+    XS_C = {tc: leads_cross_section(tc, BOT_C) for tc in TC_CHECK}
+    TN_D = np.array([[leads_TN(tc), leads_TN(tc, single=True)] for tc in TC_DENSE])
+    XS_D = [leads_cross_section(tc, BOT_C) for tc in TC_DENSE]
+    ABS_D, NB_D = np.array([x[3] for x in XS_D]), np.array([len(x[0]) for x in XS_D])
+    print(f"\n  CHECK tc > 1 (normal state at E_F, k 0; bulk S band bottom {BOT_C:+.3f} meV; ABS at E_Z 0, phi pi, k 0;"
+          " bulk line phi pi)")
+    print("  tc     T one bond   T junction   bound levels [meV] (weight within 100 nm)   ABS(pi) [ueV]"
+          "   Q=-1 at pi from   max Delta_top [ueV] (E_Z)   Q=-1 area")
+    for tc in TC_CHECK:
+        lv, near, _, a0 = XS_C[tc]
+        b = BULK_C[tc]
+        topo = b[:, 0] < 0
+        g = np.where(topo, b[:, 1], -1.0)
+        i = int(np.argmax(g))
+        lv_txt = ' '.join(f'{v:+.3f} ({w:.2f})' for v, w in zip(lv, near)) if len(lv) else 'none'
+        print(f"  {tc:4.2f}   {leads_TN(tc, True):.3f}        {leads_TN(tc):.3f}        {lv_txt:28s}"
+              f"   {a0 * 1e3:6.1f}         {EZ_LB[topo].min():.2f}             {g[i] * 1e3:5.1f} ({EZ_LB[i]:.2f})"
+              f"              {np.mean(QM_C[tc] < 0):4.0%}")
+    print(f"  bound levels on the dense tc grid: first at tc {TC_DENSE[np.argmax(NB_D > 0)]:g} (none at "
+          f"{TC_DENSE[np.argmax(NB_D > 0) - 1]:g}); any for tc <= 1: {bool(NB_D[TC_DENSE <= 1].any())}")
+    # (b) tau
+    WIN_C = np.round(np.arange(0.1, 1.31, 0.1), 2)
+    dtop_C = lambda e: np.interp(e, EZ_LB, np.where(BULK_L[1.0][:, 0] < 0, BULK_L[1.0][:, 1], 0.0))
+    xi_C = lambda e: np.exp(np.interp(e, EZ_LXI, np.log(XI_L[1.0][:, 1])))
+    MED_C = np.full((len(TAU_LEADS), len(WIN_C) - 1), np.nan)
+    for j, t in enumerate(TAU_LEADS):
+        ln = LN_L[t]
+        for w in range(len(WIN_C) - 1):
+            m = (EZ_LT >= WIN_C[w]) & (EZ_LT < WIN_C[w + 1]) & (ln[:, 0] > 0.05)
+            if m.any():
+                MED_C[j, w] = np.median(ln[m, 1] / ln[m, 0])
+    ez_f = np.linspace(0.5, 1.35, 1701)
+    CROSS_C = {t: (ez_f[dtop_C(ez_f) < gm[j] * 1e-3].min() if (dtop_C(ez_f) < gm[j] * 1e-3).any() else np.nan)
+               for j, t in enumerate(TAU_LEADS)}
+    print("\n  CHECK tau: median G/kappa (kappa > 0.05) in E_Z windows; last column L/xi_M (tc 1)")
+    print("  E_Z      " + "  ".join(f"tau {t:<6g}" for t in TAU_LEADS) + "   Delta_top [ueV]   L/xi_M")
+    for w in range(len(WIN_C) - 1):
+        e = WIN_C[w] + 0.05
+        print(f"  {WIN_C[w]:.1f}-{WIN_C[w + 1]:.1f}  " + "  ".join(f"{v:9.2f} " if np.isfinite(v) else "        - "
+                                                         for v in MED_C[:, w])
+              + f"     {dtop_C(e) * 1e3:5.1f}           {2000.0 / xi_C(e):4.1f}")
+    print("  Delta_top drops below Gamma(tau) at E_Z (falling side): "
+          + ", ".join(f"tau {t:g}: {CROSS_C[t]:.2f}" for t in TAU_LEADS)
+          + f"  (tau 1: Gamma {gm[-1]:.1f} ueV >= Delta_top everywhere except E_Z 0.50-0.51)")
+    ln1 = LN_L[1.0]
+    Tee1, The1 = (ln1[:, 0] + ln1[:, 1]) / 2, (ln1[:, 0] - ln1[:, 1]) / 2
+    r1 = The1 / Tee1
+    s1, s2 = (EZ_LT >= 0.2) & (EZ_LT <= 1.2), EZ_LT > 1.2
+    print(f"  tau 1: T_he / T_ee = {r1[s1].min():.3f} .. {r1[s1].max():.3f} for E_Z 0.2-1.2, {r1[s2].min():.2f} .. "
+          f"{r1[s2].max():.2f} for 1.2-1.35 (max at {EZ_LT[s2][np.argmax(r1[s2])]:.2f}, next to the gap closing at 1.4);"
+          f" T_ee / exp(-2L/xi_M) at the xi fields: "
+          + " ".join(f"{np.interp(e, EZ_LT, Tee1) / np.exp(-4000.0 / x):.1f}" for e, x in zip(EZ_LXI, XI_L[1.0][:, 1])))
+
+    # --- figure ---
+    col_c = {tc: cmap_l(0.4 + 0.6 * i / (len(TC_CHECK) - 1)) for i, tc in enumerate(TC_CHECK)}
+    fig, axs = plt.subplots(2, 3, figsize=(16, 9.2), layout='constrained')
+    for a in axs.ravel():
+        a.grid(color=GRIDL, lw=0.5, alpha=0.6)
+        a.tick_params(colors=INK2L, labelcolor=INKL)
+    a = axs[0, 0]
+    for tc in TC_CHECK:
+        b = BULK_C[tc]
+        a.plot(EZ_LB, np.where(b[:, 0] < 0, b[:, 1], np.nan) * 1e3, marker='o', ms=3, lw=1.8, color=col_c[tc],
+               ls='--' if tc == 0.8 else '-', label=f'tc {tc:g}' + (' (control: one bond transmits as 1.25)'
+                                                                     if tc == 0.8 else ''))
+    a.set_xlabel(r'$E_Z$ (meV)', color=INKL)
+    a.set_ylabel(r'$\Delta_{top}$ ($\mu$eV), inside Q = $-1$', color=INKL)
+    a.set_title(r'protecting gap ($\phi = \pi$, infinite junction)', color=INKL, fontsize=10)
+    a.legend(fontsize=8, frameon=False)
+    a = axs[0, 1]
+    a.plot(TC_DENSE, TN_D[:, 1], '--', color=INK2L, lw=1.4, label='one bond (S | tc | S)')
+    a.plot(TC_DENSE, TN_D[:, 0], '-', color=col_c[1.0], lw=2, label='whole junction (S | tc | N 100 nm | tc | S)')
+    a.axvspan(1.0, TC_DENSE.max(), color=GRIDL, alpha=0.35, lw=0)
+    a.axvline(TC_DENSE[np.argmax(NB_D > 0)], color=INK2L, lw=0.8, ls=':')
+    a.text(1.24, 0.98, f'tc >= {TC_DENSE[np.argmax(NB_D > 0)]:.2f} (dotted):\nthe junction binds\nlevels below the\n'
+           'S band bottom', fontsize=8, color=INK2L, va='top')
+    a.set_xscale('log')
+    a.set_xticks([0.5, 0.8, 1.0, 1.25, 1.6])
+    a.set_xticklabels(['0.5', '0.8', '1', '1.25', '1.6'])
+    a.xaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+    a.set_ylim(0, 1.05)
+    a.set_xlabel('S/N bond tc (log axis: x and 1/x mirror)', color=INKL)
+    a.set_ylabel('normal-state transmission per spin, E$_F$, k = 0', color=INKL)
+    a.set_title('normal state: one bond is symmetric in tc, the junction is not', color=INKL, fontsize=10)
+    a.legend(fontsize=8, frameon=False, loc='lower left')
+    a = axs[0, 2]
+    a.plot(TC_DENSE, ABS_D * 1e3, '-', color=col_c[1.0], lw=2)
+    for tc in TC_CHECK:
+        b = BULK_C[tc]
+        a0 = XS_C[tc][3] * 1e3
+        a.plot(tc, a0, 'o', color=col_c[tc], ms=7, mec='w')
+        a.annotate(f"Q = $-1$ at $\\pi$ from $E_Z$ {EZ_LB[b[:, 0] < 0].min():.2f}", (tc, a0), textcoords='offset points',
+                   xytext={0.8: (-6, 10), 1.0: (6, -4), 1.1: (-8, 0), 1.25: (-8, 0)}[tc],
+                   ha='left' if tc == 1.0 else 'right', va='center', fontsize=8, color=INKL)
+    a.set_xscale('log')
+    a.set_xticks([0.5, 0.8, 1.0, 1.25, 1.6])
+    a.set_xticklabels(['0.5', '0.8', '1', '1.25', '1.6'])
+    a.xaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+    a.set_xlabel('S/N bond tc', color=INKL)
+    a.set_ylabel(r'lowest ABS at $E_Z$ 0, $\phi = \pi$, k = 0 ($\mu$eV)', color=INKL)
+    a.set_title(r'the $\phi = \pi$ ABS gap that $E_Z$ must close', color=INKL, fontsize=10)
+    a = axs[1, 0]
+    wc = (WIN_C[:-1] + WIN_C[1:]) / 2
+    for j, t in enumerate(TAU_LEADS):
+        a.plot(wc, MED_C[j], '-o', ms=4, lw=1.8, color=col_tau[t], label=rf'$\tau$ {t:g} ($\Gamma$ {gm[j]:.2g} $\mu$eV)')
+        if np.isfinite(CROSS_C[t]) and t < 1.0:
+            a.plot(CROSS_C[t], 1.02, 'v', color=col_tau[t], ms=8, mec='w', clip_on=False)
+    a.text(0.12, 0.93, r'$\blacktriangledown$: $\Delta_{top}$ drops below $\Gamma(\tau)$' + '\n'
+           r'($\tau$ 1: $\Gamma \geq \Delta_{top}$ at every field; $\tau$ 0.2: never)', fontsize=8, color=INK2L, va='top')
+    a.set_ylim(0, 1.05)
+    a.set_xlabel(r'$E_Z$ (meV), windows of 0.1', color=INKL)
+    a.set_ylabel(r'median $G/\kappa$ ($\kappa > 0.05$)', color=INKL)
+    a.set_title(r'charge share at $\phi = \pi$, tc 1: no step where $\Delta_{top} < \Gamma$', color=INKL, fontsize=10)
+    a.legend(fontsize=8, frameon=False, loc='center left')
+    a = axs[1, 1]
+    a.semilogy(EZ_LT, Tee1, color=C_CH, lw=1.8, label=r'$T_{ee}$ (electron cotunnelling)')
+    a.semilogy(EZ_LT, np.maximum(The1, 1e-12), color=col_tau[1.0], lw=1.8, label=r'$T_{he}$ (crossed Andreev)')
+    a.semilogy(EZ_LXI, np.exp(-4000.0 / XI_L[1.0][:, 1]), 'o--', color=INK2L, lw=1, ms=4,
+               label=r'$e^{-2L/\xi_M}$ (tc 1)')
+    a.set_ylim(1e-8, 1.5)
+    a.set_xlabel(r'$E_Z$ (meV)', color=INKL)
+    a.set_ylabel('transmission (probe to probe)', color=INKL)
+    a.set_title(r'$\tau$ 1: charged at every field, both grow with the end overlap', color=INKL, fontsize=10)
+    a.legend(fontsize=8, frameon=False, loc='lower right')
+    a = axs[1, 2]
+    lv, near, ws, _ = XS_C[1.25]
+    n_S = st.n_S_of(junction_leads(1.25))
+    y = (np.arange(ws.shape[0]) - n_S) * A
+    for m, (v, ls) in enumerate(zip(lv, ('-', '--'))):
+        a.plot(y, ws[:, m], ls, color=col_c[1.25], lw=1.8,
+               label=f'{v:+.2f} meV, {near[m]:.0%} within 100 nm')
+    a.axvspan(0, 100, color=GRIDL, alpha=0.5, lw=0)
+    a.text(50, 0.075, 'N strip', ha='center', fontsize=8, color=INK2L)
+    a.set_xlim(-250, 450)
+    a.set_xlabel('y across the junction (nm); S outside the strip', color=INKL)
+    a.set_ylabel(r'$|\psi|^2$ per site (k = 0, normal state)', color=INKL)
+    a.set_title(f'tc 1.25: two levels bound in the junction (S band from {BOT_C:+.2f})', color=INKL, fontsize=10)
+    a.legend(fontsize=8, frameon=False, loc='center right')
+    fig.suptitle(r'Checks: why tc > 1 loses protection, and the $\tau$ 1 charge; mixed SOC, W 100 nm, L 2 $\mu$m, '
+                 r'$\mu_C$ 0.7 meV, a 10 nm', color=INKL, fontsize=12)
+    st.save_fig(fig, 'leads_checks_mixed', dpi=150)
+    plt.close(fig)
+    print("figure: plots/leads_checks_mixed.png", flush=True)
+
+
+# ====================================================================================================================
+# PART 'spectrum'  (2026-11-13)
+# ====================================================================================================================
+# STUDY: how the PROBE bond tau changes the DOS(E, phi) at one field.  The [maps] DOS(E = 0) maps (a = 5) show isolated
+# bright spots inside Q = -1; here the a = 10 thesis junction (mixed SOC, mu_C 0.7, tc 1, W 100, L 2 um), probes ATTACHED
+# by tau in the DOS (tools.dos_total_phis tau=; tau = 0 = probes detached).
+# 1. DOS(E = 0) survey at tau 0.5 (E_Z 0.30-1.30 step 0.025, 121 phases, eta 1e-4 meV as [maps]).  The brightest point
+#    inside Q = -1 (the [tuning] coarse Q map, eroded by one cell so no boundary point is picked) fixes E_Z.
+# 2. Along phi at that E_Z: Q and Delta_top of the infinite cross-section (tau-independent; refined gap), and kappa, G,
+#    det r at E = 0 for each tau > 0.
+# 3. DOS(E, phi) for E = 0 .. SP_EMAX (step SP_DE, eta SP_ETA) and each tau.  E < 0 from particle-hole symmetry
+#    (DOS(-E) = DOS(E) of the BdG system, leads included), checked at one negative energy per tau.
+# Cost: ~11 s per field or energy at a = 10 in one process with all 16 BLAS threads, dominated by the 121 per-phase
+# solves of size 4 nx = 800; SP_W workers x SP_THREADS BLAS threads instead (resumable, chunksize 1).
+# Figure plots/spectrum_mixed_a10.png.
+SP_W, SP_THREADS = 6, 2
+SP_TAUS = (0.0, 0.5, 1.0)
+SP_TAU_SURVEY = 0.5
+SP_PH = np.linspace(0.0, 2 * np.pi, 121)
+SP_EZ = np.round(np.arange(0.30, 1.3001, 0.025), 4)
+SP_EMAX, SP_DE, SP_ETA = 0.040, 0.001, 5e-4                          # meV: 0 .. 40 ueV, step 1 ueV, eta 0.5 ueV
+
+
+def spectrum_topo(E_Z, phi):
+    """[Q, Delta_top (ueV, refined), its k (1/nm)] of the thesis cross-section at (E_Z, phi); tau does not enter."""
+    q = junction('mixed', 0.7)
+    p = q.params(E_Z=float(E_Z), phi=float(phi))
+    _, g, k = st.gaps(p, st.n_S_of(q), st.k_grid(q.a))
+    return np.array([st.q_point(q, E_Z, phi)[0], g * q.t * 1e3, k / q.a])
+
+
+# %% [spectrum] --- 1. DOS(E = 0) SURVEY AND THE BRIGHT SPOT ---
+if run_part('spectrum'):
+    import os
+    for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+        os.environ[_v] = str(SP_THREADS)        # read by the spawned workers (make_pool only sets it if unset)
+    q_sp = junction('mixed', 0.7, SP_TAU_SURVEY)
+    SP_S = st.run_scan(partial(st.dos_total_phis, q_sp, phis=SP_PH, eta=1e-4, E=0.0, tau=SP_TAU_SURVEY), {'E_Z': SP_EZ},
+                       f'scharf_absSpec_E0_mixed_a10_tau{SP_TAU_SURVEY:g}', n_workers=SP_W, chunksize=1)
+    print("spectrum: survey done", flush=True)
+    _z = np.load(st.DATA / 'scharf_absTune_Q_mixed_mu0.7.npz')
+    SP_QT, SP_EZQ, SP_PHQ = _z['values'][..., 0], _z['axis_E_Z'], _z['axis_phi']
+    _in = SP_QT < 0
+    _er = _in.copy()
+    _er[1:] &= _in[:-1]
+    _er[:-1] &= _in[1:]
+    _er &= np.roll(_in, 1, 1) & np.roll(_in, -1, 1)
+    SP_IN = _er[np.ix_(np.abs(SP_EZ[:, None] - SP_EZQ[None]).argmin(1), np.abs(SP_PH[:, None] - SP_PHQ[None]).argmin(1))]
+    _c = np.where(SP_IN, SP_S, -np.inf)
+    print(f"\n  [spectrum] DOS(E = 0) survey, tau {SP_TAU_SURVEY:g}, a 10: median inside Q = -1 {np.median(SP_S[SP_IN]):.0f}, "
+          f"max {SP_S[SP_IN].max():.0f} /meV; brightest points inside (eroded) Q = -1:")
+    for j in np.argsort(_c.ravel())[::-1][:8]:
+        i, p_ = np.unravel_index(j, _c.shape)
+        print(f"    E_Z {SP_EZ[i]:.3f}  phi {SP_PH[p_] / np.pi:.3f} pi  DOS {SP_S[i, p_]:.0f}")
+    _i, _p = np.unravel_index(np.argmax(_c), _c.shape)
+    EZ_B, PHI_B = float(SP_EZ[_i]), float(SP_PH[_p])
+    print(f"  -> E_Z {EZ_B:g} meV (spot at phi {PHI_B / np.pi:.3f} pi)", flush=True)
+
+# %% [spectrum] --- 2. ALONG phi AT E_Z: Q, Delta_top (cross-section); kappa, G, det r per tau ---
+if run_part('spectrum'):
+    SP_PHT = SP_PH[::2]
+    SP_T = st.run_scan(spectrum_topo, {'E_Z': [EZ_B], 'phi': SP_PHT}, f'scharf_absSpec_topo_mixed_a10_EZ{EZ_B:g}',
+                       n_workers=SP_W, chunksize=1)[0]
+    SP_TR = {tau: st.run_scan(partial(st.transport_phis, junction('mixed', 0.7, tau), phis=SP_PH), {'E_Z': [EZ_B]},
+                              f'scharf_absSpec_tr_mixed_a10_tau{tau:g}_EZ{EZ_B:g}', n_workers=1)[0]
+             for tau in SP_TAUS if tau > 0}
+    print("spectrum: line done", flush=True)
+
+# %% [spectrum] --- 3. DOS(E, phi) PER PROBE BOND ---
+if run_part('spectrum'):
+    SP_E = np.round(np.arange(0.0, SP_EMAX + 1e-9, SP_DE), 6)
+    SP_D = {}
+    for tau in SP_TAUS:
+        SP_D[tau] = st.run_scan(partial(st.dos_total_phis, q_sp, EZ_B, SP_PH, SP_ETA, tau=tau), {'E': SP_E},
+                                f'scharf_absSpec_Ephi_mixed_a10_tau{tau:g}_EZ{EZ_B:g}', n_workers=SP_W, chunksize=1)
+        print(f"spectrum: DOS(E, phi) tau {tau:g} done", flush=True)
+
+# %% [spectrum] --- 4. NUMBERS ---
+if run_part('spectrum'):
+    _jb = int(np.argmin(np.abs(SP_PHT - PHI_B)))
+    gl = (SP_T[:, 0] < 0) & (SP_T[:, 1] < 1e-2)
+    print(f"\n  [spectrum] E_Z {EZ_B:g}: Q = -1 on {np.mean(SP_T[:, 0] < 0):.0%} of phi; gapless (Delta_top < 0.01 ueV) "
+          f"inside Q = -1 at phi/pi = " + (", ".join(f"{v:.3f}" for v in SP_PHT[gl] / np.pi) or "none"))
+    print(f"    at the spot (phi {SP_PHT[_jb] / np.pi:.3f} pi): Q {SP_T[_jb, 0]:+.0f}, Delta_top {SP_T[_jb, 1]:.3f} ueV "
+          f"at k {SP_T[_jb, 2]:.4f} /nm; Delta_top over phi {SP_T[:, 1].min():.2f} .. {SP_T[:, 1].max():.2f} ueV")
+    _pb = int(np.argmin(np.abs(SP_PH - PHI_B)))
+    for tau, tr in SP_TR.items():
+        print(f"    tau {tau:g} at the spot: kappa {tr[_pb, 0]:.3f}, |G| {abs(tr[_pb, 1]):.3f}, det r {tr[_pb, 3]:+.3f}, "
+              f"andreev {tr[_pb, 2]:.3f}; failed solves on the line {int(np.nansum(tr[:, 4]))}")
+    for tau in SP_TAUS:
+        D = SP_D[tau]
+        j = int(np.argmin(np.abs(SP_E - 0.010)))
+        neg = st.dos_total_phis(q_sp, EZ_B, SP_PH, SP_ETA, E=-float(SP_E[j]), tau=tau)
+        print(f"    tau {tau:g}: DOS(E = 0) at the spot {D[0, _pb]:.0f} /meV, median over phi {np.median(D[0]):.1f}; "
+              f"PHS check at E = -{SP_E[j] * 1e3:g} ueV: max |DOS(-E) - DOS(E)| / max DOS(E) = "
+              f"{np.max(np.abs(neg - D[j])) / np.max(D[j]):.1e}", flush=True)
+
+# %% [spectrum] --- FIGURE ---
+if run_part('spectrum'):
+    from matplotlib.colors import LogNorm
+    fig, axs = plt.subplots(2, 3, figsize=(15, 9.4), layout='constrained')
+    Ef = np.r_[-SP_E[:0:-1], SP_E] * 1e3
+    allD = np.concatenate([SP_D[t].ravel() for t in SP_TAUS])
+    norm = LogNorm(vmin=max(np.percentile(allD, 2), 1e-3), vmax=np.percentile(allD, 99.8))
+    gap = np.where((SP_T[:, 0] < 0) & (SP_T[:, 1] >= 1e-2), SP_T[:, 1], np.nan)
+    for a, tau in zip(axs[0], SP_TAUS):
+        Df = np.r_[SP_D[tau][:0:-1], SP_D[tau]]
+        im = a.pcolormesh(SP_PH / np.pi, Ef, Df, shading='nearest', cmap='magma', norm=norm, rasterized=True)
+        for s in (1, -1):
+            a.plot(SP_PHT / np.pi, s * gap, color='#7fd6ff', lw=1.2, ls='--')
+        a.plot(SP_PHT[gl] / np.pi, np.zeros(gl.sum()), 'o', ms=4, color='#7fd6ff')
+        a.axvline(PHI_B / np.pi, color='w', lw=0.8, ls=':')
+        a.set_ylim(-SP_EMAX * 1e3, SP_EMAX * 1e3)
+        a.set_title((r'$\tau$ = 0 (probes detached)' if tau == 0 else rf'probe bond $\tau$ = {tau:g}'), fontsize=11)
+        a.set_xlabel(r'$\phi/\pi$')
+        a.set_ylabel(r'$E$ ($\mu$eV)')
+    fig.colorbar(im, ax=axs[0], label=r'total DOS (1/meV), $\eta$ = ' + f'{SP_ETA * 1e3:g}' + r' $\mu$eV', shrink=0.9)
+    a = axs[1, 0]
+    im2 = a.pcolormesh(SP_PH / np.pi, SP_EZ, SP_S, shading='nearest', cmap='magma', vmin=0,
+                       vmax=np.percentile(SP_S, 99.5), rasterized=True)
+    a.contour(SP_PHQ / np.pi, SP_EZQ, SP_QT, levels=[0], colors='w', linewidths=1.1, linestyles='--')
+    a.axhline(EZ_B, color='#7fd6ff', lw=1.2)
+    a.plot(PHI_B / np.pi, EZ_B, 'o', mfc='none', mec='#7fd6ff', ms=10, mew=1.5)
+    a.set_ylim(SP_EZ[0], SP_EZ[-1])
+    a.set_xlabel(r'$\phi/\pi$')
+    a.set_ylabel(r'$E_Z$ (meV)')
+    a.set_title(rf'DOS($E$ = 0), $\tau$ {SP_TAU_SURVEY:g}, $\eta$ 0.1 $\mu$eV; line: $E_Z$ = {EZ_B:g} meV', fontsize=11)
+    fig.colorbar(im2, ax=a, label='1/meV', extend='max')
+    a = axs[1, 1]
+    a.plot(SP_PHT / np.pi, SP_T[:, 1], color='#2a78d6', lw=2)
+    for x0 in SP_PHT[SP_T[:, 0] > 0] / np.pi:
+        a.axvspan(x0 - 1 / 60, x0 + 1 / 60, color='#e4e3df', lw=0, zorder=0)
+    a.plot(SP_PHT[gl] / np.pi, np.zeros(gl.sum()), 'o', ms=5, color='#eb6834', label='Q = -1 but gapless')
+    a.axvline(PHI_B / np.pi, color='#52514e', lw=0.8, ls=':')
+    a.set_xlabel(r'$\phi/\pi$')
+    a.set_ylabel(r'$\Delta_{top}$ ($\mu$eV), infinite junction')
+    a.set_title(rf'bulk gap along $\phi$ at $E_Z$ = {EZ_B:g} (grey: Q = +1)', fontsize=11)
+    if gl.any():
+        a.legend(fontsize=9, frameon=False)
+    a = axs[1, 2]
+    for (tau, tr), col in zip(SP_TR.items(), ('#2a78d6', '#1baf7a')):
+        a.plot(SP_PH / np.pi, tr[:, 0], color=col, lw=2, label=rf'$\kappa/\kappa_0$, $\tau$ {tau:g}')
+        a.plot(SP_PH / np.pi, np.abs(tr[:, 1]), color=col, lw=1.4, ls=':', label=rf'$|G|/G_0$, $\tau$ {tau:g}')
+    a.axhline(0.5, color='#52514e', lw=0.8, ls='--')
+    a.axvline(PHI_B / np.pi, color='#52514e', lw=0.8, ls=':')
+    a.set_xlabel(r'$\phi/\pi$')
+    a.set_title(rf'transport at $E$ = 0, $E_Z$ = {EZ_B:g}', fontsize=11)
+    a.legend(fontsize=9, frameon=False, ncol=2)
+    fig.suptitle(rf'Mixed SOC, $\mu_C$ 0.7 meV, W 100 nm, L 2 $\mu$m, a 10 nm: DOS($E$, $\phi$) at $E_Z$ = {EZ_B:g} meV vs the '
+                 r'probe bond $\tau$ (dashed: $\pm\Delta_{top}$ of the infinite junction; dots: Q = -1 but gapless; '
+                 r'$E < 0$ by PHS)', fontsize=11)
+    st.save_fig(fig, 'spectrum_mixed_a10', dpi=150)
+    plt.close(fig)
+    print("figure: plots/spectrum_mixed_a10.png", flush=True)
+
+
+# ====================================================================================================================
+# PART 'ep'  (2026-11-13)
+# ====================================================================================================================
+# STUDY: does the open junction show the exceptional points of Li & Trauzettel (PRB 112, 184504; arXiv 2507.23022)?
+# There a loss -iV delta(x) at a p-wave junction acts on ONE Majorana combination: the zero-energy crossing at phi = pi
+# opens into a purely imaginary segment bounded by two EPs (Re E = 0, Im E split, eigenvectors coalesce at the EPs).
+# Here the loss is the PROBE LEADS themselves: tools.nh_spectrum = poles of G with the exact ribbon and probe
+# self-energies (the G of transport_point / dos_total_phis).  Two-Majorana poles
+#     E = -i (G_L + G_R)/2 +- sqrt(eps^2 - (G_L - G_R)^2 / 4)
+# -> EPs need G_L != G_R, i.e. tau_L != tau_R (equal bonds + left-right symmetric end modes give a plain crossing).
+# tau_R fixed at EP_TAU_R, tau_L over EP_TAUS (tau_L = tau_R: the symmetric control); the lossless reference (probes
+# detached) gives +-eps(phi).  Thesis junction (mixed SOC, mu_C 0.7, tc 1, W 100, L 2 um, a 10) at E_Z = EP_EZ:
+# phi = pi is a closed-box zero there (lossless pole 0.407 ueV = the cached box eps 0.40717).
+# ~8 s per phase on one thread; one pool for all, so each tau_L takes ~3 min and is drawn at once
+# (plots/ep_mixed_tauL<tau>.png); caches scharf_absEP_*.
+EP_EZ = 0.93
+EP_TAU_R = 0.1
+EP_TAUS = tuple(float(t) for t in np.round(np.arange(0.1, 0.801, 0.1), 2))
+EP_PH = np.linspace(0.0, 2 * np.pi, 121)
+EP_K = 8
+EP_W = 6
+
+
+def ep_point(phi, tau_L, tau_R=EP_TAU_R, E_Z=EP_EZ):
+    """[Re of the EP_K poles closest to 0, their Im, overlap of the two closest] (ueV) at one phase."""
+    P, O = st.nh_spectrum(junction('mixed', 0.7), E_Z, [float(phi)], tau_L, tau_R, k=EP_K)
+    return np.r_[P[0].real, P[0].imag, O]
+
+
+def ep_figure(tau_L, R, ref, tau_R=EP_TAU_R):
+    """Re E, Im E of the poles and the eigenvector overlap of the two closest to 0 along phi; prints the EP phases."""
+    K, x = EP_K, EP_PH / np.pi
+    Re, Im, ov = R[:, :K], R[:, K:2 * K], R[:, 2 * K]
+    eps = np.abs(ref[:, 0])
+    btw = (np.abs(Re[:, 0]) < 1e-3) & (np.abs(Re[:, 1]) < 1e-3) & (np.abs(Im[:, 0] - Im[:, 1]) > 1e-3)
+    ch = np.flatnonzero(np.diff(btw.astype(int)))
+    ep_phi = (x[ch] + x[ch + 1]) / 2
+    e = np.flatnonzero(np.diff(np.r_[0, btw.astype(int), 0]))
+    fig, axs = plt.subplots(3, 1, figsize=(8.5, 9.2), sharex=True, layout='constrained',
+                            gridspec_kw=dict(height_ratios=(1.2, 1.2, 0.7)))
+    for a in axs:
+        for i0, i1 in zip(e[::2], e[1::2]):
+            a.axvspan(x[i0] - 1 / 120, x[i1 - 1] + 1 / 120, color='#f5c9b3', lw=0, zorder=0)
+        for ph in ep_phi:
+            a.axvline(ph, color='#eb6834', lw=1, ls=':')
+        a.grid(color='#e4e3df', lw=0.6)
+    C1, C2, CO = '#2a78d6', '#1baf7a', '#b5b4ae'
+    for a, Y, lab in ((axs[0], Re, r'Re $E$ ($\mu$eV)'), (axs[1], Im, r'Im $E$ ($\mu$eV)')):
+        a.plot(x, Y[:, 2:], '.', color=CO, ms=2.5)
+        a.plot(x, Y[:, 1], 'o', color=C2, ms=5.5, mew=0, label='Majorana pair: pole 2')       # pole 1 drawn on top,
+        a.plot(x, Y[:, 0], 'o', color=C1, ms=2.6, mew=0, label='Majorana pair: pole 1')       # smaller: both visible
+        a.plot([], [], '.', color=CO, ms=5, label='other poles (bulk)')
+        a.set_ylabel(lab)
+    a = axs[0]
+    a.plot(x, eps, '--', color='#52514e', lw=1.2, label=r'$\pm\varepsilon$, probes detached')
+    a.plot(x, -eps, '--', color='#52514e', lw=1.2)
+    lim = min(40.0, max(5.0, 1.4 * max(np.abs(Re[:, :2]).max(), eps.max())))
+    a.set_ylim(-lim, lim)
+    a.legend(fontsize=8.5, frameon=False, loc='upper right', ncol=2)
+    a = axs[1]
+    lo = 1.3 * min(Im[:, :2].min(), -0.5)
+    a.set_ylim(lo, -0.05 * lo)
+    a.legend(fontsize=8.5, frameon=False, loc='lower right', ncol=3)
+    a = axs[2]
+    a.plot(x, ov, color='#2a78d6', lw=1.6)
+    a.set_ylim(0, 1.05)
+    a.set_ylabel(r'$|\langle\psi_1|\psi_2\rangle|$')
+    a.set_xlabel(r'$\phi/\pi$')
+    a.set_xlim(0, 2)
+    fig.suptitle(rf'Poles of the open junction: probe bonds $\tau_L$ = {tau_L:g}, $\tau_R$ = {tau_R:g}, $E_Z$ = {EP_EZ:g} meV'
+                 '\n' r'mixed SOC, L 2 $\mu$m, a 10.  Shaded: both poles at Re $E$ = 0 (between EPs); dotted: EPs',
+                 fontsize=11)
+    name = f'ep_mixed_tauL{tau_L:g}'
+    st.save_fig(fig, name, dpi=150)
+    plt.close(fig)
+    j = int(np.argmin(np.abs(EP_PH - np.pi)))
+    print(f"  tau_L {tau_L:g} / tau_R {tau_R:g}: EPs at phi/pi = " + (", ".join(f"{v:.3f}" for v in ep_phi) or "none")
+          + f"; between EPs {btw.mean() * 2:.3f} pi of phase; max overlap {ov.max():.3f}; at phi = pi poles "
+          f"{Re[j, 0]:+.3f}{Im[j, 0]:+.3f}i, {Re[j, 1]:+.3f}{Im[j, 1]:+.3f}i ueV", flush=True)
+    print(f"figure: plots/{name}.png", flush=True)
+
+
+# %% [ep] --- 1. POLES ALONG phi, ONE tau_L AT A TIME (each drawn as soon as it is done) ---
+if run_part('ep'):
+    EP_R = {}
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        for _tl, _tr, _nm in [(0.0, 0.0, 'ref')] + [(t, EP_TAU_R, f'tauL{t:g}') for t in EP_TAUS]:
+            EP_R[_nm] = st.myf.scan(partial(ep_point, tau_L=_tl, tau_R=_tr), {'phi': EP_PH}, pool=_pool, chunksize=1,
+                                    save=str(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_{_nm}_R{_tr:g}.npz'))['values']
+            if _nm == 'ref':
+                print(f"ep: lossless reference done; eps at phi = pi {abs(EP_R['ref'][60, 0]):.3f} ueV, "
+                      f"max over phi {np.abs(EP_R['ref'][:, 0]).max():.2f} ueV", flush=True)
+            else:
+                ep_figure(_tl, EP_R[_nm], EP_R['ref'], _tr)
+    finally:
+        _pool.shutdown()

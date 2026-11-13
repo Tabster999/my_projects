@@ -104,6 +104,9 @@ def dip_point(q, E_Z, phi=np.pi, h=2e-3, kc=None):
               for w in (0.15, 0.02)), key=E1)
     D = E1(k0)
     Epp = (E1(k0 + h) - 2 * D + E1(k0 - h)) / h**2
+    if Epp > 0 and h > 0.1 * np.sqrt(D / Epp):              # step not << the dip width 1/xi_hyp: redo finer
+        h = 0.1 * np.sqrt(D / Epp)                          # (h = 2e-3 at mixed a 10, E_Z 1.15 is 0.8/xi_hyp: v_A 2.5% low)
+        Epp = (E1(k0 + h) - 2 * D + E1(k0 - h)) / h**2
     if not Epp > 0:                                         # no minimum at k0: no dip to fit
         return np.array([k0 / q.a, D * q.t, np.nan, np.nan, np.nan])
     kap = np.sqrt(D / Epp)                                  # 1 / xi_hyp, units 1/a

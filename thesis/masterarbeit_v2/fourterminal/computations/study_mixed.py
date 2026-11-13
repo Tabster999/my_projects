@@ -6,6 +6,9 @@ PARTS (one per former script; the cells of each part are tagged [part]):
   oscillation  (was study_oscillation_mixed.py)  STUDY: the oscillation analysis of study_oscillation (a 20, pure Rashba 16) redone for the MIXED SOC at a = 10,
   plateau      (was study_plateau_mixed.py)  STUDY: the best kappa = 1/2 plateau of the MIXED SOC, as a line (2026-11-04).
   amplitude    (was study_amplitude_mixed.py)  STUDY: what sets the AMPLITUDE of eps in the mixed SOC?  (2026-11-04)
+  deck         (2026-11-11)  the Rashba-only advisor figures of slides_nov.py redone in the mixed SOC (length, T, S/N)
+  combine      (2026-11-11)  recheck of the 10-07 Gresta + Scharf combination claims; the same at the thesis parameters
+  angle        (2026-11-12)  the SOC ANGLE: why the mixed SOC is gapless inside Q = -1 (band tilt), and protection / plateau vs theta
 
 Run one part:   python study_mixed.py oscillation      (several: list them; no argument: every part, in order)
 In the interactive window the cells run as usual.  run_part(part) replaces the old `if __name__ == "__main__":`
@@ -19,11 +22,11 @@ import scipy.linalg as sla
 import matplotlib.pyplot as plt
 from functools import partial
 import tools as st
-from study_oscillation import bloch_blocks, dip_point, box_point, zeros_of, fit_A
-from study_tuning import junction
+from study_oscillation import bloch_blocks, dip_point, box_point, zeros_of, fit_A, slowest_mode
+from study_tuning import junction, topo_point, tr_name, EZ as EZ_TU, PHI as PHI_TU
 import scipy.sparse as sp
 
-PARTS = ('oscillation', 'plateau', 'amplitude')
+PARTS = ('oscillation', 'plateau', 'amplitude', 'deck', 'combine', 'angle')
 _SELECTED = {a for a in sys.argv[1:] if a in PARTS}
 
 
@@ -98,9 +101,25 @@ def gamma_point(k, cases):
     return np.array([np.sqrt(lo * hi) * 1e3, A0])
 
 
+def dip_redo(i, ez, kc):
+    """dip_point (with the 2026-11-11 step fix) at ez[i], phi = pi, kc = k_osc a from the cached complex-k solve."""
+    return dip_point(QM, ez[int(i)], kc=kc[int(i)])
+
+
 # %% [oscillation] --- 1. INFINITE CROSS-SECTION ---
 if run_part('oscillation'):
     V = st.run_scan(partial(osc_point, QM), {'E_Z': EZ}, 'scharf_absOM_modes_mixed_a10')
+    # The dip columns (k0 .. xi_poly) predate the dip_point step fix of 2026-11-11, which matters from E_Z ~ 0.9 up (at
+    # 1.15 the old h = 2e-3 was 0.8 / xi_hyp: hbar v_A 2.5 % low).  Redone there (2026-11-12); the rest is unchanged.
+    redo = np.flatnonzero(EZ >= 0.9)
+    D2 = st.run_scan(partial(dip_redo, ez=tuple(EZ[redo]), kc=tuple(V[redo, 1] * QM.a)), {'i': np.arange(len(redo))},
+                     'scharf_absOM_dip_mixed_a10_fix', n_workers=6, chunksize=2)
+    ch = D2[:, 3] / V[redo, 12] - 1
+    print(f"dip columns redone for E_Z >= 0.9 ({len(redo)} fields): xi_hyp changed by {np.nanmin(ch):+.1%} .. "
+          f"{np.nanmax(ch):+.1%}, xi_poly by {np.nanmin(D2[:, 4] / V[redo, 13] - 1):+.1%} .. "
+          f"{np.nanmax(D2[:, 4] / V[redo, 13] - 1):+.1%}")
+    V = V.copy()
+    V[redo, 9:] = D2
     xi_M, k_osc, xi_2, k_2, xi_3, k_3, D_top, Q, k_gap, k0, D_out, hv_A, xi_hyp, xi_poly = V.T
     topo = Q < 0
     print(f"Q = -1 for E_Z {EZ[topo].min():.3f} .. {EZ[topo].max():.3f} meV (phi = pi)")
@@ -789,3 +808,1116 @@ if run_part('amplitude'):
     fig.tight_layout()
     st.save_fig(fig, 'amplitude_mixed')
     print("figure: plots/amplitude_mixed.png", flush=True)
+
+
+# ====================================================================================================================
+# PART 'deck'  (2026-11-11)
+# ====================================================================================================================
+# STUDY: the advisor/professor deck in the MIXED SOC.  The slides_nov.py figures that existed only for pure Rashba
+# (a 20) are redone for the thesis junction junction('mixed', 0.7) (a 10 unless stated); the figures are drawn in
+# slides_nov.py (mixed_* functions), this part only computes.
+#   1. kappa(E_Z) at phi = pi for L = 2 / 3 / 4 um, probe bond 0.3387 (per channel ~ tc_barr 0.2 at a 20, study_rashba
+#      [a]).  Rashba (slides_nov.kappa_L): neutral kappa > 0.45 switches on where L/xi_M(E_Z) drops to ~3.8, for every
+#      L.  Does the mixed SOC follow the same rule?  xi_M from [oscillation] (infinite junction, L-independent).
+#   2. temperature, a = 20: probe bond 0.7 for the mixed case of study_rashba [T] (0.2 / 0.3 / 0.4 exist) -> the
+#      too weak / optimum / too strong panels of slide 10 in the mixed SOC.
+#   3. temperature, a = 10, at the best kappa = 1/2 region ([plateau]: tau 0.5, L 2 um, E_Z 0.930): the six channels on
+#      the study_rashba [T] energy grid along E_Z at phi 1.742 pi (the phase-run winner), 1.425 pi (the field-run
+#      line) and pi, and along phi at E_Z 0.930 -> kappa(T), G(T).  Does the region survive 10-20 mK?
+#   4. S/N coupling (slide 9): Q and Delta_top on (mu_C, E_Z) and xi_M along E_Z at mu_C 0.7 for t_SN 0.5 / 0.75 / 1
+#      (the Rashba version is study_tuning [topology]).
+
+# %% [deck] --- PARAMETERS ---
+DECK_WORKERS = 6                                                    # the laptop throttles (95 C) above ~8; crashed 2026-11-11 under 8 + tests
+TAU_D = 0.3387
+LS_D = (2000.0, 3000.0, 4000.0)
+EZ_D = {2000.0: np.round(np.arange(0.10, 1.35001, 0.002), 4),      # 3.4 / 11 / 24 s per point on one thread
+        3000.0: np.round(np.arange(0.40, 1.35001, 0.002), 4),      # lower fields: L/xi_M >> 4, kappa ~ 0
+        4000.0: np.round(np.arange(0.50, 1.35001, 0.002), 4)}
+TAU_TB, EZ_TB0 = 0.5, 0.930
+PHI_TB = np.array([1.7417, 1.425, 1.0]) * np.pi                    # along E_Z: winner, field-run line, pi
+EZ_TB = np.round(np.arange(0.85, 1.05001, 0.0025), 4)
+TCS_D = (0.5, 0.75, 1.0)
+
+
+def deck_line_cache(L):
+    return f'scharf_absDeck_tr_mixed_tau{TAU_D:g}_L{L / 1000:g}'
+
+
+def junction_topo_mixed(tc):
+    """The cross-section of study_tuning [topology] (a 10, W 100, mu_S 1) in the mixed SOC, S/N bond tc."""
+    al, be = st.mixed_soc(16.0, 0.15 * np.pi)
+    return st.replace(st.case(100.0, alpha=al, beta=be, a=10.0), tc=tc)
+
+
+# %% [deck] --- 1. kappa(E_Z) FOR L = 2 / 3 / 4 um: where does neutral kappa ~ 1/2 switch on? ---
+if run_part('deck'):
+    OMd = st.run_scan(partial(osc_point, QM), {'E_Z': EZ}, 'scharf_absOM_modes_mixed_a10')   # cached
+    XI_D = lambda e: np.interp(e, EZ, OMd[:, 0])
+    TLD = {}
+    for L in LS_D:
+        TLD[L] = st.run_scan(partial(st.transport_point, junction('mixed', 0.7, TAU_D, L=L)), {'E_Z': EZ_D[L]},
+                             deck_line_cache(L), n_workers=DECK_WORKERS, chunksize=2)
+        print(f"deck 1: L {L / 1000:g} um done ({int(np.nansum(TLD[L][:, 4]))} failed lead solves)", flush=True)
+    print("\n  L [um]  best neutral kappa (E_Z, L/xi_M)   neutral kappa > 0.45 from E_Z (L/xi_M there)   "
+          "L/xi_M = 3.8 at E_Z   charged (|G| > 0.1 kappa, kappa > 0.3) from E_Z")
+    for L in LS_D:
+        e, V = EZ_D[L], TLD[L]
+        k, G = V[:, 0], np.abs(V[:, 1])
+        neu = G < 0.1 * np.maximum(k, 1e-12)
+        j = int(np.argmax(np.where(neu, k, -1)))
+        on = e[neu & (k > 0.45)]
+        s = L / XI_D(EZ)
+        e38 = EZ[np.flatnonzero(s < 3.8)[0]] if (s < 3.8).any() else np.nan
+        ch = e[~neu & (k > 0.3)]
+        print(f"  {L / 1000:g}       {k[j]:.3f} ({e[j]:.3f}, {L / XI_D(e[j]):.2f})"
+              f"                 {on[0] if on.size else np.nan:.3f} ({L / XI_D(on[0]) if on.size else np.nan:.2f})"
+              f"                              {e38:.3f}              {ch[0] if ch.size else np.nan:.3f}")
+
+
+# %% [deck] --- 2. TEMPERATURE at a = 20: the too-strong probe bond for the mixed case of study_rashba [T] ---
+if run_part('deck'):
+    from study_rashba import SCAN_CASES, E_SCAN, T_SCAN
+    q20, EZ20, TC20 = SCAN_CASES['W100_L2_mixed']
+    T20 = {tc: st.run_scan(partial(st.channel_point, st.replace(q20, tc_barr_transport=tc)), {'E_Z': EZ20, 'E': E_SCAN},
+                           f'scharf_absTtc_W100_L2_mixed_tc{tc:g}', n_workers=DECK_WORKERS, chunksize=8)
+           for tc in TC20}
+    print("\n  a 20, mixed: best NEUTRAL kappa (|G| < 0.05 kappa) over E_Z 0.55-1.25 at T = "
+          + " / ".join(f"{T:g}" for T in T_SCAN) + " mK")
+    for tc, V in T20.items():
+        best = []
+        for T in T_SCAN:
+            r = st.thermal_line(V, st.kT_of_mK(T), E_SCAN)
+            best.append(np.max(np.where(np.abs(r[:, 1]) < 0.05 * np.maximum(r[:, 0], 1e-12), r[:, 0], 0.0)))
+        print(f"    tc_barr {tc:g}: " + " / ".join(f"{b:.3f}" for b in best), flush=True)
+
+
+# %% [deck] --- 3. TEMPERATURE at a = 10 at the best kappa = 1/2 region (tau 0.5, L 2 um) ---
+if run_part('deck'):
+    QTB = junction('mixed', 0.7, TAU_TB)
+    VTB = st.run_scan(partial(st.channel_point, QTB, phis=tuple(PHI_TB)), {'E_Z': EZ_TB, 'E': E_SCAN},
+                      f'scharf_absDeck_T_mixed_tau{TAU_TB:g}_L2_EZ{EZ_TB[0]:g}-{EZ_TB[-1]:g}',
+                      n_workers=DECK_WORKERS, chunksize=8)                # (n_EZ, n_E, 6 x 3 phases)
+    VTP = st.run_scan(partial(st.channel_point, QTB, EZ_TB0, phis=tuple(PHI_F)), {'E': E_SCAN},
+                      f'scharf_absDeck_Tphi_mixed_tau{TAU_TB:g}_L2_EZ{EZ_TB0:g}',
+                      n_workers=DECK_WORKERS, chunksize=1)[None]          # (1, n_E, 6 x 241)
+    print(f"\n  a 10, tau {TAU_TB}, L 2 um: best neutral kappa (|G| < 0.1 kappa) along E_Z "
+          f"{EZ_TB[0]:g}-{EZ_TB[-1]:g} at T = " + " / ".join(f"{T:g}" for T in T_SCAN) + " mK [field window]")
+    for n, ph in enumerate(PHI_TB):
+        out = []
+        for T in T_SCAN:
+            r = st.thermal_line(VTB, st.kT_of_mK(T), E_SCAN, phase=n)
+            neu = np.abs(r[:, 1]) < 0.1 * np.maximum(r[:, 0], 1e-12)
+            win = (neu & (np.abs(r[:, 0] - 0.5) < 0.03)).sum() * (EZ_TB[1] - EZ_TB[0]) * 1e3
+            out.append(f"{np.max(np.where(neu, r[:, 0], 0.0)):.3f} [{win:.0f} ueV]")
+        print(f"    phi {ph / np.pi:.4f} pi: " + " / ".join(out))
+    print(f"  along phi at E_Z {EZ_TB0}: phase extent with |kappa - 1/2| < 0.03 and |G| < 0.1 kappa, mean kappa there")
+    for T in T_SCAN:
+        r = np.array([st.thermal_line(VTP, st.kT_of_mK(T), E_SCAN, phase=n)[0] for n in range(len(PHI_F) - 1)])
+        ok = (np.abs(r[:, 0] - 0.5) < 0.03) & (np.abs(r[:, 1]) < 0.1 * r[:, 0])
+        print(f"    {T:4g} mK: {ok.sum() * DPHI:.2f} pi  (kappa {r[ok, 0].mean() if ok.any() else np.nan:.3f}; "
+              f"max kappa {r[:, 0].max():.3f})", flush=True)
+
+
+# %% [deck] --- 4. S/N COUPLING: Q, Delta_top on (mu_C, E_Z) and xi_M at mu_C 0.7 ---
+if run_part('deck'):
+    from study_tuning import topo_point, xi_scan, MU_C as MU_CT, EZ_TOPO, MU_C0
+    MUC_D, XI0_D = {}, {}
+    i0 = int(np.argmin(np.abs(MU_CT - MU_C0)))
+    for tc in TCS_D:
+        MUC_D[tc] = st.run_scan(partial(topo_point, junction_topo_mixed(tc)), {'mu_C': MU_CT, 'E_Z': EZ_TOPO},
+                                f'scharf_absDeck_topo_mixed_tc{tc:g}', n_workers=DECK_WORKERS, chunksize=4)
+        line = np.flatnonzero(MUC_D[tc][i0, :, 0] < 0)
+        XI0_D[tc] = (EZ_TOPO[line], xi_scan(junction_topo_mixed(tc), np.full(len(line), MU_C0), EZ_TOPO[line],
+                                            f'scharf_absDeck_xi0_mixed_tc{tc:g}'))
+        print(f"deck 4: t_SN {tc:g} done", flush=True)
+    # GAPLESS (2026-11-12): in the mixed SOC much of Q = -1 has Delta_top < 1e-3 ueV (real band crossings; nothing
+    # between 1e-3 and 0.08 ueV).  There slowest_mode drops the |lam| = 1 modes and returns a bulk-SC mode at 256.6 nm
+    # for every field -- NOT a Majorana: such points are excluded from xi_M below (and in slides_nov.slide9).
+    print("\n  t_SN   Q = -1 area   gapped Q = -1 area   max Delta_top [ueV] (mu_C, E_Z)   at mu_C 0.7: gapped E_Z,"
+          " max Delta_top, xi_M min..max [um], max 2 um / xi_M")
+    for tc in TCS_D:
+        Qm, g = MUC_D[tc][..., 0], MUC_D[tc][..., 1] * 1e3
+        gapped = (Qm < 0) & (g >= 0.01)
+        a, b = np.unravel_index(np.nanargmax(np.where(gapped, g, -1)), g.shape)
+        ez, xi = XI0_D[tc][0], XI0_D[tc][1][:, 1]
+        ok = gapped[i0, Qm[i0] < 0]
+        rng = (f"{ez[ok].min():.1f}-{ez[ok].max():.1f} meV, {np.nanmax(g[i0]):.1f} ueV, {xi[ok].min() / 1e3:.2f}.."
+               f"{xi[ok].max() / 1e3:.1f}, {2000 / xi[ok].min():.2f}" if ok.any() else "gapless at every Q = -1 field")
+        print(f"  {tc:4g}   {np.mean(Qm < 0):6.1%}        {np.mean(gapped):6.1%}           "
+              f"{g[a, b] if gapped.any() else 0:6.1f} ({MU_CT[a]:g}, {EZ_TOPO[b]:g})          {rng}", flush=True)
+
+
+# ====================================================================================================================
+# PART 'combine'  (2026-11-11)
+# ====================================================================================================================
+# CHECK of the 2026-10-07 notes 'Combining Gresta and Scharf (all tested, all negative)' with today's code (no script
+# of the 10-07 runs survives), and the same questions at the thesis parameters.  Raw numbers; the 10-07 values are
+# printed next to them where the notes give one.
+#   A. Gresta model (dimensionless, t = 1; the working point of archive/early_tests/01_single_point.py):
+#      A0 baseline; A1 in-plane field in the ribbons (bulk gap, Chern number); A2 tilt (Bz_s 0.94 + Bxy_s);
+#      A3 Bz_s + Scharf's in-plane field in the centre (Bxy_c), also with a populated centre; A4 Dresselhaus in both
+#      orientations, and nx at beta 0.8.
+#   B. thesis parameters (mixed SOC 16 meV nm at 0.15 pi, '100', mu_S 1, Delta 0.25, m* 0.038):
+#      B1 bulk of the proximitized ribbon with an out-of-plane Zeeman Bz_s: Chern number and bulk gap (a 10, a 20;
+#         pure Rashba 16 for comparison);
+#      B2 the junction (a 20) with Chern ribbons, +- Scharf's in-plane field, depleted / populated centre, two probes;
+#      B3 out-of-plane Zeeman in the normal strip only (probes kept at 0) at the best point: Q, Delta_top, xi_M, kappa.
+
+# %% [combine] --- PARAMETERS AND HELPERS (definitions only: the parallel workers import this file) ---
+from dataclasses import replace as _replace
+PG = st.myf.Params(model='rashba', nx=80, ny=12, t_n=1.0, mu_n=1.0, t_c=1.0, mu_c=-0.03, t_s=1.0, mu_s=0.15,
+                   delta=0.35, phi=np.pi, tc_top=1.1, tc_bot=1.1, tc_barr=1.0, alpha=1.2, Bz_s=0.94, eta=1e-5)
+TH_INPLANE = (0.0, np.pi / 2)                                       # two in-plane directions (the 10-07 one is unknown)
+VZ_B1 = np.array([0.0, 0.5, 0.9, 1.0, 1.05, 1.1, 1.2, 1.5, 2.0, 2.5, 3.0])          # meV, out-of-plane in the ribbons
+BZ_B3 = np.array([0.0, 0.05, 0.1, 0.2, 0.4])                                          # meV, out-of-plane in the strip
+PHI_B3 = (np.pi, 1.7417 * np.pi)
+COMB_WORKERS = 4
+
+
+def bulk_H(p, kx, ky, region='s'):
+    """Bulk BdG H(kx, ky) of one region (lattice units, phase 0), vectorised; same blocks as myf.chern_number."""
+    o = st.model_onsite(p, region)
+    t, m0 = {'s': (p.t_s, p.m0), 'c': (p.t_c, p.m0_c), 'n': (p.t_n, p.m0_n)}[region]
+    X = st.model_hop(p, 'x', t, m0, alpha=st.region_alpha(p, region))
+    Y = st.model_hop(p, 'y', t, m0, alpha=st.region_alpha(p, region))
+    ex, ey = np.exp(1j * np.asarray(kx))[..., None, None], np.exp(1j * np.asarray(ky))[..., None, None]
+    return o + X * ex + X.conj().T / ex + Y * ey + Y.conj().T / ey
+
+
+def bulk_gap(p, N=241, kmax=np.pi, region='s'):
+    """min over (kx, ky) of the smallest |E| of bulk_H (lattice units): N x N grid on [-kmax, kmax]^2, the 6 lowest
+    grid points refined by Nelder-Mead.  -> (gap, kx, ky)."""
+    from scipy.optimize import minimize
+    k = np.linspace(-kmax, kmax, N)
+    KX, KY = np.meshgrid(k, k, indexing='ij')
+    E = np.abs(np.linalg.eigvalsh(bulk_H(p, KX, KY, region))).min(-1)
+    f = lambda v: np.abs(np.linalg.eigvalsh(bulk_H(p, v[0], v[1], region))).min()
+    best = (E.min(), KX.flat[E.argmin()], KY.flat[E.argmin()])
+    for i in np.argsort(E, axis=None)[:6]:
+        r = minimize(f, [KX.flat[i], KY.flat[i]], method='Nelder-Mead',
+                     options=dict(xatol=1e-10, fatol=1e-14, maxiter=6000))
+        if r.fun < best[0]:
+            best = (r.fun, *r.x)
+    return best
+
+
+def gresta_tr(p, phis=(np.pi, 0.0), kT=0.0):
+    """[kappa(phis)..., G(phis)..., failed lead solves, overflow warnings] from myf.linear_response (side 'right', as
+    the early Gresta scripts)."""
+    import warnings
+    n0 = st.myf.leads.N_UNRELIABLE
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        k, G = st.myf.linear_response(p, np.asarray(phis, float), kT)
+    return np.r_[np.ravel(k), np.ravel(G), st.myf.leads.N_UNRELIABLE - n0,
+                 sum('overflow' in str(x.message) for x in w)]
+
+
+def thesis_q(a, mu_C=0.7, tau=0.3387, beta_on=True):
+    """The thesis junction (W 100, L 2 um, t_SN 1, mixed SOC) at lattice constant a; beta_on=False: pure Rashba 16."""
+    al, be = st.mixed_soc(16.0, 0.15 * np.pi) if beta_on else (16.0, 0.0)
+    return st.replace(st.case(100.0, alpha=al, beta=be, a=a), tc=1.0, mu_C=mu_C, tc_barr_transport=tau)
+
+
+def comb_point(i, cases):
+    """B2: cases[i] = (Vz meV, mu_C, E_Z meV, tau); a = 20.  -> [kappa(pi), kappa(0), G(pi), G(0), andreev(pi), det r(pi),
+    failed lead solves]."""
+    Vz, mu_C, E_Z, tau = cases[int(i)]
+    q = thesis_q(20.0, mu_C, tau)
+    n0 = st.myf.leads.N_UNRELIABLE
+    p = _replace(q.params_transport(E_Z=float(E_Z)), Bz_s=Vz / q.t)
+    rgf = st.myf.RGFFourTerminal(st.myf.FourTerminalJunction(p), np.array([0.0]))
+    out = []
+    for ph in (np.pi, 0.0):
+        c = {k: float(np.asarray(v)[0]) for k, v in rgf.channels_at_phi(ph, 'left').items()}
+        out.append((c['ee'] + c['he_cross'], c['ee'] - c['he_cross'], c['eh_local'] + c['he_local']))
+    return np.array([out[0][0], out[1][0], out[0][1], out[1][1], out[0][2], st.det_r(rgf, np.pi),
+                     st.myf.leads.N_UNRELIABLE - n0])
+
+
+def strip_bz_point(Bz):
+    """B3: out-of-plane Zeeman Bz (meV) in the normal strip only (Bz_n = 0), thesis junction a 10, tau 0.5, E_Z 0.93.
+    Per phase of PHI_B3: [Q, Delta_top (meV), xi_M (nm), kappa, G, det r, failed lead solves]."""
+    from study_oscillation import slowest_mode
+    q = thesis_q(10.0, 0.7, 0.5)
+    n_S = st.n_S_of(q)
+    out = []
+    for ph in PHI_B3:
+        p = _replace(q.params(E_Z=0.93, phi=ph), Bz=Bz / q.t, Bz_n=0.0)
+        Q = st.invariant(p, n_S)
+        g, _ = st.gap_refined(p, n_S, st.k_grid(q.a))
+        xi = -q.a / np.log(np.abs(slowest_mode(p, n_S)))
+        n0 = st.myf.leads.N_UNRELIABLE
+        pt = _replace(q.params_transport(E_Z=0.93, phi=ph), Bz=Bz / q.t, Bz_n=0.0)
+        rgf = st.myf.RGFFourTerminal(st.myf.FourTerminalJunction(pt), np.array([0.0]))
+        c = {k: float(np.asarray(v)[0]) for k, v in rgf.channels_at_phi(ph, 'left').items()}
+        out.append([Q, g * q.t, xi, c['ee'] + c['he_cross'], c['ee'] - c['he_cross'], st.det_r(rgf, ph),
+                    st.myf.leads.N_UNRELIABLE - n0])
+    return np.array(out)
+
+
+# %% [combine] --- A0. GRESTA BASELINE ---
+if run_part('combine'):
+    print("A0  Gresta working point (nx 80, ny 12, Delta 0.35, alpha 1.2, mu_s 0.15, Bz_s 0.94, mu_c -0.03, tc 1.1)")
+    g0 = bulk_gap(PG)
+    print(f"    Chern {st.myf.chern_number(PG):+.3f} (N 48), {st.myf.chern_number(PG, N=96):+.3f} (N 96); bulk gap "
+          f"{g0[0]:.4f} at k = ({g0[1]:.3f}, {g0[2]:.3f}); xi_ribbon {st.myf.coherence_length(PG):.2f} sites  "
+          f"[10-07: gap 0.267, xi 5.5]")
+    for eta in (1e-5, 1e-6):
+        r = gresta_tr(_replace(PG, eta=eta))
+        print(f"    eta {eta:g}, kT 0: kappa(pi) {r[0]:.4f}  kappa(0) {r[1]:.4f}  G(pi) {r[2]:+.4f}  G(0) {r[3]:+.4f}  "
+              f"failed {int(r[4])}  overflow {int(r[5])}   [notes: 0.4746 at 1e-5, 0.4997 at 1e-6]")
+    r = gresta_tr(PG, kT=1e-3)
+    print(f"    eta 1e-5, kT 1e-3: kappa(pi) {r[0]:.4f}  kappa(0) {r[1]:.4f}  G(pi) {r[2]:+.4f}   [notes: 0.497, 0.003]",
+          flush=True)
+
+
+# %% [combine] --- A1-A2. IN-PLANE FIELD IN THE RIBBONS: bulk gap and Chern number ---
+if run_part('combine'):
+    A12 = []
+    print("\nA1  Bz_s = 0, in-plane Bxy_s only   [10-07: gapless, bulk gap ~1e-4 for Bxy_s 0.94-3.0, Chern -1 meaningless]")
+    for th in TH_INPLANE:
+        for B in (0.94, 1.5, 2.0, 3.0):
+            p = _replace(PG, Bz_s=0.0, Bxy_s=B, theta_z=th)
+            g = bulk_gap(p)
+            print(f"    theta {th / np.pi:.2f} pi  Bxy_s {B:4.2f}: bulk gap {g[0]:.2e} at ({g[1]:+.3f}, {g[2]:+.3f})  "
+                  f"Chern(N 48) {st.myf.chern_number(p):+.3f}  Chern(N 96) {st.myf.chern_number(p, N=96):+.3f}")
+        p = _replace(PG, Bz_s=0.94, Bxy_s=0.94, theta_z=th)
+        g = bulk_gap(p)
+        print(f"    theta {th / np.pi:.2f} pi  Bz_s 0.94 + Bxy_s 0.94: bulk gap {g[0]:.2e}  Chern(N 96) "
+              f"{st.myf.chern_number(p, N=96):+.3f}")
+    print("A2  Bz_s 0.94 + Bxy_s (tilt)   [10-07: gap 0.267 -> 0.039 at Bxy_s 0.3, gone by 0.5]")
+    for th in TH_INPLANE:
+        for B in (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6):
+            p = _replace(PG, Bxy_s=B, theta_z=th)
+            g = bulk_gap(p)
+            C = st.myf.chern_number(p, N=96)
+            A12.append([th, B, g[0], C])
+            print(f"    theta {th / np.pi:.2f} pi  Bxy_s {B:3.1f}: bulk gap {g[0]:.4f}  Chern(N 96) {C:+.3f}", flush=True)
+    A12 = np.array(A12)
+
+
+# %% [combine] --- A3. GRESTA RIBBONS + SCHARF'S IN-PLANE FIELD IN THE CENTRE ---
+if run_part('combine'):
+    A3 = []
+    print("\nA3  Bz_s 0.94 + Bxy_c in the centre, kT 0   [10-07: Bxy_c 0.1: kappa(pi) 0.474 -> 0.148, kappa(0) 0.003 -> 0.652;"
+          " Bxy_c 0.8: kappa 0.447, G 0.411; ny 20 no rescue]")
+    for th in TH_INPLANE:
+        for B in (0.0, 0.05, 0.1, 0.2, 0.4, 0.8):
+            for ny in ((12, 20) if B in (0.0, 0.1) else (12,)):
+                r = gresta_tr(_replace(PG, Bxy_c=B, theta_z=th, ny=ny))
+                A3.append([th, B, ny, -0.03, *r])
+                print(f"    theta {th / np.pi:.2f} pi  Bxy_c {B:4.2f}  ny {ny}: kappa(pi) {r[0]:.4f}  kappa(0) {r[1]:.4f}  "
+                      f"G(pi) {r[2]:+.4f}  G(0) {r[3]:+.4f}  failed {int(r[4])}  overflow {int(r[5])}", flush=True)
+    print("    populated centre (mu_c > 0), ny 12:")
+    for th in TH_INPLANE:
+        for mu in (0.1, 0.3):
+            for B in (0.0, 0.1, 0.4):
+                r = gresta_tr(_replace(PG, mu_c=mu, Bxy_c=B, theta_z=th))
+                A3.append([th, B, 12, mu, *r])
+                print(f"    theta {th / np.pi:.2f} pi  mu_c {mu:.2f}  Bxy_c {B:4.2f}: kappa(pi) {r[0]:.4f}  kappa(0) {r[1]:.4f}  "
+                      f"G(pi) {r[2]:+.4f}  G(0) {r[3]:+.4f}  failed {int(r[4])}  overflow {int(r[5])}", flush=True)
+    A3 = np.array(A3)
+
+
+# %% [combine] --- A4. DRESSELHAUS IN THE GRESTA DEVICE ---
+if run_part('combine'):
+    A4 = []
+    print("\nA4  Dresselhaus beta (alpha 1.2)   [10-07: '110' xi 5.5 -> 49.7 for beta 0 -> 1.1; '100' xi 5.5 -> 4.5, kappa(pi)"
+          " 0.91-0.99 with G(pi) ~ 0.33]")
+    for ax in ('110', '100'):
+        for b in (0.0, 0.2, 0.4, 0.6, 0.8, 1.1):
+            p = _replace(PG, beta=b, soc_axis=ax)
+            g, C, xi = bulk_gap(p)[0], st.myf.chern_number(p, N=96), st.myf.coherence_length(p)
+            row = [b, g, C, xi]
+            txt = f"    {ax}  beta {b:3.1f}: bulk gap {g:.4f}  Chern {C:+.3f}  xi {xi:6.2f}"
+            for eta in (1e-5, 1e-6):
+                r = gresta_tr(_replace(p, eta=eta))
+                row += list(r)
+                txt += (f" | eta {eta:g}: kappa(pi) {r[0]:.4f} kappa(0) {r[1]:.4f} G(pi) {r[2]:+.4f}"
+                        f" failed {int(r[4])} ovf {int(r[5])}")
+            A4.append([0 if ax == '110' else 1] + row)
+            print(txt, flush=True)
+    al_t, be_t = 1.2 * np.cos(0.15 * np.pi), 1.2 * np.sin(0.15 * np.pi)
+    p = _replace(PG, alpha=al_t, beta=be_t, soc_axis='100')
+    r = gresta_tr(_replace(p, eta=1e-6))
+    print(f"    thesis ratio beta/alpha = tan(0.15 pi), amplitude 1.2, '100': bulk gap {bulk_gap(p)[0]:.4f}  Chern "
+          f"{st.myf.chern_number(p, N=96):+.3f}  xi {st.myf.coherence_length(p):.2f} | eta 1e-6: kappa(pi) {r[0]:.4f} "
+          f"kappa(0) {r[1]:.4f} G(pi) {r[2]:+.4f} failed {int(r[4])} ovf {int(r[5])}")
+    print("    '100', beta 0.8, nx   [10-07 (eta 1e-5): kappa(pi) 0.358 -> 0.192 for nx 80 -> 240; notes: unresolved]")
+    for nx in (80, 160, 240):
+        txt = f"      nx {nx}:"
+        for eta in (1e-5, 1e-6, 1e-7):
+            r = gresta_tr(_replace(PG, beta=0.8, soc_axis='100', nx=nx, eta=eta))
+            txt += f" | eta {eta:g}: kappa(pi) {r[0]:.4f} G(pi) {r[2]:+.4f} failed {int(r[4])} ovf {int(r[5])}"
+        print(txt, flush=True)
+    A4 = np.array(A4)
+
+
+# %% [combine] --- B1. THESIS PARAMETERS: CAN THE PROXIMITIZED RIBBON BECOME A CHERN SUPERCONDUCTOR? ---
+if run_part('combine'):
+    B1 = {}
+    print("\nB1  ribbon bulk (mu_S 1, Delta 0.25, m* 0.038), out-of-plane Vz in the ribbon; gap in ueV")
+    for name, a, mixed in (('mixed a10', 10.0, True), ('mixed a20', 20.0, True), ('Rashba16 a10', 10.0, False)):
+        q = thesis_q(a, beta_on=mixed)
+        p0 = q.params(E_Z=0.0, phi=0.0)
+        rows = []
+        for Vz in VZ_B1:
+            p = _replace(p0, Bz_s=Vz / q.t)
+            gc = bulk_gap(p, N=161)
+            gf = bulk_gap(p, N=401, kmax=0.9)
+            g = min(gc[0], gf[0]) * q.t * 1e3
+            C1, C2 = st.myf.chern_number(p, N=200), st.myf.chern_number(p, N=400)
+            rows.append([Vz, g, C1, C2])
+            print(f"    {name}  Vz {Vz:4.2f} meV: bulk gap {g:9.3f} ueV  Chern {C1:+.3f} (N 200) {C2:+.3f} (N 400)", flush=True)
+        B1[name] = np.array(rows)
+
+
+# %% [combine] --- B2. THESIS JUNCTION (a 20) WITH CHERN RIBBONS ---
+if run_part('combine'):
+    rows = B1['mixed a20']
+    chern = rows[(np.abs(rows[:, 3]) > 0.5) & (np.abs(rows[:, 3] - rows[:, 2]) < 0.1) & (rows[:, 1] > 1.0)]
+    VZ_B2 = [0.0] + ([float(chern[0, 0]), float(chern[np.argmax(chern[:, 1]), 0])] if len(chern) else [])
+    VZ_B2 = list(dict.fromkeys(VZ_B2))
+    print(f"\nB2  junction a 20, ribbons Vz {VZ_B2} meV (Chern phase from B1: "
+          f"{chern[:, 0].tolist() if len(chern) else 'none'}), mu_C, in-plane E_Z in the strip, probe bond tau")
+    CASES_B2 = tuple((Vz, mu, EZ, tau) for Vz in VZ_B2 for mu in (-0.2, 0.7) for EZ in (0.0, 0.3, 0.93) for tau in (1.0, 0.2))
+    VB2 = st.run_scan(partial(comb_point, cases=CASES_B2), {'i': np.arange(len(CASES_B2))},
+                      'scharf_absComb_B2_' + '_'.join(f'{v:g}' for v in VZ_B2), n_workers=COMB_WORKERS, chunksize=1)
+    print("    Vz    mu_C   E_Z   tau  | kappa(pi) kappa(0)  G(pi)    G(0)   andreev(pi) det r(pi) failed")
+    for (Vz, mu, EZ, tau), r in zip(CASES_B2, VB2):
+        print(f"    {Vz:4.2f}  {mu:+.1f}  {EZ:4.2f}  {tau:3.1f}  |  {r[0]:.4f}   {r[1]:.4f}  {r[2]:+.4f}  {r[3]:+.4f}  "
+              f"{r[4]:.4f}     {r[5]:+.3f}    {int(r[6])}")
+
+
+# %% [combine] --- B3. OUT-OF-PLANE ZEEMAN IN THE NORMAL STRIP ONLY (thesis junction a 10, best point) ---
+if run_part('combine'):
+    VB3 = st.run_scan(strip_bz_point, {'Bz': BZ_B3}, 'scharf_absComb_B3_stripBz', n_workers=len(BZ_B3), chunksize=1)
+    print("\nB3  Bz in the strip (Bz_n = 0), a 10, tau 0.5, E_Z 0.93 (in-plane), L 2 um")
+    print("    Bz [meV]  phi/pi  |  Q   Delta_top [ueV]  xi_M [nm]  |  kappa    G        det r   failed")
+    for Bz, R in zip(BZ_B3, VB3):
+        for ph, r in zip(PHI_B3, R):
+            print(f"    {Bz:5.2f}     {ph / np.pi:.4f} | {r[0]:+.0f}   {r[1] * 1e3:8.2f}       {r[2]:8.0f}   |  {r[3]:.4f}  "
+                  f"{r[4]:+.4f}  {r[5]:+.3f}   {int(r[6])}", flush=True)
+
+
+# %% [combine] --- FIGURES ---
+if run_part('combine'):
+    fig, axs = plt.subplots(2, 3, figsize=(16, 9))
+    a = axs[0, 0]
+    for th, c in zip(TH_INPLANE, ('#2a78d6', '#eb6834')):
+        m = A12[:, 0] == th
+        a.plot(A12[m, 1], A12[m, 2], 'o-', color=c, label=rf'$\theta$ = {th / np.pi:.1f}$\pi$')
+    a.set_xlabel(r'$B_{xy,s}$ (t)'); a.set_ylabel('ribbon bulk gap (t)'); a.legend(frameon=False)
+    a.set_title(r'A2  Gresta: $B_{z,s}$ 0.94 + in-plane leak', fontsize=10)
+    a = axs[0, 1]
+    for th, c in zip(TH_INPLANE, ('#2a78d6', '#eb6834')):
+        m = (A3[:, 0] == th) & (A3[:, 2] == 12) & (A3[:, 3] == -0.03)
+        a.plot(A3[m, 1], A3[m, 4], 'o-', color=c, label=rf'$\kappa(\pi)$, $\theta$ = {th / np.pi:.1f}$\pi$')
+        a.plot(A3[m, 1], A3[m, 5], 's--', color=c, label=rf'$\kappa(0)$')
+        a.plot(A3[m, 1], np.abs(A3[m, 6]), ':', color=c, label=r'$|G(\pi)|$')
+    a.set_xlabel(r'$B_{xy,c}$ (t)'); a.set_ylabel('transport'); a.legend(frameon=False, fontsize=7)
+    a.set_title(r'A3  Gresta ribbons + in-plane field in the centre', fontsize=10)
+    a = axs[0, 2]
+    for code, c, lab in ((0, '#2a78d6', "'110'"), (1, '#eb6834', "'100'")):
+        m = A4[:, 0] == code
+        a.plot(A4[m, 1], A4[m, 4], 'o-', color=c, label=rf'$\xi_{{ribbon}}$ {lab}')
+    a.set_yscale('log'); a.set_xlabel(r'$\beta$ (t a)'); a.set_ylabel(r'$\xi_{ribbon}$ (sites)')
+    b2 = a.twinx()
+    for code, c in ((0, '#2a78d6'), (1, '#eb6834')):
+        m = A4[:, 0] == code
+        b2.plot(A4[m, 1], A4[m, 11], 's--', color=c, alpha=0.7)                 # kappa(pi) at eta 1e-6
+    b2.set_ylabel(r'$\kappa(\pi)$ at $\eta$ 1e-6 (dashed)')
+    a.legend(frameon=False, fontsize=8); a.set_title('A4  Dresselhaus in the Gresta device', fontsize=10)
+    a = axs[1, 0]
+    for (name, R), c in zip(B1.items(), ('#2a78d6', '#1baf7a', '#eb6834')):
+        a.semilogy(R[:, 0], np.maximum(R[:, 1], 1e-4), 'o-', color=c, label=f'{name}')
+        for Vz, g, C1, C2 in R:
+            if abs(C2) > 0.5:
+                a.annotate(f'{C2:+.0f}', (Vz, max(g, 1e-4)), fontsize=7, color=c, xytext=(2, 4), textcoords='offset points')
+    a.set_xlabel(r'out-of-plane $V_z$ in the ribbon (meV)'); a.set_ylabel(r'ribbon bulk gap ($\mu$eV)')
+    a.legend(frameon=False, fontsize=8); a.set_title('B1  thesis ribbon: bulk gap (labels: Chern N 400)', fontsize=10)
+    a = axs[1, 1]
+    for j, (ph, c) in enumerate(zip(PHI_B3, ('#2a78d6', '#eb6834'))):
+        a.plot(BZ_B3, VB3[:, j, 1] * 1e3, 'o-', color=c, label=rf'$\Delta_{{top}}$, $\phi$ = {ph / np.pi:.2f}$\pi$')
+    a.set_xlabel(r'out-of-plane $B_z$ in the strip (meV)'); a.set_ylabel(r'$\Delta_{top}$ ($\mu$eV)')
+    a2 = a.twinx()
+    for j, c in enumerate(('#2a78d6', '#eb6834')):
+        a2.plot(BZ_B3, VB3[:, j, 2], 's--', color=c, alpha=0.7)
+    a2.set_ylabel(r'$\xi_M$ (nm, dashed)')
+    a.legend(frameon=False, fontsize=8); a.set_title(r'B3  $B_z$ in the strip: gap and $\xi_M$', fontsize=10)
+    a = axs[1, 2]
+    for j, (ph, c) in enumerate(zip(PHI_B3, ('#2a78d6', '#eb6834'))):
+        a.plot(BZ_B3, VB3[:, j, 3], 'o-', color=c, label=rf'$\kappa$, $\phi$ = {ph / np.pi:.2f}$\pi$')
+        a.plot(BZ_B3, np.abs(VB3[:, j, 4]), ':', color=c, label=r'$|G|$')
+    a.axhline(0.5, color='0.5', lw=0.8, ls='--')
+    a.set_xlabel(r'out-of-plane $B_z$ in the strip (meV)'); a.set_ylabel('transport')
+    a.legend(frameon=False, fontsize=8); a.set_title(r'B3  $\kappa$, $|G|$ ($\tau$ 0.5, $E_Z$ 0.93)', fontsize=10)
+    fig.tight_layout()
+    st.save_fig(fig, 'combine_checks')
+    print("figure: plots/combine_checks.png", flush=True)
+
+
+# ====================================================================================================================
+# PART 'angle'  (2026-11-12)
+# ====================================================================================================================
+# STUDY: the SOC ANGLE theta: alpha = 16 cos(theta), beta = 16 sin(theta) meV nm ('100'), the field perpendicular to the
+# k_x SOC field (theta_z_optimal + pi, as everywhere).  theta = 0 is pure Rashba, 0.15 pi the thesis case.  Why is so
+# much of the mixed-SOC Q = -1 region gapless ([deck] 4, [leads]), and does another angle recover or improve the
+# protection and the kappa = 1/2 plateau?  junction_angle: a 10, W 100, L 2 um, mu_C 0.7, mu_S 1, S/N bond tc, probe tau.
+# theta and pi/2 - theta are the same junction (a pi spin rotation about (1,1,0) swaps the Rashba and Dresselhaus terms
+# and the field follows; cell 1 checks 0.35 pi = 0.15 pi), so theta runs over 0 .. pi/4.
+#   1. MECHANISM (cross-section, phi = pi).  The two middle BdG bands e_- <= e_+ (eigenvalues n/2 and n/2 + 1 of n)
+#      split into the tilt t(k) = (e_+ + e_-)/2 (odd in k by particle-hole symmetry) and the half-gap g(k) = (e_+ - e_-)/2.
+#      min_k (g - |t|) is the gap over all k when positive; negative = the pair overlaps zero (gapless).  vs theta
+#      (E_Z 0.6, tc 0.5 / 1), vs a rotation of the field off theta_z_optimal (0.15 pi), vs E_Z (0.15 pi, tc 0.75).
+#   1b. the same cases refined in k (gap_refined + 401 k within +-4e-4 /nm of its minimum): a zero crossing can be
+#      ~1e-4 /nm wide, below cell 1's step, so cell 1's min (g - |t|) can read gapped where the pair crosses zero.
+#   2. BULK vs theta: Q, Delta_top (refined) along E_Z at phi = pi for tc 0.5 / 0.75 / 1; the (phi, E_Z) map at tc 1 on
+#      half the [tuning] grid (E_Z 0.1 x 16 phases); xi_M at phi = pi, tc 1, only where gapped (the [leads] TRAP).
+#   3. TRANSPORT vs theta (tc 1, tau 0.5): kappa, G, det r on the [tuning] grid (theta 0 and 0.15 pi ARE the [tuning]
+#      R16 / mixed maps); plateau points = plateau_ok (|kappa - 1/2| < 0.03, |G| < 0.1 kappa, 2M within 0.01) inside
+#      gapped Q = -1 (bulk map, nearest point); then the [plateau] stage-1 fine grid (E_Z +- 0.1 step 0.01 x 241 phases)
+#      around each angle's longest coarse phase run, with Q and Delta_top on its two longest lines (every 4th phase).
+#   4. ROTATING THE FIELD at theta 0.15 pi (theta is fixed by the material and the gates; the field direction is free):
+#      phi = pi lines for rotations ROT x tc 0.5 / 0.75 / 1, the tc 1 (phi, E_Z) map for ROT_MAPS, and the coarse
+#      transport map at the rotation with the larger gapped area.
+
+# %% [angle] --- PARAMETERS ---
+ANG = (0.0, 0.05, 0.10, 0.15, 0.20, 0.25)                           # theta / pi
+ANG_T = ANG[:-1]                                                    # maps, xi_M, transport (0.25 pi: see cell 1)
+TCS_A = (0.5, 0.75, 1.0)
+TAU_A = 0.5
+ANGLE_WORKERS = 6                                                   # as DECK_WORKERS
+GAPLESS_MEV = 1e-5                                                  # Delta_top < 0.01 ueV = gapless ([deck] 4)
+KS_A = np.linspace(0.0, 0.08, 161)                                  # 1/nm (k_F ~ 0.03); t odd, g even: k >= 0 suffices
+DTHZ = (-0.1, -0.06, -0.03, -0.02, -0.015, -0.01, -0.005, 0.005, 0.015, 0.03, 0.06, 0.1)   # field rotation / pi
+EZ_TILT = np.round(np.arange(0.2, 1.4001, 0.1), 2)
+TILT_CASES = (tuple((th, tc, 0.6, 0.0) for tc in (0.5, 1.0) for th in ANG + (0.35,))
+              + tuple((0.15, tc, 0.6, d) for tc in (0.5, 1.0) for d in DTHZ)
+              + tuple((0.15, 0.75, float(e), 0.0) for e in EZ_TILT))
+LINE_CASES = tuple((th, tc) for th in ANG for tc in TCS_A) + ((0.35, 1.0),)
+EZ_AQ, PHI_AQ = EZ_TU[::2], PHI_TU[::2]                              # E_Z 0.1 x 16 phases = the [tuning] grid halved
+EZ_XI = np.round(np.arange(0.1, 1.3001, 0.1), 2)
+PHI_FQ = PHI_F[::4]                                                 # Q, Delta_top on the fine lines: every 4th phase
+_IE = np.abs(EZ_TU[:, None] - EZ_AQ[None, :]).argmin(1)             # nearest bulk-map point of each transport point
+_IP = np.abs(PHI_TU[:, None] - PHI_AQ[None, :]).argmin(1)
+_JF = np.abs(PHI_F[:, None] - PHI_FQ[None, :]).argmin(1)
+TH_COL = dict(zip(ANG, ('#86b6ef', '#5598e7', '#2a78d6', '#1c5cab', '#104281', '#0d366b')))   # sequential blue ramp
+TC_COL = dict(zip(TCS_A, ('#2a78d6', '#eb6834', '#1baf7a')))        # first three categorical slots
+GAPLESS_C, TRIV_C = '#f5c9b3', '#e4e3df'                            # as slides_nov.slide9
+
+
+def junction_angle(theta, tc=1.0, tau=TAU_A, L=2000.0, dthz=0.0):
+    """The thesis junction with the SOC at angle theta (units of pi), S/N bond tc, probe bond tau, the field rotated by
+    dthz (units of pi) off theta_z_optimal + pi.  theta 0.15, tc 1 = study_tuning.junction('mixed', 0.7, tau, L);
+    theta 0 = junction('R16', ...)."""
+    al, be = st.mixed_soc(16.0, theta * np.pi)
+    q = st.replace(st.case(100.0, L=L, alpha=al, beta=be, a=10.0), tc=tc, mu_C=0.7, tc_barr_transport=tau)
+    q.theta_z = q.theta_z + dthz * np.pi
+    return q
+
+
+def middle_pair(p, n_S, k):
+    """The two middle eigenvalues (n/2 and n/2 + 1 of n, ascending) of H_cross(p, k), units of t (banded solver)."""
+    from scipy.linalg import eigvals_banded
+    H = st.H_cross(p, k, n_S)
+    n = len(H)
+    ab = np.zeros((8, n), complex)
+    for i in range(8):
+        ab[i, :n - i] = np.diagonal(H, -i)
+    return eigvals_banded(ab, lower=True, select='i', select_range=(n // 2 - 1, n // 2))
+
+
+def tilt_case(i):
+    """TILT_CASES[i] = (theta, tc, E_Z, field rotation): [t(k), g(k)] in ueV on KS_A at phi = pi, shape (len(KS_A), 2)."""
+    th, tc, E_Z, d = TILT_CASES[int(i)]
+    q = junction_angle(th, tc, dthz=d)
+    p, n_S = q.params(E_Z=float(E_Z), phi=np.pi), st.n_S_of(q)
+    E = np.array([middle_pair(p, n_S, k * q.a) for k in KS_A]) * q.t * 1e3
+    return np.c_[E.mean(1), (E[:, 1] - E[:, 0]) / 2]
+
+
+def line_point(i, E_Z):
+    """topo_point at phi = pi for LINE_CASES[i] = (theta, tc): [Q, Delta_top (meV; NaN if Q = +1), k of it (1/nm)]."""
+    th, tc = LINE_CASES[int(i)]
+    return topo_point(junction_angle(th, tc), E_Z)
+
+
+def map_point(i, E_Z, phi):
+    """topo_point on the (phi, E_Z) map, theta ANG_T[i], tc 1."""
+    return topo_point(junction_angle(ANG_T[int(i)]), E_Z, phi=phi)
+
+
+def xi_angle_point(i, E_Z):
+    """[Q, Delta_top (meV), xi_M (nm), k_osc (1/nm)] at phi = pi, tc 1, theta ANG_T[i].  xi_M only where gapped: at
+    gapless points slowest_mode skips the propagating modes and returns a bulk-SC mode (the [leads] TRAP)."""
+    q = junction_angle(ANG_T[int(i)])
+    p, n_S = q.params(E_Z=float(E_Z), phi=np.pi), st.n_S_of(q)
+    Q = st.invariant(p, n_S)
+    if Q > 0:
+        return np.array([Q, np.nan, np.nan, np.nan])
+    g = st.gap_refined(p, n_S, st.k_grid(q.a))[0] * q.t
+    if g < GAPLESS_MEV:
+        return np.array([Q, g, np.nan, np.nan])
+    lam = slowest_mode(p, n_S)
+    return np.array([Q, g, -q.a / np.log(np.abs(lam)), np.abs(np.angle(lam)) / q.a])
+
+
+def tr_angle(th):
+    """Coarse transport map (len(EZ_TU), len(PHI_TU), 5) at theta th, tc 1, tau TAU_A; 0 and 0.15 are [tuning] caches."""
+    name = {0.0: tr_name('R16', 0.7, TAU_A, 2000.0), 0.15: tr_name('mixed', 0.7, TAU_A, 2000.0)}.get(
+        th, f'scharf_absAngle_tr_th{th:g}_tau{TAU_A:g}')
+    return st.run_scan(partial(st.transport_phis, junction_angle(th), phis=PHI_TU), {'E_Z': EZ_TU}, name,
+                       n_workers=ANGLE_WORKERS, chunksize=1)
+
+
+def fine_angle(th, ez):
+    """[plateau] stage-1 fine grid at theta th: transport_phis on ez x PHI_F (theta 0.15: the [plateau] cache names)."""
+    if th == 0.15:
+        return fine_grid(0.7, TAU_A, 2000.0, ez, n_workers=ANGLE_WORKERS, chunksize=1)
+    return st.run_scan(partial(st.transport_phis, junction_angle(th), phis=PHI_F), {'E_Z': np.asarray(ez)},
+                       f'scharf_absAngle_fine_th{th:g}_EZ{ez[0]:g}-{ez[-1]:g}', n_workers=ANGLE_WORKERS, chunksize=1)
+
+
+def runs_of(x, m):
+    """Contiguous True runs of m on the grid x as 'lo-hi' (grid values), or 'none'."""
+    out, i = [], 0
+    while i < len(m):
+        if m[i]:
+            j = i
+            while j + 1 < len(m) and m[j + 1]:
+                j += 1
+            out.append(f"{x[i]:.2f}-{x[j]:.2f}")
+            i = j + 1
+        else:
+            i += 1
+    return ", ".join(out) or "none"
+
+
+def gapped_max(V_):
+    """Largest Delta_top (meV) on gapped Q = -1 points of a topo_point line, 0 if there are none."""
+    gp = (V_[:, 0] < 0) & (V_[:, 1] >= GAPLESS_MEV)
+    return float(np.max(V_[gp, 1])) if gp.any() else 0.0
+
+
+ROT = (-0.005, -0.01, -0.015)                                       # field rotations / pi for the phi = pi lines (cell 4)
+ROT_CASES = tuple((d, tc) for d in ROT for tc in TCS_A)
+ROT_MAPS = (-0.01, 0.01)                                            # rotations of the tc 1 (phi, E_Z) map (cell 4)
+ROT_COL = dict(zip((0.0,) + ROT, ('#0b0b0b', '#86b6ef', '#2a78d6', '#104281')))   # d = 0 ink, then a blue ramp
+
+
+def tilt_refine(i):
+    """TILT_CASES[i]: [Delta_top (ueV, gap_refined), its k (1/nm), overlap (ueV)], overlap = max (|t| - g) on 401 k within
+    +-4e-4 /nm of that k (> 0: the pair crosses zero).  Needed because the zero crossing can be ~1e-4 /nm wide, below the
+    KS_A step: tc 0.75, E_Z 1.2 overlaps by 0.27 ueV over 1e-4 /nm; alpha = beta has a linear node with t = 0."""
+    th, tc, E_Z, d = TILT_CASES[int(i)]
+    q = junction_angle(th, tc, dthz=d)
+    p, n_S = q.params(E_Z=float(E_Z), phi=np.pi), st.n_S_of(q)
+    g, k = st.gap_refined(p, n_S, st.k_grid(q.a))
+    E = np.array([middle_pair(p, n_S, kk) for kk in k + np.linspace(-4e-4, 4e-4, 401) * q.a]) * q.t * 1e3
+    return np.array([g * q.t * 1e3, k / q.a, np.max(np.abs(E.mean(1)) - (E[:, 1] - E[:, 0]) / 2)])
+
+
+KZ_A = np.linspace(0.018, 0.034, 161)                              # 1/nm: the outer dip, for figure A (a)
+ZOOM_CASES = ((0.0, 0.5), (0.15, 0.5))                              # (theta, tc) at E_Z 0.6, phi = pi
+
+
+def tilt_zoom(i):
+    """e_-, e_+ (ueV) on KZ_A for ZOOM_CASES[i] at E_Z 0.6, phi = pi: (len(KZ_A), 2)."""
+    th, tc = ZOOM_CASES[int(i)]
+    q = junction_angle(th, tc)
+    p, n_S = q.params(E_Z=0.6, phi=np.pi), st.n_S_of(q)
+    return np.array([middle_pair(p, n_S, k * q.a) for k in KZ_A]) * q.t * 1e3
+
+
+def rot_line_point(i, E_Z):
+    """topo_point at phi = pi, theta 0.15 pi, for ROT_CASES[i] = (field rotation / pi, tc)."""
+    d, tc = ROT_CASES[int(i)]
+    return topo_point(junction_angle(0.15, tc, dthz=d), E_Z)
+
+
+def rot_map_point(i, E_Z, phi):
+    """topo_point on the (phi, E_Z) map, theta 0.15 pi, tc 1, the field rotated by ROT_MAPS[i]."""
+    return topo_point(junction_angle(0.15, dthz=ROT_MAPS[int(i)]), E_Z, phi=phi)
+
+
+def map_stats(Q, g):
+    """(Q = -1 area, gapped area, gapless share of Q = -1, max Delta_top [ueV], mean over gapped [ueV]) of a (phi, E_Z)
+    map on PHI_AQ (the phi = 2 pi column, = phi 0, not double-counted)."""
+    gp = (Q < 0) & (g >= GAPLESS_MEV)
+    q_, gp_ = Q[:, :-1] < 0, gp[:, :-1]
+    return (q_.mean(), gp_.mean(), 1 - gp_.sum() / max(q_.sum(), 1), np.max(np.where(gp, g, 0)) * 1e3,
+            np.mean(g[gp]) * 1e3 if gp.any() else 0.0)
+
+
+# %% [angle] --- 1. MECHANISM: tilt and half-gap of the middle BdG pair ---
+if run_part('angle'):
+    TILT = st.run_scan(tilt_case, {'i': np.arange(len(TILT_CASES))}, 'scharf_absAngle_tilt',
+                       n_workers=ANGLE_WORKERS, chunksize=1)               # (n_cases, len(KS_A), 2), ueV
+    TSTAT = np.array([[np.abs(T[:, 0]).max(), T[:, 1].min(), np.min(T[:, 1] - np.abs(T[:, 0]))] for T in TILT])
+    TCASE = {c: n for n, c in enumerate(TILT_CASES)}
+    tst = lambda th, tc, e=0.6, d=0.0: TSTAT[TCASE[(th, tc, e, d)]]
+    print("\n  [angle] 1. phi = pi, E_Z 0.6: max |t|, min g, min (g - |t|) [ueV] on k 0-0.08 /nm (step 0.0005)")
+    for tc in (0.5, 1.0):
+        for th in ANG + (0.35,):
+            m, g, s = tst(th, tc)
+            print(f"    tc {tc:g}  theta {th:.2f} pi   {m:6.2f}   {g:6.2f}   {s:+7.2f}     t / t(0.10 pi) "
+                  f"{m / tst(0.10, tc)[0]:.3f} vs sin 4 theta / sin 0.4 pi {np.sin(4 * np.pi * th) / np.sin(0.4 * np.pi):+.3f};"
+                  f"  g / g(0) {g / tst(0.0, tc)[1]:.3f} vs cos 2 theta {np.cos(2 * np.pi * th):.3f}")
+    print("  theta 0.15 pi, E_Z 0.6, field rotated off theta_z_optimal by d [pi]: min (g - |t|) [ueV]")
+    for tc in (0.5, 1.0):
+        print(f"    tc {tc:g}: " + "  ".join(f"{d:+.3f}: {tst(0.15, tc, 0.6, d)[2]:+.1f}" for d in sorted(DTHZ + (0.0,))))
+    print("  theta 0.15 pi, tc 0.75, phi = pi:  E_Z   max |t|   min g   min (g - |t|) [ueV]")
+    for e in EZ_TILT:
+        m, g, s = tst(0.15, 0.75, float(e))
+        print(f"                                      {e:.1f}   {m:6.2f}   {g:6.2f}   {s:+7.2f}")
+
+
+# %% [angle] --- 1b. the signed gap refined in k ---
+if run_part('angle'):
+    TREF = st.run_scan(tilt_refine, {'i': np.arange(len(TILT_CASES))}, 'scharf_absAngle_tilt_ref',
+                       n_workers=ANGLE_WORKERS, chunksize=1)               # (n_cases, 3): Delta_top, its k, overlap
+    TZOOM = st.run_scan(tilt_zoom, {'i': np.arange(len(ZOOM_CASES))}, 'scharf_absAngle_tilt_zoom',
+                        n_workers=2, chunksize=1)                           # (2, len(KZ_A), 2): e_-, e_+ in ueV
+    # signed gap [ueV]: Delta_top where gapped, else minus the largest overlap |t| - g seen (fine or cell 1 grid); 0 = node
+    SG = np.where(TREF[:, 0] >= GAPLESS_MEV * 1e3, TREF[:, 0], -np.maximum(np.maximum(TREF[:, 2], -TSTAT[:, 2]), 0.0))
+    sg = lambda th, tc, e=0.6, d=0.0: SG[TCASE[(th, tc, e, d)]]
+    print("\n  [angle] 1b. signed gap refined in k [ueV] (Delta_top if >= 0.01 ueV, else -overlap; cell 1 value in brackets)")
+    for tc in (0.5, 1.0):
+        print(f"    E_Z 0.6, tc {tc:g}:  " + "  ".join(f"{th:.2f}: {sg(th, tc):+.2f} ({tst(th, tc)[2]:+.2f})"
+                                                       for th in ANG + (0.35,)))
+    for tc in (0.5, 1.0):
+        print(f"    theta 0.15, tc {tc:g}, rotation d:  " + "  ".join(
+            f"{d:+.3f}: {sg(0.15, tc, 0.6, d):+.2f}" for d in sorted(DTHZ + (0.0,))))
+    print("    theta 0.15, tc 0.75 vs E_Z:  " + "  ".join(f"{e:.1f}: {sg(0.15, 0.75, float(e)):+.2f} "
+                                                        f"({tst(0.15, 0.75, float(e))[2]:+.2f})" for e in EZ_TILT))
+    flip = [(c, TSTAT[n, 2], SG[n], TREF[n, 1]) for n, c in enumerate(TILT_CASES) if (TSTAT[n, 2] > 0) != (SG[n] > 0)]
+    print(f"    cell 1 grid and refined sign disagree on {len(flip)} of {len(TILT_CASES)} cases:")
+    for c, s0, s1, kk in flip:
+        print(f"      (theta, tc, E_Z, d) = {c}: grid {s0:+.2f} -> refined {s1:+.3f} ueV at k {kk:.5f} /nm")
+
+
+# %% [angle] --- 2. BULK vs theta: phi = pi lines, (phi, E_Z) maps at tc 1, xi_M ---
+if run_part('angle'):
+    LN = st.run_scan(line_point, {'i': np.arange(len(LINE_CASES)), 'E_Z': EZ_TU}, 'scharf_absAngle_lines',
+                     n_workers=ANGLE_WORKERS, chunksize=4)                # (n_lines, len(EZ_TU), 3)
+    LA = {c: LN[n] for n, c in enumerate(LINE_CASES)}
+    print("\n  [angle] 2. phi = pi:  theta  tc     Q = -1 at E_Z                gapped (>= 0.01 ueV) at E_Z    max Delta_top [ueV] (E_Z)")
+    for (th, tc), V_ in LA.items():
+        Qa, ga = V_[:, 0], V_[:, 1]
+        gp = (Qa < 0) & (ga >= GAPLESS_MEV)
+        j = int(np.argmax(np.where(gp, ga, -1)))
+        print(f"                       {th:.2f}  {tc:4g}   {runs_of(EZ_TU, Qa < 0):27s}  {runs_of(EZ_TU, gp):29s}  "
+              + (f"{ga[j] * 1e3:6.1f} ({EZ_TU[j]:.2f})" if gp.any() else "gapless"), flush=True)
+    MP = st.run_scan(map_point, {'i': np.arange(len(ANG_T)), 'E_Z': EZ_AQ, 'phi': PHI_AQ}, 'scharf_absAngle_map_tc1',
+                     n_workers=ANGLE_WORKERS, chunksize=4)                # (n_theta, 21, 16, 3)
+    MQ, MG = MP[..., 0], MP[..., 1]
+    MGP = (MQ < 0) & (MG >= GAPLESS_MEV)
+    print("  (phi, E_Z) map, tc 1 (E_Z 0-2 step 0.1, 15 phases; phi = 2 pi = 0 not double-counted):")
+    print("    theta   Q = -1 area   gapped area   gapless share of Q = -1   max Delta_top [ueV] (phi, E_Z)   mean over gapped")
+    for n, th in enumerate(ANG_T):
+        q_, gp_ = MQ[n][:, :-1] < 0, MGP[n][:, :-1]
+        a, b = np.unravel_index(np.argmax(np.where(MGP[n], MG[n], -1)), MG[n].shape)
+        print(f"    {th:.2f}    {q_.mean():6.1%}        {gp_.mean():6.1%}        {1 - gp_.sum() / max(q_.sum(), 1):6.1%}"
+              f"                   {MG[n][a, b] * 1e3:6.1f} ({PHI_AQ[b] / np.pi:.2f} pi, {EZ_AQ[a]:.1f})"
+              f"            {np.mean(MG[n][MGP[n]]) * 1e3 if MGP[n].any() else 0:6.1f}", flush=True)
+    XA = st.run_scan(xi_angle_point, {'i': np.arange(len(ANG_T)), 'E_Z': EZ_XI}, 'scharf_absAngle_xi',
+                     n_workers=ANGLE_WORKERS, chunksize=1)                # (n_theta, len(EZ_XI), 4)
+    print("  xi_M at phi = pi, tc 1 (gapped fields only):  theta   xi_M min..max [um]   max L/xi_M (L 2 um)   L/xi_M >= 3 at E_Z")
+    for n, th in enumerate(ANG_T):
+        xi = XA[n, :, 2]
+        ok = np.isfinite(xi)
+        print(f"                                               {th:.2f}    "
+              + (f"{np.nanmin(xi) / 1e3:.2f}..{np.nanmax(xi) / 1e3:.2f}            {2000 / np.nanmin(xi):5.2f}"
+                 f"                 {runs_of(EZ_XI, ok & (2000 / np.where(ok, xi, np.inf) >= 3))}" if ok.any() else "none gapped"))
+    OMa = st.run_scan(partial(osc_point, QM), {'E_Z': EZ}, 'scharf_absOM_modes_mixed_a10')
+    j15 = ANG_T.index(0.15)
+    dd = [abs(XA[j15, m, 2] / np.interp(e, EZ, OMa[:, 0]) - 1) for m, e in enumerate(EZ_XI)
+          if np.isfinite(XA[j15, m, 2]) and e >= EZ[0]]
+    print(f"  check: theta 0.15 xi_M vs the [oscillation] cache at the same fields: max deviation {max(dd) if dd else np.nan:.1e}")
+
+
+# %% [angle] --- 3. TRANSPORT vs theta (tc 1, tau 0.5, L 2 um) ---
+if run_part('angle'):
+    TRA = {th: tr_angle(th) for th in ANG_T}
+    DPHI_C = 2.0 / (len(PHI_TU) - 1)
+    print("\n  [angle] 3. coarse grid (E_Z 0.05 x 30 phases; bulk Q, Delta_top from the nearest map point):")
+    print("    theta   kappa > 0.25 (neutral)   plateau: all / in gapped Q=-1   max neutral kappa: all / in gapped Q=-1   "
+          "longest phase run in gapped Q=-1 [pi] (E_Z)   failed solves")
+    COARSE = {}
+    for n, th in enumerate(ANG_T):
+        tr = TRA[th]
+        k, G = tr[..., 0], tr[..., 1]
+        neu = np.abs(G) < 0.1 * np.maximum(k, 1e-12)
+        hot = (k > 0.25)[:, :-1]
+        gpd = MGP[n][np.ix_(_IE, _IP)]
+        P = plateau_ok(tr)
+        runs = np.array([periodic_run(P[i] & gpd[i])[0] * DPHI_C for i in range(len(EZ_TU))])
+        i_b = int(np.argmax(runs))
+        COARSE[th] = (P & gpd, i_b, runs[i_b])
+        print(f"    {th:.2f}    {hot.mean():6.1%} ({np.mean(neu[:, :-1][hot]) if hot.any() else np.nan:.2f})          "
+              f"{P[:, :-1].mean():5.1%} / {(P & gpd)[:, :-1].mean():5.1%}            {np.max(np.where(neu, k, 0)):.3f} / "
+              f"{np.max(np.where(neu & gpd, k, 0)):.3f}                       {runs[i_b]:.2f} ({EZ_TU[i_b]:.2f})"
+              f"                            {int(np.nansum(tr[..., 4]))}",
+              flush=True)
+    FINE, BESTF = {}, {}
+    print("  fine grids (E_Z +- 0.1 step 0.01 around the longest coarse run, 240 phases); Q and Delta_top every 4th phase:")
+    for th in ANG_T:
+        e0 = EZ_TU[COARSE[th][1]]
+        ez = np.round(np.arange(e0 - 0.10, e0 + 0.1001, 0.01), 3)
+        ez = ez[ez > 0]
+        FINE[th] = (ez, fine_angle(th, ez))
+        tr = FINE[th][1]
+        order = sorted(range(len(ez)), key=lambda i: -periodic_run(plateau_ok(tr[i]))[0])[:2]
+        best = (0.0, order[0], 0, None)
+        for i in order:
+            B = st.run_scan(partial(topo_point, junction_angle(th), float(ez[i])), {'phi': PHI_FQ},
+                            f'scharf_absAngle_Qline_th{th:g}_EZ{ez[i]:g}', n_workers=ANGLE_WORKERS, chunksize=2)
+            ok = (B[_JF, 0] < 0) & (B[_JF, 1] >= GAPLESS_MEV)
+            nr, s = periodic_run(plateau_ok(tr[i]) & ok)
+            print(f"    theta {th:.2f} pi, E_Z {ez[i]:.3f}: run {periodic_run(plateau_ok(tr[i]))[0] * DPHI:.3f} pi -> "
+                  f"{nr * DPHI:.3f} pi in gapped Q = -1 (of the phases: Q = +1 {np.mean(B[:-1, 0] > 0):.0%}, gapless "
+                  f"Q = -1 {np.mean((B[:-1, 0] < 0) & ~(B[:-1, 1] >= GAPLESS_MEV)):.0%})", flush=True)
+            if best[3] is None or nr * DPHI > best[0]:
+                best = (nr * DPHI, i, s, B)
+        BESTF[th] = best
+    print("    theta   best run [pi]   E_Z     kappa on it          max |G|   max 2M residual")
+    for th, (run, i, s, B) in BESTF.items():
+        ez, tr = FINE[th]
+        idx = (s + np.arange(int(round(run / DPHI)))) % (len(PHI_F) - 1)
+        if run > 0:
+            kk, GG, dr = tr[i, idx, 0], tr[i, idx, 1], tr[i, idx, 3]
+            print(f"    {th:.2f}    {run:.3f}           {ez[i]:.3f}   {kk.min():.3f}..{kk.max():.3f} ({kk.mean():.3f})"
+                  f"   {np.abs(GG).max():.3f}     {np.abs(kk - (1 - dr**2) / 2).max():.1e}")
+        else:
+            print(f"    {th:.2f}    0               --")
+
+
+# %% [angle] --- 3b. each angle's best line refined in E_Z (+-0.0075, step 0.0025, as [plateau] 4) ---
+# The run along phi is sensitive to the field on the 0.01 grid ([plateau]: 1.23 / 1.37 / 1.15 pi at 0.9225 / 0.930 /
+# 0.935), so the angles are compared at their refined best.  theta 0.15 reuses the [plateau] stage-3 cache.
+if run_part('angle'):
+    print("\n  [angle] 3b. best fine line refined in E_Z (run without the Q check; a longer line gets Q, Delta_top):")
+    BESTR = {}
+    for th in ANG_T:
+        run0, i0, s0, B0 = BESTF[th]
+        e_b = float(FINE[th][0][i0])
+        ez_r = np.round(e_b + np.arange(-0.0075, 0.00751, 0.0025), 4)
+        tr_r = fine_angle(th, ez_r)
+        runs_r = np.array([periodic_run(plateau_ok(tr_r[i]))[0] * DPHI for i in range(len(ez_r))])
+        BESTR[th] = (run0, e_b, s0, B0, FINE[th][1][i0])
+        for i_r in np.argsort(-runs_r):
+            if runs_r[i_r] <= BESTR[th][0] + 1e-9:
+                break
+            if abs(ez_r[i_r] - e_b) < 1e-9:
+                continue
+            B = st.run_scan(partial(topo_point, junction_angle(th), float(ez_r[i_r])), {'phi': PHI_FQ},
+                            f'scharf_absAngle_Qline_th{th:g}_EZ{ez_r[i_r]:g}', n_workers=ANGLE_WORKERS, chunksize=2)
+            ok = (B[_JF, 0] < 0) & (B[_JF, 1] >= GAPLESS_MEV)
+            nr, s = periodic_run(plateau_ok(tr_r[i_r]) & ok)
+            if nr * DPHI > BESTR[th][0] + 1e-9:
+                BESTR[th] = (nr * DPHI, float(ez_r[i_r]), s, B, tr_r[i_r])
+        print(f"    theta {th:.2f} pi: " + "  ".join(f"{e:.4f}: {r:.3f}" for e, r in zip(ez_r, runs_r))
+              + f"  -> best {BESTR[th][0]:.3f} pi at E_Z {BESTR[th][1]:.4f} (in gapped Q = -1)", flush=True)
+    print("    theta   best run [pi]   E_Z      kappa on it            max |G|   max 2M residual   det r on it")
+    for th, (run, e_b, s, B, trl) in BESTR.items():
+        if run <= 0:
+            print(f"    {th:.2f}    0               --")
+            continue
+        idx = (s + np.arange(int(round(run / DPHI)))) % (len(PHI_F) - 1)
+        kk, GG, dr = trl[idx, 0], trl[idx, 1], trl[idx, 3]
+        print(f"    {th:.2f}    {run:.3f}           {e_b:.4f}   {kk.min():.3f}..{kk.max():.3f} ({kk.mean():.3f})"
+              f"   {np.abs(GG).max():.3f}     {np.abs(kk - (1 - dr**2) / 2).max():.1e}           "
+              f"{dr.min():+.2f}..{dr.max():+.2f}")
+
+
+# %% [angle] --- 4. ROTATING THE FIELD at theta 0.15 pi ---
+if run_part('angle'):
+    RL = st.run_scan(rot_line_point, {'i': np.arange(len(ROT_CASES)), 'E_Z': EZ_TU}, 'scharf_absAngle_rotlines',
+                     n_workers=ANGLE_WORKERS, chunksize=4)                # (len(ROT_CASES), len(EZ_TU), 3)
+    RLA = {(0.0, tc): LA[(0.15, tc)] for tc in TCS_A}
+    RLA.update({c: RL[n] for n, c in enumerate(ROT_CASES)})
+    print("\n  [angle] 4. theta 0.15 pi, phi = pi, field rotated by d [pi] off the optimum:")
+    print("    tc     d        Q = -1 at E_Z                gapped (>= 0.01 ueV) at E_Z    max Delta_top [ueV] (E_Z)")
+    for tc in TCS_A:
+        for d in (0.0,) + ROT:
+            V_ = RLA[(d, tc)]
+            Qa, ga = V_[:, 0], V_[:, 1]
+            gp = (Qa < 0) & (ga >= GAPLESS_MEV)
+            j = int(np.argmax(np.where(gp, ga, -1)))
+            print(f"    {tc:4g}  {d:+.3f}   {runs_of(EZ_TU, Qa < 0):27s}  {runs_of(EZ_TU, gp):29s}  "
+                  + (f"{ga[j] * 1e3:6.1f} ({EZ_TU[j]:.2f})" if gp.any() else "gapless"), flush=True)
+    RMP = st.run_scan(rot_map_point, {'i': np.arange(len(ROT_MAPS)), 'E_Z': EZ_AQ, 'phi': PHI_AQ},
+                      'scharf_absAngle_rotmap_tc1', n_workers=ANGLE_WORKERS, chunksize=4)   # (len(ROT_MAPS), 21, 16, 3)
+    RMAP = {0.0: MP[ANG_T.index(0.15)]}
+    RMAP.update({d: RMP[n] for n, d in enumerate(ROT_MAPS)})
+    RSTAT = {d: map_stats(M[..., 0], M[..., 1]) for d, M in sorted(RMAP.items())}
+    print("  (phi, E_Z) map, tc 1:  d        Q = -1 area   gapped area   gapless share of Q = -1   max Delta_top   "
+          "mean over gapped [ueV]")
+    for d, (qa, ga, gs, gm, gmean) in RSTAT.items():
+        print(f"                         {d:+.3f}   {qa:6.1%}        {ga:6.1%}        {gs:6.1%}                   "
+              f"{gm:6.1f}          {gmean:6.1f}")
+    D_TR = max(ROT_MAPS, key=lambda d: RSTAT[d][1])
+    TR_ROT = st.run_scan(partial(st.transport_phis, junction_angle(0.15, dthz=D_TR), phis=PHI_TU), {'E_Z': EZ_TU},
+                         f'scharf_absAngle_tr_th0.15_d{D_TR:g}_tau{TAU_A:g}', n_workers=ANGLE_WORKERS, chunksize=1)
+    print(f"  coarse transport (tau {TAU_A:g}) at d = {D_TR:+.3f} (the larger gapped area) vs d = 0:")
+    print("    d        kappa > 0.25 (neutral)   plateau: all / in gapped Q=-1   max neutral kappa in gapped Q=-1   "
+          "longest run [pi] (E_Z)   failed solves")
+    ROT_COARSE = {}
+    for d, tr in ((0.0, TRA[0.15]), (D_TR, TR_ROT)):
+        M = RMAP[d]
+        gpd = ((M[..., 0] < 0) & (M[..., 1] >= GAPLESS_MEV))[np.ix_(_IE, _IP)]
+        k, G = tr[..., 0], tr[..., 1]
+        neu = np.abs(G) < 0.1 * np.maximum(k, 1e-12)
+        hot = (k > 0.25)[:, :-1]
+        P = plateau_ok(tr)
+        runs = np.array([periodic_run(P[i] & gpd[i])[0] * DPHI_C for i in range(len(EZ_TU))])
+        i_b = int(np.argmax(runs))
+        ROT_COARSE[d] = (P & gpd, i_b, runs[i_b])
+        print(f"    {d:+.3f}   {hot.mean():6.1%} ({np.mean(neu[:, :-1][hot]) if hot.any() else np.nan:.2f})          "
+              f"{P[:, :-1].mean():5.1%} / {(P & gpd)[:, :-1].mean():5.1%}            {np.max(np.where(neu & gpd, k, 0)):.3f}"
+              f"                              {runs[i_b]:.2f} ({EZ_TU[i_b]:.2f})              "
+              f"{int(np.nansum(tr[..., 4]))}", flush=True)
+
+
+# %% [angle] --- SUMMARY TABLE ---
+if run_part('angle'):
+    print("\n  [angle] SUMMARY (tc 1, phi = pi unless stated):")
+    print("    theta   max Delta_top [ueV]   gapped area (map)   max L/xi_M   plateau % in gapped Q=-1 (coarse)   best run [pi] "
+          "(refined E_Z)")
+    for n, th in enumerate(ANG_T):
+        xi = XA[n, :, 2]
+        print(f"    {th:.2f}    {gapped_max(LA[(th, 1.0)]) * 1e3:6.1f}                {MGP[n][:, :-1].mean():6.1%}"
+              f"              {2000 / np.nanmin(xi) if np.isfinite(xi).any() else np.nan:5.2f}        "
+              f"{COARSE[th][0][:, :-1].mean():5.1%}                               {BESTR[th][0]:.3f} "
+              f"({BESTR[th][1]:.4f})")
+    print(f"    0.15 with the field rotated: max Delta_top at phi = pi " + ", ".join(
+        f"{gapped_max(RLA[(d, 1.0)]) * 1e3:.1f} (d {d:+.3f})" for d in ROT) + f";  d {D_TR:+.3f}: gapped area "
+        f"{RSTAT[D_TR][1]:.1%}, plateau in gapped Q=-1 {ROT_COARSE[D_TR][0][:, :-1].mean():.1%}")
+
+
+# %% [angle] --- FIGURES ---
+if run_part('angle'):
+    from matplotlib.colors import ListedColormap
+    plt.rcParams.update({'axes.spines.top': False, 'axes.spines.right': False})
+    INK2 = '#52514e'
+    # --- A. the mechanism ---
+    fig, axs = plt.subplots(2, 2, figsize=(12, 9), layout='constrained')
+    a = axs[0, 0]
+    for n, (th, tc) in enumerate(ZOOM_CASES):
+        lab, ls = (r'pure Rashba ($\theta$ = 0)', '--') if th == 0 else (rf'mixed ($\theta$ = {th:g}$\pi$)', '-')
+        a.plot(KZ_A, TZOOM[n, :, 1], ls, color=TH_COL[th], lw=2, label=lab)
+        a.plot(KZ_A, TZOOM[n, :, 0], ls, color=TH_COL[th], lw=2)
+    a.axhline(0, color=INK2, lw=0.8)
+    a.set_xlim(KZ_A[0], KZ_A[-1])
+    a.set_ylim(-40, 40)
+    a.set_xlabel(r'$k$ along the junction [1/nm]  ($k < 0$ by symmetry: $e_\pm(-k) = -e_\mp(k)$)')
+    a.set_ylabel(r'middle BdG pair $e_\pm(k)$ [$\mu$eV]')
+    a.set_title(r'(a) $t_{SN}$ 0.5, $E_Z$ 0.6 meV, $\phi = \pi$: the mixed pair is tilted across zero', fontsize=10)
+    a.legend(frameon=False, fontsize=9)
+    a = axs[0, 1]
+    x = np.linspace(0, 0.25, 101)
+    for tc in (0.5, 1.0):
+        S = np.array([tst(th, tc) for th in ANG])
+        a.plot(ANG, S[:, 1], 's:', color=TC_COL[tc], ms=7, lw=1.5, label=rf'min half-gap $g$, $t_{{SN}}$ {tc:g}')
+        a.plot(ANG, S[:, 0], '^--', color=TC_COL[tc], ms=7, lw=1.5, label=rf'max tilt $|t|$, $t_{{SN}}$ {tc:g}')
+        a.plot(ANG, [sg(th, tc) for th in ANG], 'o-', color=TC_COL[tc], ms=8, lw=2,
+               label=rf'signed gap (refined), $t_{{SN}}$ {tc:g}')
+        a.plot(x, S[0, 1] * np.cos(2 * np.pi * x), color='0.6', lw=0.8)
+        a.plot(x, tst(0.10, tc)[0] * np.sin(4 * np.pi * x) / np.sin(0.4 * np.pi), color='0.6', lw=0.8)
+    a.axhline(0, color=INK2, lw=0.8)
+    a.set_xlabel(r'SOC angle $\theta/\pi$  ($\alpha = 16\cos\theta$, $\beta = 16\sin\theta$ meV nm)')
+    a.set_ylabel(r'[$\mu$eV]')
+    a.set_title(r'(b) $E_Z$ 0.6, $\phi = \pi$; grey: $g(0)\cos 2\theta$ and $\propto \sin 4\theta$', fontsize=10)
+    a.legend(frameon=False, fontsize=8, ncol=3, loc='upper center', bbox_to_anchor=(0.5, -0.14))
+    a = axs[1, 0]
+    ds = np.array(sorted(DTHZ + (0.0,)))
+    for tc in (0.5, 1.0):
+        a.plot(ds, [sg(0.15, tc, 0.6, d) for d in ds], 'o-', color=TC_COL[tc], ms=7, lw=2, label=rf'$t_{{SN}}$ {tc:g}')
+    a.axhline(0, color=INK2, lw=0.8)
+    a.axvline(0, color='0.6', lw=0.8, ls=':')
+    a.set_xlabel(r'field rotated off the optimum [$\pi$]')
+    a.set_ylabel(r'signed gap, refined [$\mu$eV]  (< 0: gapless)')
+    a.set_title(r'(c) $\theta$ = 0.15$\pi$, $E_Z$ 0.6: rotating the field', fontsize=10)
+    a.legend(frameon=False, fontsize=9)
+    a = axs[1, 1]
+    S = np.array([tst(0.15, 0.75, float(e)) for e in EZ_TILT])
+    a.plot(EZ_TILT, S[:, 1], 's:', color=TC_COL[0.75], ms=7, lw=1.5, label='min half-gap $g$')
+    a.plot(EZ_TILT, S[:, 0], '^--', color=TC_COL[0.75], ms=7, lw=1.5, label='max tilt $|t|$')
+    a.plot(EZ_TILT, [sg(0.15, 0.75, float(e)) for e in EZ_TILT], 'o-', color=TC_COL[0.75], ms=8, lw=2,
+           label='signed gap (refined)')
+    V_ = LA[(0.15, 0.75)]
+    a.plot(EZ_TU, np.where(V_[:, 0] < 0, V_[:, 1] * 1e3, np.nan), '-', color=INK2, lw=1,
+           label=r'$\Delta_{top}$ (refined, cell 2)')
+    a.axhline(0, color=INK2, lw=0.8)
+    a.set_xlim(0.15, 1.45)
+    a.set_xlabel(r'$E_Z$ [meV]')
+    a.set_ylabel(r'[$\mu$eV]')
+    a.set_title(r'(d) $\theta$ = 0.15$\pi$, $t_{SN}$ 0.75, $\phi = \pi$: the gap closes by tilt', fontsize=10)
+    a.legend(frameon=False, fontsize=9)
+    fig.suptitle(r'Why the mixed SOC is gapless inside $Q = -1$: the middle BdG pair $e_\pm = t \pm g$ (a 10, W 100, '
+                 r'$\mu_C$ 0.7)', fontsize=11)
+    st.save_fig(fig, 'angle_mechanism', dpi=150)
+    plt.close(fig)
+
+    # --- B. bulk along E_Z at phi = pi, and xi_M ---
+    fig, axs = plt.subplots(2, 2, figsize=(12, 9), layout='constrained')
+    for a, tc in zip((axs[0, 0], axs[0, 1], axs[1, 0]), (1.0, 0.75, 0.5)):
+        for th in ANG:
+            V_ = LA[(th, tc)]
+            gp = (V_[:, 0] < 0) & (V_[:, 1] >= GAPLESS_MEV)
+            gl = (V_[:, 0] < 0) & ~gp
+            a.plot(EZ_TU, np.where(gp, V_[:, 1] * 1e3, np.nan), 'o-', color=TH_COL[th], ms=4, lw=2,
+                   label=rf'{th:.2f}$\pi$')
+            a.plot(EZ_TU[gl], np.zeros(gl.sum()), 'x', color=TH_COL[th], ms=8, mew=2)
+        a.set_xlabel(r'$E_Z$ [meV]')
+        a.set_ylabel(r'$\Delta_{top}$ [$\mu$eV]')
+        a.set_title(rf'$t_{{SN}}$ = {tc:g}, $\phi = \pi$  (x at 0: $Q = -1$ but gapless; no point: trivial)', fontsize=10)
+        a.set_ylim(bottom=-3)
+    axs[0, 0].legend(frameon=False, fontsize=9, title=r'$\theta$', ncol=2, loc='upper left')
+    a = axs[1, 1]
+    for n, th in enumerate(ANG_T):
+        a.semilogy(EZ_XI, XA[n, :, 2] / 1e3, 'o-', color=TH_COL[th], ms=6, lw=2, label=rf'{th:.2f}$\pi$')
+    a.axhline(2.0, color=INK2, lw=0.8, ls='--')
+    a.text(0.12, 2.15, r'$L$ = 2 $\mu$m', color=INK2, fontsize=10)
+    a.set_xlabel(r'$E_Z$ [meV]')
+    a.set_ylabel(r'$\xi_M$ [$\mu$m]')
+    a.set_title(r'$\xi_M$ at $\phi = \pi$, $t_{SN}$ 1 (gapped fields only)', fontsize=10)
+    a.legend(frameon=False, fontsize=9, title=r'$\theta$')
+    fig.suptitle(r'Topological protection vs SOC angle $\theta$ (amplitude 16 meV nm; a 10, W 100, $\mu_C$ 0.7)', fontsize=11)
+    st.save_fig(fig, 'angle_bulk', dpi=150)
+    plt.close(fig)
+
+    # --- C. (phi, E_Z) maps of Delta_top at tc 1 ---
+    fig, axs = plt.subplots(1, len(ANG_T), figsize=(3.3 * len(ANG_T) + 1.2, 4.4), sharey=True, layout='constrained')
+    vmax = np.nanmax(np.where(MGP, MG, np.nan)) * 1e3
+    for n, (a, th) in enumerate(zip(axs, ANG_T)):
+        a.pcolormesh(PHI_AQ / np.pi, EZ_AQ, np.where(MQ[n] > 0, 1.0, np.nan), shading='nearest',
+                     cmap=ListedColormap([TRIV_C]), vmin=0, vmax=1)
+        a.pcolormesh(PHI_AQ / np.pi, EZ_AQ, np.where((MQ[n] < 0) & ~MGP[n], 1.0, np.nan), shading='nearest',
+                     cmap=ListedColormap([GAPLESS_C]), vmin=0, vmax=1)
+        im = a.pcolormesh(PHI_AQ / np.pi, EZ_AQ, np.where(MGP[n], MG[n] * 1e3, np.nan), shading='nearest',
+                          cmap='Blues', vmin=0, vmax=vmax)
+        a.set_title(rf'$\theta$ = {th:.2f}$\pi$' + '\n' + f'gapped {MGP[n][:, :-1].mean():.0%}, '
+                    f'Q = -1 {np.mean(MQ[n][:, :-1] < 0):.0%}', fontsize=10)
+        a.set_xlabel(r'$\phi/\pi$')
+    axs[0].set_ylabel(r'$E_Z$ [meV]')
+    fig.colorbar(im, ax=axs, label=r'$\Delta_{top}$ [$\mu$eV]  (grey: trivial; orange: $Q = -1$ but gapless)')
+    fig.suptitle(r'$\Delta_{top}$ on the ($\phi$, $E_Z$) plane vs SOC angle ($t_{SN}$ 1)', fontsize=11)
+    st.save_fig(fig, 'angle_maps', dpi=150)
+    plt.close(fig)
+
+    # --- D. transport: coarse kappa maps and the best fine phase line ---
+    fig, axs = plt.subplots(2, len(ANG_T), figsize=(3.3 * len(ANG_T) + 1.2, 8.4), layout='constrained')
+    for n, th in enumerate(ANG_T):
+        a = axs[0, n]
+        im = a.pcolormesh(PHI_TU / np.pi, EZ_TU, TRA[th][..., 0], shading='nearest', cmap='viridis', vmin=0, vmax=1,
+                          rasterized=True)
+        if MGP[n].any() and not MGP[n].all():
+            a.contour(PHI_AQ / np.pi, EZ_AQ, MGP[n].astype(float), levels=[0.5], colors='w', linewidths=1.2,
+                      linestyles='--')
+        Pg = COARSE[th][0]
+        ii, jj = np.nonzero(Pg)
+        a.plot(PHI_TU[jj] / np.pi, EZ_TU[ii], 'o', ms=4, mfc='none', mec='#e34948', mew=1.2)
+        a.set_title(rf'$\theta$ = {th:.2f}$\pi$: plateau {Pg[:, :-1].mean():.1%}', fontsize=10)
+        a.set_xlabel(r'$\phi/\pi$')
+        if n == 0:
+            a.set_ylabel(r'$E_Z$ [meV]')
+        a = axs[1, n]
+        run, e_b, s, B, trl = BESTR[th]
+        a.plot(PHI_F / np.pi, trl[:, 0], '-', color='#2a78d6', lw=2, label=r'$\kappa/\kappa_0$')
+        a.plot(PHI_F / np.pi, np.abs(trl[:, 1]), '-', color='#eb6834', lw=1.5, label=r'$|G|/G_0$')
+        bad = ~((B[:, 0] < 0) & (B[:, 1] >= GAPLESS_MEV))
+        a.plot(PHI_FQ[bad] / np.pi, np.full(bad.sum(), -0.04), 's', color=GAPLESS_C, ms=4)
+        a.axhspan(0.47, 0.53, color='0.88', zorder=0)
+        a.set_ylim(-0.08, 1.0)
+        a.set_title(rf'best line $E_Z$ {e_b:.4f}: run {run:.2f}$\pi$', fontsize=10)
+        a.set_xlabel(r'$\phi/\pi$')
+        if n == 0:
+            a.set_ylabel('transport (squares: not gapped Q = -1)')
+            a.legend(frameon=False, fontsize=9)
+    fig.colorbar(im, ax=axs[0], label=r'$\kappa/\kappa_0$')
+    fig.suptitle(r'$\kappa$ vs SOC angle ($t_{SN}$ 1, $\tau$ 0.5, L 2 $\mu$m; red: plateau points in gapped $Q = -1$, '
+                 r'white dashed: edge of gapped $Q = -1$)', fontsize=11)
+    st.save_fig(fig, 'angle_transport', dpi=150)
+    plt.close(fig)
+
+    # --- F. rotating the field at theta 0.15 pi ---
+    fig, axs = plt.subplots(2, 4, figsize=(17, 8.6), layout='constrained')
+    for a, tc in zip(axs[0, :3], TCS_A):
+        for d in (0.0,) + ROT:
+            V_ = RLA[(d, tc)]
+            gp = (V_[:, 0] < 0) & (V_[:, 1] >= GAPLESS_MEV)
+            gl = (V_[:, 0] < 0) & ~gp
+            a.plot(EZ_TU, np.where(gp, V_[:, 1] * 1e3, np.nan), 'o-', color=ROT_COL[d], ms=4, lw=2 if d == 0 else 1.5,
+                   label=f'{d:+.3f}' if d else '0 (optimum)')
+            a.plot(EZ_TU[gl], np.zeros(gl.sum()), 'x', color=ROT_COL[d], ms=8, mew=2)
+        a.set_xlabel(r'$E_Z$ [meV]')
+        a.set_ylabel(r'$\Delta_{top}$ at $\phi = \pi$ [$\mu$eV]')
+        a.set_title(rf'$t_{{SN}}$ {tc:g}  (x at 0: $Q = -1$ but gapless)', fontsize=10)
+        a.set_ylim(bottom=-3)
+    axs[0, 0].legend(frameon=False, fontsize=9, title=r'rotation $d$ [$\pi$]')
+    vmax = max(np.nanmax(np.where((M[..., 0] < 0) & (M[..., 1] >= GAPLESS_MEV), M[..., 1], np.nan)) for M in RMAP.values()) * 1e3
+    for a, d in zip(axs[1, :3], sorted(RMAP)):
+        M = RMAP[d]
+        gp = (M[..., 0] < 0) & (M[..., 1] >= GAPLESS_MEV)
+        a.pcolormesh(PHI_AQ / np.pi, EZ_AQ, np.where(M[..., 0] > 0, 1.0, np.nan), shading='nearest',
+                     cmap=ListedColormap([TRIV_C]), vmin=0, vmax=1)
+        a.pcolormesh(PHI_AQ / np.pi, EZ_AQ, np.where((M[..., 0] < 0) & ~gp, 1.0, np.nan), shading='nearest',
+                     cmap=ListedColormap([GAPLESS_C]), vmin=0, vmax=1)
+        imd = a.pcolormesh(PHI_AQ / np.pi, EZ_AQ, np.where(gp, M[..., 1] * 1e3, np.nan), shading='nearest',
+                           cmap='Blues', vmin=0, vmax=vmax)
+        qa, ga, gs = RSTAT[d][:3]
+        a.set_title(rf'$t_{{SN}}$ 1, $d$ = {d:+.3f}$\pi$: gapped {ga:.0%}, gapless share {gs:.0%}', fontsize=10)
+        a.set_xlabel(r'$\phi/\pi$')
+        a.set_ylabel(r'$E_Z$ [meV]')
+        a.set_ylim(-0.05, 1.55)
+    fig.colorbar(imd, ax=axs[1, :3], label=r'$\Delta_{top}$ [$\mu$eV]  (grey: trivial; orange: $Q = -1$ but gapless)',
+                 shrink=0.9)
+    for a, d, tr in ((axs[0, 3], 0.0, TRA[0.15]), (axs[1, 3], D_TR, TR_ROT)):
+        imk = a.pcolormesh(PHI_TU / np.pi, EZ_TU, tr[..., 0], shading='nearest', cmap='viridis', vmin=0, vmax=1,
+                           rasterized=True)
+        ii, jj = np.nonzero(ROT_COARSE[d][0])
+        a.plot(PHI_TU[jj] / np.pi, EZ_TU[ii], 'o', ms=4, mfc='none', mec='#e34948', mew=1.2)
+        a.set_title(rf'$\kappa/\kappa_0$, $\tau$ {TAU_A:g}, $d$ = {d:+.3f}$\pi$: plateau '
+                    f'{ROT_COARSE[d][0][:, :-1].mean():.1%}', fontsize=10)
+        a.set_xlabel(r'$\phi/\pi$')
+        a.set_ylabel(r'$E_Z$ [meV]')
+        fig.colorbar(imk, ax=a, shrink=0.9)
+    fig.suptitle(r'Rotating the in-plane field at $\theta$ = 0.15$\pi$ ($d$ = rotation off $\theta_z$ optimal; red: plateau '
+                 r'points in gapped $Q = -1$)', fontsize=11)
+    st.save_fig(fig, 'angle_rotation', dpi=150)
+    plt.close(fig)
+
+    # --- E. summary vs theta ---
+    fig, axs = plt.subplots(1, 4, figsize=(16, 4.2), layout='constrained')
+    for tc in TCS_A:
+        axs[0].plot(ANG, [gapped_max(LA[(th, tc)]) * 1e3 for th in ANG], 'o-', color=TC_COL[tc], ms=8, lw=2,
+                    label=rf'$t_{{SN}}$ {tc:g}')
+    axs[0].set_ylabel(r'max $\Delta_{top}$ at $\phi = \pi$ [$\mu$eV]')
+    axs[0].legend(frameon=False, fontsize=9)
+    axs[1].plot(ANG_T, [np.mean(MQ[n][:, :-1] < 0) * 100 for n in range(len(ANG_T))], 's--', color=INK2, ms=7, lw=1.5,
+                label='$Q = -1$')
+    axs[1].plot(ANG_T, [MGP[n][:, :-1].mean() * 100 for n in range(len(ANG_T))], 'o-', color='#2a78d6', ms=8, lw=2,
+                label='gapped $Q = -1$')
+    axs[1].set_ylabel(r'share of the ($\phi$, $E_Z$) map [%]  ($t_{SN}$ 1)')
+    axs[1].legend(frameon=False, fontsize=9)
+    axs[2].plot(ANG_T, [2000 / np.nanmin(XA[n, :, 2]) if np.isfinite(XA[n, :, 2]).any() else np.nan
+                        for n in range(len(ANG_T))], 'o-', color='#2a78d6', ms=8, lw=2)
+    axs[2].axhline(3, color=INK2, lw=0.8, ls='--')
+    axs[2].set_ylabel(r'max $L/\xi_M$ at $\phi = \pi$ (L 2 $\mu$m, $t_{SN}$ 1)')
+    axs[3].plot(ANG_T, [BESTF[th][0] for th in ANG_T], 's:', color=INK2, ms=6, lw=1, label=r'$E_Z$ step 0.01')
+    axs[3].plot(ANG_T, [BESTR[th][0] for th in ANG_T], 'o-', color='#2a78d6', ms=8, lw=2, label='refined (0.0025)')
+    axs[3].legend(frameon=False, fontsize=9)
+    axs[3].set_ylabel(r'longest $\kappa = 1/2$ phase run [$\pi$]  ($\tau$ 0.5)')
+    for a in axs:
+        a.set_xlabel(r'SOC angle $\theta/\pi$')
+        a.set_ylim(bottom=0)
+    fig.suptitle(r'SOC angle: protection and the $\kappa = 1/2$ plateau ($\theta$ = 0: pure Rashba; 0.15$\pi$: thesis case)',
+                 fontsize=11)
+    st.save_fig(fig, 'angle_summary', dpi=150)
+    plt.close(fig)
+    print("figures: plots/angle_mechanism.png, angle_bulk.png, angle_maps.png, angle_transport.png, angle_rotation.png, "
+          "angle_summary.png", flush=True)

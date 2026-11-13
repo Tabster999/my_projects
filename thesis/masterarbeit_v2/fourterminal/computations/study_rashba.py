@@ -4,6 +4,7 @@ T, transition, SOC shift, Fermi velocities, lattice constant.
 
 PARTS (one per former script; the cells of each part are tagged [part]):
   W            (was study_W.py)  STUDY: what the junction width W does to the Andreev spectrum and the topological phase.
+  wbands       (2026-11-11)  FIGURE: bands E(k) vs W, mixed SOC -- why a wider junction loses the gap at finite k.
   delta        (was study_delta.py)  STUDY: more ABS WITHOUT widening -- a larger Delta (the ABS count goes with Delta / E_T), and
   tc           (was study_tc.py)  STUDY: can a different probe coupling tc_barr_transport replace a longer junction?
   checks       (was study_checks.py)  STUDY: checks on the Majorana resonances (pure Rashba; results in CLAUDE.md).
@@ -26,7 +27,7 @@ import tools as st
 from functools import partial
 from my_functions.hamiltonians import model_onsite, model_hop, region_alpha
 
-PARTS = ('W', 'delta', 'tc', 'checks', 'T', 'transition', 'soc_shift', 'fermi', 'a')
+PARTS = ('W', 'wbands', 'delta', 'tc', 'checks', 'T', 'transition', 'soc_shift', 'fermi', 'a')
 _SELECTED = {a for a in sys.argv[1:] if a in PARTS}
 
 
@@ -146,6 +147,129 @@ if run_part('W'):
         S.plot_map(R, PW, topo=TOPO)
         S.plot_curvature(R, PW, topo=TOPO)
         S.plot_transport(R, PW, topo=TOPO)
+
+
+# %% [wbands] --- WHY WIDTH CLOSES THE GAP AT FINITE k: bands E(k) at phi = pi, MIXED SOC (2026-11-11) ---
+# Figure for the width section.  The phase lines of [W] cell 2 (pure Rashba, scharf_absR_line_W*) and of the archived
+# scharf_abs.py (mixed SOC, scharf_absW_line_W*), a 20, phi pi, give Q and the gap at k = 0 per field.  Their "gap over
+# all k" came from the 88-point K_GRID and MISSES the narrow dips at W >= 300 (8.4 -> 0.48 ueV, 1.7 -> 0 at the old
+# best fields), so Delta_top is refined here at EVERY field (313-point grid + 1D refinement of the 3 lowest minima) and
+# the best topological field is chosen from the refined values.  At that field: the bands of the infinite junction,
+# k along the interfaces.  k = 0 is normal incidence: the lowest Andreev level sits ~ half a level spacing
+# pi hbar v_F / (W + xi_S) from zero.  At finite k (trajectories ~ parallel to the interfaces, near the outer Fermi
+# point) the lowest band dips to Delta_top.  Wider W -> more ABS, smaller spacing, deeper dip.  plots/W_bands_mixed.png.
+W_BANDS = (100.0, 300.0, 800.0)
+W_SUM = (100.0, 300.0, 800.0, 1000.0)
+W_RASHBA = (100.0, 300.0, 800.0)
+HBVF_A20, XI_S = 51.4, 51.4 / 0.25                   # hbar v_F (meV nm, lattice a 20, [fermi]) and hbar v_F / Delta (nm)
+K_REF = np.r_[np.linspace(0.0, 1.5, 301), np.linspace(1.6, np.pi, 12)]    # k a at a = 20: 4x the K_GRID density
+CLOSED = 1e-5                                         # meV: a refined Delta_top below 0.01 ueV counts as closed
+
+
+def refined_gap_point(q, E_Z, phi=np.pi):
+    """[smallest gap over all k (meV), its k (1/nm)] at a = 20: dense grid + 1D refinement of the 3 lowest minima."""
+    p = q.params(E_Z=float(E_Z), phi=float(phi))
+    g, k = st.gap_refined(p, st.n_S_of(q), K_REF)
+    return np.array([g * q.t, k / q.a])
+
+
+def band_point(q, E_Z, k, n_levels=160):
+    """The n_levels BdG levels closest to zero (meV) at phi = pi, Bloch momentum k (units of 1/a)."""
+    return st.levels(q, E_Z, np.pi, k, n_levels)
+
+
+def refined_line(prefix, W, q):
+    """Cached phase line (Q, gap at k = 0) plus Delta_top refined at every field: dict E_Z, Q, gap0, gap_grid, gap, k."""
+    d = np.load(st.DATA / f'scharf_{prefix}_line_W{W:.0f}.npz')
+    v, ez = d['values'][:, 0], d['axis_E_Z']
+    R = st.run_scan(partial(refined_gap_point, q), {'E_Z': ez}, f'scharf_{prefix}ref_line_W{W:.0f}', chunksize=1)
+    return dict(E_Z=ez, Q=v[:, 0], gap0=v[:, 1], gap_grid=v[:, 2], gap=R[:, 0], k=R[:, 1])
+
+
+if run_part('wbands'):
+    am, bm = st.mixed_soc()
+    LN = {}
+    print("\n  a 20, phi = pi.  Best topological field per W from the REFINED Delta_top (grid value at the same field):")
+    print("  SOC     W [nm]  ABS  Q=-1 for E_Z     best E_Z  Delta_top refined / grid [ueV]  k [1/nm]  gap k=0 [ueV]"
+          "  closed on (of Q=-1 fields)")
+    for soc, prefix, Ws_ in (('mixed', 'absW', W_SUM), ('Rashba', 'absR', W_RASHBA)):
+        for W in Ws_:
+            q = st.case(W, alpha=am, beta=bm) if soc == 'mixed' else st.case(W)
+            assert q.a == 20.0
+            ln = refined_line(prefix, W, q)
+            topo = ln['Q'] < 0
+            i = int(np.argmax(np.where(topo, ln['gap'], -1)))
+            LN[(soc, W)] = dict(ln, q=q, i=i, n=st.count_abs(q))
+            print(f"  {soc:7s} {W:6.0f}  {LN[(soc, W)]['n']:3d}  {ln['E_Z'][topo].min():.3f}-{ln['E_Z'][topo].max():.3f}"
+                  f"    {ln['E_Z'][i]:7.4f}   {ln['gap'][i] * 1e3:8.3f} / {ln['gap_grid'][i] * 1e3:7.2f}"
+                  f"             {ln['k'][i]:.4f}    {ln['gap0'][i] * 1e3:8.1f}       "
+                  f"{np.sum(topo & (ln['gap'] < CLOSED))} / {topo.sum()}", flush=True)
+    BW = {}
+    for W in W_SUM:
+        L_ = LN[('mixed', W)]
+        BW[W] = dict(q=L_['q'], ez=L_['E_Z'][L_['i']], g0=L_['gap0'][L_['i']], g=L_['gap'][L_['i']],
+                     k=L_['k'][L_['i']], n=L_['n'])
+
+    fig = plt.figure(figsize=(15.5, 7.6))
+    gs = fig.add_gridspec(2, 4, width_ratios=(1, 1, 1, 1.15), height_ratios=(1.25, 1), wspace=0.32, hspace=0.32)
+    INKB, INK2B, GRIDB = '#0b0b0b', '#52514e', '#d8d7d2'
+    C_TOP, C_K0, C_RB = '#eb6834', '#2a78d6', '#1baf7a'
+    for c, W in enumerate(W_BANDS):
+        b = BW[W]
+        q, Delta_ueV = b['q'], b['q'].Delta * 1e3
+        ks = np.unique(np.round(np.r_[np.linspace(0.0, 1.2, 601), b['k'] * q.a + np.linspace(-0.03, 0.03, 301)], 8))
+        ks = ks[(ks >= 0) & (ks <= 1.2)]
+        E = st.run_scan(partial(band_point, q, float(b['ez'])), {'k': ks},
+                        f'scharf_absWbands_W{W:.0f}_EZ{b["ez"]:g}', chunksize=8) * 1e3          # ueV
+        kk = ks / q.a
+        for r, ylim in ((0, Delta_ueV), (1, 60.0)):
+            ax = fig.add_subplot(gs[r, c])
+            Em = np.where(np.abs(E) <= 1.02 * ylim, E, np.nan)
+            ax.plot(kk, Em, color=INK2B, lw=0.7)
+            ax.axhline(0, color=INK2B, lw=0.6, ls=':')
+            ax.plot([0, 0], [-b['g0'] * 1e3, b['g0'] * 1e3], ls='none', marker='o', ms=6, color=C_K0, mec='w', zorder=5)
+            ax.plot([b['k']] * 2, [-b['g'] * 1e3, b['g'] * 1e3], ls='none', marker='o', ms=6, color=C_TOP, mec='w',
+                    zorder=5)
+            ax.set_ylim(-ylim, ylim); ax.set_xlim(0, kk[-1])
+            ax.grid(color=GRIDB, lw=0.5, alpha=0.6)
+            ax.tick_params(colors=INK2B, labelcolor=INKB)
+            ax.set_xlabel(r'$k$ along the interfaces (1/nm)', color=INKB)
+            if r == 0:
+                ax.set_title(f'W = {W:.0f} nm: {b["n"]} ABS, $E_Z$ = {b["ez"]:.3f} meV', color=INKB, fontsize=10)
+                ax.set_ylabel(r'$E$ ($\mu$eV), $|E| \leq \Delta$' if c == 0 else '', color=INKB)
+            else:
+                gtxt = 'closed' if b['g'] < CLOSED else rf'{b["g"] * 1e3:.2g} $\mu$eV'
+                ax.set_title(rf'zoom: gap at $k=0$ {b["g0"] * 1e3:.0f} $\mu$eV, over all $k$ {gtxt}',
+                             color=INKB, fontsize=9)
+                ax.set_ylabel(r'$E$ ($\mu$eV)' if c == 0 else '', color=INKB)
+    Ws = np.array(W_SUM)
+    ax = fig.add_subplot(gs[0, 3])
+    ax.plot(Ws, [BW[W]['g'] * 1e3 for W in W_SUM], '-o', color=C_TOP, lw=2, ms=6, mec='w',
+            label=r'gap over all $k$ ($\Delta_{top}$)')
+    ax.plot(Ws, [BW[W]['g0'] * 1e3 for W in W_SUM], '-o', color=C_K0, lw=2, ms=6, mec='w', label=r'gap at $k = 0$')
+    rb = [LN[('Rashba', W)] for W in W_RASHBA]
+    ax.plot(W_RASHBA, [r['gap'][r['i']] * 1e3 for r in rb], '--o', color=C_TOP, lw=1.2, ms=5, mfc='w',
+            label=r'$\Delta_{top}$, pure Rashba 16 (comparison)')
+    for W in W_SUM:
+        if BW[W]['g'] < CLOSED:
+            ax.annotate('closed', (W, 0), textcoords='offset points', xytext=(-14, -12), fontsize=8, color=C_TOP)
+    ax.axhline(0, color=INK2B, lw=0.6)
+    ax.set_ylim(-16, None); ax.set_xlabel('W (nm)', color=INKB); ax.set_ylabel(r'gap ($\mu$eV)', color=INKB)
+    ax.set_title(r'gaps at the best topological field ($\phi = \pi$)', color=INKB, fontsize=10)
+    ax.legend(fontsize=8, frameon=False); ax.grid(color=GRIDB, lw=0.5, alpha=0.6)
+    ax.tick_params(colors=INK2B, labelcolor=INKB)
+    ax = fig.add_subplot(gs[1, 3])
+    ax.plot(Ws, np.pi * HBVF_A20 / (Ws + XI_S) * 1e3, '-o', color=INK2B, lw=2, ms=6, mec='w')
+    for W in W_SUM:
+        ax.annotate(f'{BW[W]["n"]} ABS', (W, np.pi * HBVF_A20 / (W + XI_S) * 1e3), textcoords='offset points',
+                    xytext=(4, 6), fontsize=8, color=INKB)
+    ax.set_xlabel('W (nm)', color=INKB); ax.set_ylabel(r'level spacing $\pi\hbar v_F/(W+\xi_S)$ ($\mu$eV)', color=INKB)
+    ax.set_title(r'Andreev level spacing at $k = 0$ ($E_Z$ = 0 count)', color=INKB, fontsize=10)
+    ax.set_ylim(0, 620); ax.grid(color=GRIDB, lw=0.5, alpha=0.6); ax.tick_params(colors=INK2B, labelcolor=INKB)
+    fig.suptitle(r'Infinite junction, mixed SOC, $\mu_C$ = 0.7 meV, $\Delta$ = 0.25 meV, a = 20 nm, $\phi = \pi$:  '
+                 r'blue = gap at $k = 0$, orange = smallest gap (finite $k$)', color=INKB, fontsize=11)
+    st.save_fig(fig, 'W_bands_mixed', dpi=150); plt.close(fig)
+    print("figure: plots/W_bands_mixed.png", flush=True)
 
 
 # ====================================================================================================================
@@ -424,7 +548,8 @@ SCAN_CASES = {'W100_L2':      (st.case(100.0), np.round(np.arange(0.55, 1.25 + 1
                                (0.2,)),           # 0.3-0.5 not run yet (stopped 2026-10-21)
               # mixed Rashba + Dresselhaus, same window: is pure Rashba's temperature robustness the SOC?
               'W100_L2_mixed': (st.case(100.0, alpha=st.mixed_soc()[0], beta=st.mixed_soc()[1]),
-                                np.round(np.arange(0.55, 1.25 + 1e-9, 0.0025), 5), (0.2, 0.3, 0.4)),
+                                np.round(np.arange(0.55, 1.25 + 1e-9, 0.0025), 5), (0.2, 0.3, 0.4, 0.7)),
+              # (0.7 added 2026-11-11, computed by study_mixed [deck] cell 2: the 'too strong' slide-10 panel)
               # probe-lead chemical potential: the 5-site lead strip has subbands from 0.67 / 2.49 / 4.98 meV,
               # so mu_N = 1-2 is a single-channel probe, 3.0 (default) two channels, 5.5 three
               **{f'W100_L2_muN{m:g}': (st.replace(st.case(100.0), mu_N=m),

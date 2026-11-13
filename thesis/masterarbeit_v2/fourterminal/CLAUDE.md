@@ -63,9 +63,9 @@ correct recursion.  Tags (2026-11-06): [source, verified] / [follows from source
 | file | parts (former scripts) |
 |---|---|
 | `tools.py`, `ldos.py` | shared functions; PhysParams |
-| `study_rashba.py` | W, delta, tc, checks, T, transition, soc_shift, fermi (check_fermi), a -- pure Rashba, mostly a = 20 |
+| `study_rashba.py` | W, wbands, delta, tc, checks, T, transition, soc_shift, fermi (check_fermi), a -- pure Rashba, mostly a = 20 (wbands: mixed vs Rashba bands over W) |
 | `study_oscillation.py` | oscillation, branches, fingerprint -- eps(E_Z), pure Rashba a = 20 |
-| `study_tuning.py` | topology, coupling, tuning, maps -- a = 10 couplings / topology / survey maps; a = 5 (E_Z, phi) maps |
+| `study_tuning.py` | topology, coupling, tuning, maps, leads -- a = 10 couplings / topology / survey maps; a = 5 (E_Z, phi) maps; mixed SOC vs tc and tau (+ checks: tc > 1, tau 1 charge) |
 | `study_mixed.py` | oscillation, plateau, amplitude -- the mixed SOC (thesis case) |
 | `slides_nov.py`, `figures.py`, `disorder.py` | advisor-deck figures, Scharf paper figures (own parameters), disorder -- CAUTION: disorder.py takes ldos.PP, now an a = 10 sandbox, NOT its documented junction |
 * `python study_mixed.py plateau` runs one part (several: list them; none: all, in order).  `run_part('part')`
@@ -217,7 +217,8 @@ correct recursion.  Tags (2026-11-06): [source, verified] / [follows from source
   = V_b/t, d nm -> barrier_n = round(d/a), tc_barr = 1) or the mu_N/mu_C density step.  [Implemented 2026-10-23 as
   PhysParams.V_barr / d_barr and lam_barr; used only in study_rashba.py [a] since the 11-02 contact decision.]  tc = 1 (S/N) is a bulk bond and a-independent.
 * eta_rel_transport = 1e-5 Delta is 6e-8 t at a = 5 nm, below the eta >= 1e-6 t solver rule; no
-  failed solves seen, but untested territory.
+  failed solves seen, but untested territory.  [TESTED 2026-11-11, see "SCHARF: lead solver and eta" under Numerics:
+  correct branch, kappa within 0.001 of eta -> 0.]
 * LATTICE CONSTANT (pure Rashba, cross-section, phi = pi): gap over all k at W = 100:
   66.66 / 66.76 / 66.75 ueV for a = 20 / 10 / 5 -- converged.  At W = 300: 33.9 / 29.1 / 28.2 ueV
   (E_Z 0.323) -- a = 20 is 15-20% off, a = 10 within 3% of a = 5.  Q and the ABS count never change.
@@ -248,6 +249,18 @@ it lives only in archive/scharf_abs.py.  (The mixed SOC came back as tools.mixed
       beta!=0  38      8       1.7     2.5   ueV   (alpha 14.3, beta 7.3, '100')
       beta=0   67      34      10      --    ueV   (alpha 16)   <- pure Rashba 2-6x better
   Q = -1 still holds over a large (E_Z, phi) diamond starting at E_Z ~ 0 (lower field: a plus).
+  [CORRECTED 2026-11-11, study_rashba.py [wbands], plots/W_bands_mixed.png: the table above is the 88-point K_GRID
+  minimum, which misses the narrow finite-k dips.  Refined at EVERY field of the same lines (313-point grid + 1D
+  refinement), best topological field per W:
+      W [nm]             100     300     800     1000
+      mixed  Delta_top   37.2    0.53    0       0      ueV   gap CLOSED (< 0.01 ueV) on 0/40, 17/35, 40/40, 35/35
+                                                              of the Q = -1 fields
+      Rashba Delta_top   65.8    25.1    2.5     --     ueV   never closed (0/40, 0/37, 0/38)
+  So for the MIXED SOC (thesis case) only W = 100 nm has a gap at all; from W = 800 the infinite junction is gapless
+  at finite k everywhere in Q = -1 (Q still -1: it only probes k = 0 and pi).  The bands show the mechanism: W 100
+  one Andreev band whose minimum (37 ueV, k 0.034/nm ~ the outer Fermi point) is far below its k = 0 value (138);
+  W 300 / 800: 2 / 3 ABS, denser bands, dips at ~0.018 and ~0.034/nm that reach zero.  Why the mixed SOC closes and
+  pure Rashba keeps a small gap is NOT worked out.]
 * RESULT, pure Rashba, weak probe tc_barr = 0.2, phi = pi:
   - W = 100 (1 ABS), L = 2 um: genuine.  delta 0.7 ueV, next level 74 ueV, LDOS end/mid 23,
     kappa peaks 0.49-0.50 with G ~ 0 (resonances only above E_Z ~ 0.6: below, delta << Gamma).
@@ -291,6 +304,7 @@ it lives only in archive/scharf_abs.py.  (The mixed SOC came back as tools.mixed
       Q = -1 at phi = pi   0.02-1.25    0.035-0.42    0.005-0.19 and 0.21-0.30 meV
       max gap at k_x = 0   170          128           76     ueV
       gap over all k       67           34            10     ueV   (ratio 2.5 / 3.8 / 7.6)
+      [refined 2026-11-11: 65.8 / 25.1 / 2.5 ueV at the refined best fields -- see [wbands] above]
   Diamond centre at phi = pi = E_T (0.71 / 0.25 / 0.10 meV vs E_T 0.83 / 0.28 / 0.10); period in
   E_Z = 2 E_T, so W = 800 shows a checkerboard (second diamond from E_Z ~ 0.2).  Semi-infinite
   ribbons (junction_spectrum_kx) reproduce the 900 nm strip levels at W = 300.  Andreev
@@ -425,6 +439,22 @@ it lives only in archive/scharf_abs.py.  (The mixed SOC came back as tools.mixed
     a = 20 -> the wiggles in Delta_top are misses of the dip minimum, up to ~20% too large (E_Z 1.15:
     43.6 vs 36.0 ueV).  Above ~1.2 the global minimum moves to k ~ 0 and Delta_top < Delta_out is real.
     Any cached gap map (phase_point / gaps) carries this; refine with a 1D minimisation if gaps matter.
+    FIXED 2026-11-11: tools.gaps now returns gap_refined's minimum (same grid, no extra grid pass).
+    gap_refined vs a brute-force scan (k a step 2e-4 + Brent): identical to 4 digits in ueV at mixed
+    a 10 E_Z 0.3/0.5/0.8/0.93/1.15/1.30 (phi pi), 0.93 (1.742 pi) and Rashba a 20 E_Z 1.15 (36.019).
+    The plain grid was off by up to 2.4x (mixed a 10, E_Z 1.15: 18.81 vs 7.79 ueV).  STILL plain-grid
+    (made before the fix, not rerun): scharf_absR_line_W*, absD_line_*, absS_line_*, absA_xs_a*,
+    absO_evanescent_W100 (all pure Rashba).  Mixed caches always used gap_refined.
+    dip_point FD step (also fixed 2026-11-11): h = 2e-3 was up to 3.3x the dip width 1/xi_hyp (mixed a 10,
+    E_Z 1.35) -> E'' too large, v_A and xi_hyp too LOW: E_Z 1.15 4127 vs 4231 nm (-2.5%), 1.30 9480 vs
+    9930 nm (-4.5%); xi_poly only +0.4/+0.7%.  Now h -> 0.1/xi_hyp when coarser (matches h = 3e-5 to
+    0.04%).  scharf_absOM_modes_mixed_a10 (cols hv_A, xi_hyp, xi_poly) still holds the old values.
+    [REDONE 2026-11-12: study_mixed [oscillation] cell 1 recomputes the dip columns for E_Z >= 0.9 (91 fields) into
+    scharf_absOM_dip_mixed_a10_fix and patches them in (the modes cache itself is unchanged; slides_nov.om_modes patches
+    too, plots/slides/mixed_lengths.png redrawn).  k0, Delta_out identical; hbar v_A and xi_hyp +0.6 .. +5.7 %, xi_poly
+    -0.1 .. -0.7 % (E_Z 1.15: xi_hyp 4127 -> 4230, 1.30: 9480 -> 9929 nm).  Now xi_hyp/xi_M 1.19 (E_Z 0.9) -> 1.40 (1.35),
+    1.03-1.40 over E_Z > 0.5; xi_poly/xi_M 1.06-1.19 at E_Z >= 0.55 -- in the MIXED SOC the dip continuation does NOT
+    give xi_M to < 1 % as it does for Rashba 16 (not investigated; the band tilt of [angle] is a candidate, untested).]
   - With Delta_out (smooth) in the envelope: A = 1.66 1.68 1.80 1.99 2.01, fit A = 1.92, phi0 0.69 pi,
     rms 0.85 ueV = 3.5%.  A drifts up as L/xi_M -> 1 (asymptotic overlap formula needs L >> xi).
   - THE FIT IS A TEST (2026-11-04, same 2-parameter fit on the L 2 um box, 0.002 grid): right ingredients
@@ -454,7 +484,7 @@ and the +-0.15 Brent search missed it (E_Z 1.30 returned the window edge, 71 ins
 kc +- 0.02; xi_poly = NaN when the poly has no complex zero.
 * Delta_top = Delta_out at every field (the global gap minimum IS the outer dip here, unlike Rashba 16).
   Delta_top max 37.5 ueV at E_Z 0.5.  xi_M 284-400 nm below 0.5, then 0.5 / 0.89 / 1.8 / 4.0 / 12.6 um at
-  0.6 / 0.8 / 1.0 / 1.2 / 1.35.  xi_hyp/xi_M 0.85-1.3.
+  0.6 / 0.8 / 1.0 / 1.2 / 1.35.  xi_hyp/xi_M 0.85-1.3 [1.40 at 1.35 with the 2026-11-12 dip redo].
 * THE PHASE HOLDS, THE AMPLITUDE DOES NOT (user caught it on the figure, 2026-11-04).  E_Z 0.45-0.93
   (L/xi_M 1.8-5.3): k_osc L advances 1.00 +- 0.06 pi between box zeros -> zeros/period set by the outer Fermi
   point as for Rashba.  But per-lobe A = eps_max/(Delta_out e^{-L/xi_M}) DRIFTS monotonically with E_Z:
@@ -673,8 +703,8 @@ plots/plateau_mixed_best.png; caches scharf_absPlat_*.  Plateau point = |kappa-1
   red dashed Q boundary), detr_crossings_mixed.
 * det r = 0 => r singular => one fully transmitted eigenchannel => kappa >= 1/2.  27 det r = 0 crossings refined by
   regula falsi (5 NEGF solves each, |det r| <= 2e-2): neutral ones kappa 0.493-0.5005 (|G| < 0.07), charged ones
-  0.50-0.94.  (The 0.493-0.496 values sit at E_Z <= 0.03, phi pi: the gap-closing tip; eta absorption suspected, not
-  checked.)  One non-converged (L 3, E_Z 0.01, |det r| 0.66) excluded.  61-83 % of the kappa peaks > 0.3 sit within
+  0.50-0.94.  (The 0.493-0.496 values sit at E_Z <= 0.03, phi pi: the gap-closing tip; eta absorption -- CHECKED
+  2026-11-11: kappa 0.4894 / 0.4960 at eta x1 / x0.1 there, limit ~0.497.)  One non-converged (L 3, E_Z 0.01, |det r| 0.66) excluded.  61-83 % of the kappa peaks > 0.3 sit within
   one grid step of a det r sign change; the rest are charged peaks where det r does not cross.
 * But only 23-36 % of the det r sign-change links lie on the bulk Q boundary (<= 1 grid step).  The discriminator
   is tau: links ON the Q boundary stay on the same link from tau 0.3387 to 0.5 / 0.7 in 82-93 / 72-82 % of cases,
@@ -771,6 +801,120 @@ plots/plateau_mixed_best.png; caches scharf_absPlat_*.  Plateau point = |kappa-1
   run loses everything; chunksize=1 saves every point and resumes.  Background tasks die with the Claude session, so
   long runs were launched detached (WMI Win32_Process Create with Win32_ProcessStartup ShowWindow = 0 -- with a
   visible console, closing that window kills the run; it did twice).
+
+## SCHARF: lead solver and eta, checked on the 2026-11-09/10 runs (2026-11-11, scratch checks, no study part)
+* Caches of the a = 5 maps (kappa, DOS, Q) and every [plateau] cut / grid of 11-10: 0 failed lead solves, 0 NaN; no
+  overflow / self-consistency warnings in any log (worker stderr goes to the logs).
+* WRONG-BRANCH TEST (the failure N_UNRELIABLE cannot see, Gresta eta 1e-7 below): production surface onsite vs the
+  eigenmode solution from the M smallest-|lambda| Bloch modes (explicitly decaying).  Probe leads (open channels at
+  E = 0): agree to 2e-13 (a 5, eta 6e-8 t and the DOS eta 2.5e-6 t) and 1e-15 (a 10); raw Sancho-Rubio residual
+  9e-14 / 6e-16 (no Newton needed); |lambda| kept <= 1 - 1.35e-7, dropped >= 1 + 1.35e-7 at the smallest eta -- the
+  branch choice is unambiguous.  SC ribbons (gapped at E = 0, all a, L, phi, eta): residual ~1e-16.  Gamma >= 0 and
+  Im Tr g < 0 (retarded) everywhere.  The top ribbon at phi is a gauge rotation of phi = 0, so two phases suffice.
+* ETA IN TRANSPORT (eta_rel x 0.1 / 1 / 10): kappa changes linearly ((x10-x1)/(x1-x0.1) = 9.3-10.0, no jumps).
+  Production eta lowers kappa by 2.5e-4 (L 2 field run), 3.1e-4 (L 2 winner), 5.9e-4 (L 3, pi), 7.7e-4 (a 5 tau 0.5)
+  -> plateau numbers stand.  Gap-closing tip (E_Z 0.02, pi): 6.6e-3 (0.4894 vs 0.4960 at eta/10).
+  det r NEAR -1 IS ETA-LIMITED at weak coupling: a 5, tau 0.2 (Gamma ~0.35 ueV), E_Z 0.3, 1.2 pi: det r -0.9665 at
+  production eta, -0.9965 at eta/10 (kappa 7e-5): 1 + det r ~ a few eta/Gamma there (absorption), not eps/Gamma --
+  the reason x_of needs kappa > 0.02.
+* ETA IN THE DOS MAPS (eta 1e-4 meV): a 5, tau 0.2, E_Z 0.3 -- V plateau (1.2 pi) 1691 / 1075 / 233 per meV at eta
+  1e-5 / 1e-4 / 1e-3 meV = 2/(pi (Gamma + 2.4 eta)) with Gamma 0.35 ueV to ~1 % -> the tau 0.2 map plateau is ~40 %
+  below its eta -> 0 value (~1810); tau 0.5 ~6 %, tau 1 ~1 % (same formula, not recomputed).  V-edge gap-closing line
+  2507 / 1304 / 230: its brightness is largely eta.  Background (0.1, 0.2 pi) 0.015 / 0.061 / 0.52 ~ eta (tails).
+  Shapes unaffected; quote eta with any DOS value, or rerun tau 0.2 at 1e-5 (~3 h).
+
+## SCHARF: the MIXED SOC vs BOTH lead couplings, tc and tau (2026-11-11, `study_tuning.py` [leads], plots/leads_mixed.png)
+* Thesis junction (mixed_soc(16, 0.15 pi), W 100, L 2 um, mu_C 0.7, mu_S 1, a 10).  tc = S/N bond (tc_top = tc_bot;
+  1 = bulk bond; 1.25 = STRONGER than a bulk bond, MODEL EXTRAPOLATION).  tau = probe bond: enters only Gamma, not
+  Q / Delta_top / xi_M.  phi = pi bulk line (E_Z step 0.05, refined gap), xi_M at E_Z 0.2-1.2 (slowest_mode), coarse
+  Q map (21 x 16), transport on the [tuning] coarse grid, phi = pi lines step 0.01.  Caches scharf_absLeads_*; reuses
+  tr_name(...) maps and scharf_absOM_line_mixed_tau*.  0 failed solves.  ~2 h detached (shared CPU); redraw from cache
+  `python study_tuning.py leads` in ~1 min.  The pure-Rashba counterpart is [coupling] / [topology] above.
+* SC LEADS (phi = pi; transport at tau 0.5):
+      tc     Q=-1 area   Delta_top max (E_Z)   xi_M min (E_Z)    max L/xi_M   plateau in Q=-1   neutral share
+      0.5    95 %        0 -- GAPLESS          undefined         --           0.5 %             0.14
+      0.75   77 %        9.8 ueV (0.60)        2.36 um (0.4)     0.85         4.6 %             0.44
+      0.9    53 %        24.3 (0.55)           0.92 um (0.4)     2.17         4.2 %             0.64
+      1      45 %        37.5 (0.50)           0.28 um (0.2)     7.03         2.6 %             0.83
+      1.25   51 %        8.1 (1.45)            4.7 um (1.2)      0.42         1.1 %             0.35
+  tc 1 reproduces the numbers above (Delta_top 37.5 at 0.5, xi_M 284 / 298 / 496 / 885 / 1805 / 4047 nm).
+  tc 1.25: Q = -1 at phi pi only from E_Z 0.9, Delta_top 0.7-8 ueV.
+* tc 0.5 IS GAPLESS at every field with Q = -1 (refined Delta_top <= 1.6e-4 ueV; a band changes sign at finite k,
+  checked at E_Z 0.6 (k 0.0262/nm) and 1.2 (0.0355/nm)): Q = -1 without a gap, so no protection and no xi_M.  The same
+  holds for tc 0.75 at E_Z >= 1.2.  Pure Rashba keeps 9.2 ueV at tc 0.5: the mixed SOC needs tc >~ 0.75 for a gap at
+  all.  TRAP: slowest_mode drops the |lambda| = 1 (propagating) modes and returns the 2nd complex-k mode (257 nm,
+  k 0.0404/nm, field-independent; cf. xi_2 in the MIXED SOC subsection).  It is masked via the bulk line
+  (CLOSED_L = 1e-5 meV).
+* tc -> PROTECTION: the bulk bond is the optimum.  tc 0.5 -> 1 takes Delta_top 0 -> 37.5 ueV and min xi_M inf -> 0.28 um,
+  the largest lever in the model.  Beyond a bulk bond protection is lost again (tc 1.1: Q = -1 at pi from E_Z 0.40,
+  max 29.7 ueV; tc 1.25: from 0.90, max 8.1).  WHY: tested, see "CHECKS (cell 5)" below -- the strong bonds reflect.
+* tc -> PLATEAU: the largest fraction is at tc 0.75-0.9 (4.6 / 4.2 %), but those maps are mostly charged (neutral
+  0.44 / 0.64): xi_M ~ L, so eps is large and oscillating and crosses Gamma more often.  tc 1 has fewer crossings but
+  cleaner ones (0.83).  The plateau fraction counts eps = Gamma crossings, not protection; it falls where protection
+  rises.  => The advisor's "tc helps protection" HOLDS for the mixed SOC (up to the bulk bond); it does not help kappa.
+* PROBE LEADS (tc 1).  Gamma = local-Andreev half width at the eps zeros E_Z 0.285 / 0.345, phi pi (tau 0.3387 / 0.5
+  equal the MIXED SOC subsection's direct-Lorentzian values):
+      tau      Gamma [ueV]   plateau in Q=-1   neutral share   phi = pi line: kappa = 1/2 windows, widest (E_Z)
+      0.2      0.35          0.9 %             0.93            2, 0.01 meV
+      0.3387   1.15          2.0 %             0.90            3, 0.02
+      0.5      3.2           2.6 %             0.83            2, 0.06
+      0.7      10.0          0.5 %             0.14            1, 0.02
+      1        37.4          0.1 %             0.01            0
+* Gamma(tau) is NOT one power law: local d ln Gamma / d ln tau = 2.2 / 2.6 / 3.4 / 3.7 between neighbouring tau
+  (global fit 2.88 over 0.2-1; over 0.2-0.7 it is 2.64, matching the earlier p 2.56-2.71).  The weak-coupling end follows the golden-rule tau^2.
+  Why it steepens: not worked out.
+* tau -> PLATEAU: the optimum is tau 0.34-0.5 (Gamma 1-3 ueV).  kappa = 1/2 needs eps = Gamma.  The window in E_Z grows
+  with Gamma (~ Gamma / |d eps/dE_Z|) as long as Gamma stays below the eps envelope.  tau 1 (Gamma 37 ueV >= Delta_top
+  at every field except E_Z 0.50-0.51): eps is a subgap level, so eps < Delta_top <= Gamma and no eps = Gamma crossing
+  exists (0 windows).  kappa is CHARGED at every field; the earlier "charge starts where Delta_top < Gamma" was WRONG,
+  see CHECKS.  tau 0.7: neutral share 0.14.
+* CHECKS (2026-11-12, cell 5 of [leads], plots/leads_checks_mixed.png; caches scharf_absLeads_{bulk,Q}_tc{0.8,1.1}).
+  WHY tc > 1 LOSES PROTECTION.  Control tc 0.8: on the lattice ONE bond x transmits exactly as 1/x (T(x) = T(1/x);
+  normal state, E_F, k 0: 0.657 vs 0.659 for 1.25), yet tc 0.8 is an ordinary weak contact (Q = -1 at pi from E_Z 0.15,
+  Delta_top 14.1 ueV, Q=-1 area 70 %).  So the barrier strength of one bond is NOT the cause.  Cross-section, k 0:
+      tc     T one bond   T junction   bound levels [meV] (within 100 nm)   ABS(pi, E_Z 0)   Q=-1 at pi from   max Delta_top
+      0.8    0.657        0.707        none                                 65.6 ueV         0.15              14.1 (0.55)
+      1      1.000        0.992        none                                  2.8             0.05              37.5 (0.50)
+      1.1    0.915        0.654        -1.034 (77 %)                        92.4             0.40              29.7 (0.70)
+      1.25   0.659        0.209        -1.44 (99 %), -1.26 (97 %)          189.4             0.90               8.1 (1.45)
+  (T per spin; T junction = S | tc | N strip | tc | S; bulk S band bottom -1.000 meV at k 0; bound levels first at
+  tc 1.096 on a 3 % grid, never for tc <= 1.)  Two strong bonds turn the strip into an attractive well: it binds levels
+  below the S band bottom AND reflects the k = 0 channel at E_F (junction T 0.21 at 1.25 while one bond still passes
+  0.66).  Two weak bonds form a cavity instead (Fabry-Perot: T = 1 and ABS(pi) = 0 near tc 0.6).  The reflection opens
+  the phi = pi ABS gap, which E_Z must close before Q = -1: onset 0.05 -> 0.40 -> 0.90 for tc 1 -> 1.1 -> 1.25.  Past the
+  late transition the gap reopens only to 8 ueV: at E_Z 1.0-1.45 the gap minimum is an extended state at small k
+  (0.013-0.029 /nm); from 1.55 a junction-bound state (k 0.052 /nm, 100 % within 100 nm).  Numbers computed; tying the
+  bound levels and the reflection to one "well" is the interpretation.  => tc 1 is optimal because the bulk bond is the
+  only reflectionless bond on the lattice; "stronger than bulk" is not a better contact here (and is a MODEL EXTRAPOLATION).
+  THE tau 1 CHARGE IS NOT SET BY Delta_top < Gamma.  (i) tau 1 is charged at EVERY field: T_he / T_ee = 0.01-0.16 for
+  E_Z 0.2-1.2 (up to 0.77 at 1.29, next to the gap closing).  T_ee is smooth and grows roughly like exp(-2L/xi_M) (ratio
+  1.2-25 over six decades); T_he carries the eps oscillation.  The "onset at 0.8" was only kappa passing the 0.25
+  threshold of the neutral-share statistic.  (ii) Median G/kappa (kappa > 0.05) per 0.1 meV window is the SAME for
+  tau 0.2 / 0.34 / 0.5: 0.00 below E_Z 0.7, 0.03-0.05 at 0.8-0.9, 0.09-0.13 at 0.9-1.0, 0.23-0.26 at 1.0-1.1, 0.42-0.46
+  at 1.2-1.3, although Delta_top / Gamma spans 1-100 there: at weak coupling the charge is a junction property that grows
+  as L/xi_M falls (3.5 -> 0.5).  tau 0.7 lies 1.5-3x above that at every field, with no step at E_Z 1.10 where
+  Delta_top crosses its Gamma.  Reading (not derived): at weak coupling kappa and G both scale ~ Gamma^2 (median G over
+  E_Z 0.95-1.10 grows x9.3 / x7.2 where Gamma^2 grows x10 / x7.6), so G/kappa is fixed by the junction; once Gamma
+  passes eps the neutral Majorana part saturates while the smooth electron cotunnelling keeps growing.
+
+## SCHARF: the advisor-deck runs in the MIXED SOC (2026-11-11/12, `study_mixed.py` [deck], slides_nov mixed_*)
+* Caches scharf_absDeck_*mixed* (all complete), 6 workers (8 crashed the laptop).  Figures plots/slides/
+  mixed_kappa_vs_L, mixed_SN_coupling, mixed_temperature, mixed_best_temperature (redraw: slides_nov.py mixed_kappa_L
+  mixed_sn mixed_temperature mixed_best_T, ~1 min from cache).
+* LENGTH (a 10, tau 0.3387, phi pi, E_Z step 0.002; L 2 / 3 / 4 um): neutral kappa > 0.45 from E_Z 0.602 / 0.740 / 0.824
+  = L/xi_M 4.01 / 4.11 / 4.17 (the Rashba 3.8 rule: 0.625 / 0.765 / 0.855); first charged peak (|G| > 0.1 kappa,
+  kappa > 0.3) at 0.918 / 0.976 / 1.072 = L/xi_M 1.5 / 1.8 / 1.7; best neutral kappa 0.498 at every L.
+  => mixed window ~1.7 <~ L/xi_M <~ 4.1 (Rashba 2.5-3.8).
+* S/N (topo_point on (mu_C 0-2.4, E_Z 0-2), tc 0.5 / 0.75 / 1): Q = -1 area 48.4 / 50.3 / 68.0 %, GAPPED (Delta_top >=
+  0.01 ueV) only 0 / 24.0 / 29.7 %; max Delta_top 0 / 14.4 / 50.3 ueV (mu_C 0, E_Z 1.3).  The gapless share of Q = -1
+  is 100 / 52 / 56 %; values are < 1e-3 or > 0.08 ueV, nothing between.  Pure Rashba (scharf_absTopo_muC_a10_tc*):
+  0 % gapless at every tc.  At mu_C 0.7: gapless / 9.8 ueV, xi_M 2.30-7.5 um, max 2 um/xi_M 0.87 / 37.5 ueV, 0.28-7.2,
+  7.03.  The deck summary first printed xi_M 0.26 um for tc 0.5/0.75 = the [leads] TRAP (257 nm bulk mode at gapless
+  points); now masked in the printout and in slides_nov.slide9 (GAPLESS_UEV = 0.01; orange = Q -1 but gapless).
+  OPEN: the (phi, E_Z) Q maps (e.g. 45.6 % at a 5) count gapless points as topological -- gap not checked there.
+* TEMPERATURE (a 20, L 2, phi pi): best neutral kappa at 0/10/20/50 mK, tau 0.7: 0 at every T (no neutral peak).
+  Best region (a 10, tau 0.5, L 2): along phi at E_Z 0.93, kappa = 1/2 +- 0.03 with |G| < 0.1 kappa over 1.37 / 1.07 /
+  0 / 0 pi (max kappa 0.542 / 0.499 / 0.446 / 0.212); along E_Z at phi 1.742 pi: 55 / 30 / 0 / 0 ueV.
 
 ## Numerics — measured on the GRESTA point unless stated
 (eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,
@@ -1090,3 +1234,31 @@ Measured at phi=pi, L=2000 nm, scanning E_Z in 0.01 meV steps:
   the Chern gap through (α−β) and ξ diverges (5.5→49.7 sites for β=0→1.1). '100' keeps ξ short
   (5.5→4.5, since SOC adds in quadrature) but κ(π) overshoots to 0.91–0.99 with G(π)≈0.33, i.e.
   it stops being charge-neutral. Larger nx does NOT help: κ(π) 0.358→0.192 for nx=80→240 at β=0.8.
+* RECHECK 2026-11-11 (`study_mixed.py` [combine], logs/study_mixed_combine.log, logs/combine_dresselhaus_kT.log,
+  plots/combine_checks.png; no script of the 10-07 runs survives; working point of archive/early_tests/01_single_point.py).
+  The 10-07 transport numbers above are at kT = 1e-3, eta = 1e-5 (NOT stated above) -- there they reproduce:
+  Bxy_c 0.1, theta_z 0: kappa(pi) 0.1475, kappa(0) 0.6518; Bxy_c 0.8 (kT 0): 0.4461, G 0.4085; '100' beta 0.4/0.6/0.8/1.1:
+  kappa(pi) 0.909/0.889/0.986/0.864, G 0.32-0.37; the nx bullet is '110': beta 0.8 nx 80 -> 240: 0.3575 -> 0.1923.
+  Corrections: (a) GRESTA working point "kappa = 0.497 at kT 1e-3, eta 1e-5": 0.4744 at eta 1e-5, 0.4969 at eta 1e-6.
+  (b) in-plane only: refined min |E| 1e-19..1e-17 (exact nodes; the 1e-4 was the grid); chern_number returns 0 OR -1
+  depending on grid N and field direction (meaningless either way); with Bz_s 0.94 + Bxy_s 0.94 it returns -1.
+  (c) tilt: gap 0.2665/0.1909/0.1147/0.0382/0 at Bxy_s 0/0.1/0.2/0.3/0.4 (closed by 0.4), both in-plane directions.
+  (d) '110' beta 0.8 at eta 1e-6, kT 0: NaN at nx 80 (failed lead solve, counted), 0.993/1.004 at nx 160/240 as in
+  Numerics, but 0 overflow warnings now.  Also: kT 0 values differ (theta 0, Bxy_c 0.1: 0.430/0.436; '100' kappa(pi)
+  1.07-1.59 for beta >= 0.4); at Bxy_c 0.05 (theta 0) the contrast survives (0.4215 / 0.0000, G 3e-4); theta pi/2 makes
+  every Bxy_c > 0 worse (kappa 0.70-3.1, charged).  Populated centre mu_c 0.1/0.3: kappa(pi) 1.90/2.31 with G 1.1.
+  Chern sign at beta 0: -1 for '110', +1 for '100' (different SOC forms in the code), identical transport.
+* SAME QUESTIONS AT THE THESIS PARAMETERS (2026-11-11, [combine] B1-B3; single points, not tuned):
+  - B1 proximitized ribbon (mu_S 1, Delta 0.25, m* 0.038, mixed 16 meV nm), out-of-plane Vz in the ribbon: Chern 0
+    for Vz <= 0.9 meV, +1 for Vz >= 1.00 (N 200 = 400; a 10 = a 20); gap at 1.00 = 31.0 ueV for mixed AND Rashba
+    (the k = 0 gap: transition at ~0.969 = sqrt(Delta^2 + (mu_S - E_so)^2), derived).  Largest bulk gap in the Chern
+    phase: mixed 70.5 ueV (a 10, Vz 1.05) -> 35 at 3 meV; pure Rashba 16 132 ueV (Vz 1.2).  Vz 1 meV = 3.5 T at g 10.
+  - B2 junction a 20 with Chern ribbons (Vz 1.00 / 1.05 in the ribbons only), transparent probe tau 1, DEPLETED centre
+    mu_C -0.2: kappa(pi) 0.45-0.50 and kappa(0) 0.47-0.50 at in-plane E_Z 0 / 0.3 / 0.93, |G| <= 0.002 (one outlier
+    kappa(pi) 0.682, Vz 1.05, E_Z 0) -- neutral ~1/2 at BOTH phases, no phase contrast.  Populated mu_C 0.7: kappa(pi)
+    1.01-1.02 at E_Z 0, 0.39-0.43 at 0.3/0.93, |G| <= 0.04.  Weak probe tau 0.2: kappa <= 0.09 (one kappa(0) 0.481).
+    Control Vz 0: 0 (depleted) / Scharf-like (populated).  No failed lead solves.  A plateau in parameters NOT tested.
+  - B3 out-of-plane Bz in the normal strip only (thesis junction a 10, tau 0.5, in-plane E_Z 0.93; Bz_n = 0): Q = -1 up
+    to Bz 0.4 meV at pi and 1.742 pi; Delta_top 18.98 -> 13.48 (pi), 48.7 -> 36.7 ueV (1.742 pi); xi_M 1394 -> 2016,
+    669 -> 817 nm; kappa at fixed E_Z: pi 0.469/0.493/0.491/0.246/0.076, 1.742 pi 0.482/0.483/0.486/0.490/0.064 for
+    Bz 0/0.05/0.1/0.2/0.4 meV (eps shifts; not re-tuned).
