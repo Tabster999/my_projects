@@ -13,6 +13,10 @@ PARTS (one per former script; the cells of each part are tagged [part]):
   ep2          (2026-11-13)  the two-Majorana reduction of [ep] from the full model (G_L, G_R, c along phi), no fit
   ep3          (2026-11-16)  [ep] follow-ups: det r / kappa with asymmetric probes, a weak pair on a fine grid, E_Z 0.70
   ep4          (2026-11-16)  STUDY: can asymmetric probe bonds improve the kappa = 1/2 plateau? (along E_Z and phi)
+  ep5          (2026-11-18)  STUDY: does the EP segment grow with the junction length (end Majoranas: e^{L / xi_M})?
+  ep6          (2026-11-18)  side study: (1/2) ln 2 entropy between EPs (Pino, Meir & Aguado) -- not thesis relevant
+  ep7          (2026-11-18)  STUDY: thermal transport across the EP segments -- kappa(E, phi), kappa(T, phi) vs the poles
+  ep8          (2026-11-18)  STUDY: EP segments and the kappa plateau ALONG E_Z vs the probe couplings (difference, strength)
 
 Run one part:   python study_tuning.py topology      (several: list them; no argument: every part, in order)
 In the interactive window the cells run as usual.  run_part(part) replaces the old `if __name__ == "__main__":`
@@ -28,7 +32,7 @@ from functools import partial
 import tools as st
 from study_oscillation import slowest_mode
 
-PARTS = ('topology', 'coupling', 'tuning', 'maps', 'leads', 'spectrum', 'ep', 'ep2', 'ep3', 'ep4')
+PARTS = ('topology', 'coupling', 'tuning', 'maps', 'leads', 'spectrum', 'ep', 'ep2', 'ep3', 'ep4', 'ep5', 'ep6', 'ep7', 'ep8')
 _SELECTED = {a for a in sys.argv[1:] if a in PARTS}
 
 
@@ -2341,3 +2345,816 @@ if run_part('ep4'):
     st.save_fig(fig, 'ep4_EZcut_mixed', dpi=150)
     plt.close(fig)
     print("figure: plots/ep4_EZcut_mixed.png", flush=True)
+
+
+# ====================================================================================================================
+# PART 'ep5'  (2026-11-18)
+# ====================================================================================================================
+# STUDY: does the EP segment grow with the junction length?  Each parity crossing opens into a segment of width
+# ~ 2 delta_eff / |d eps / d phi| (DERIVATIONS 7.7).  For END Majoranas eps ~ e^{-L / xi_M}, so at fixed loss the width
+# should grow ~ e^{+L / xi_M(phi_c)}; the trivial-regime EPs of Cayao & Sato (2307.15472) are L-independent.  A
+# length-dependent EP segment would be a topological signature built from the EPs.
+# E_Z = EP_EZ, (tau_L, tau_R) = EP5_PAIR, L in EP5_LS (L 2 um reuses [ep]).  Per L: lossless reference + the pair on
+# EP_PH, fine scans (EP_FINE_STEP) around every crossing; at each crossing phase Q, Delta_top and xi_M of the infinite
+# junction (slowest_mode) -- a crossing in a gapless stretch has no xi_M and should NOT scale exponentially.
+# Figure plots/ep5_length_mixed.png; caches scharf_absEP5_*.
+EP5_LS = (1500.0, 2000.0, 2500.0)              # along phi (cell 1); L 3 um stopped half way (L 2.5: no crossing at all)
+EP5_PAIR = (0.3, 0.1)
+EP5_LSZ = (1500.0, 2000.0, 2500.0, 3000.0)     # along E_Z (cell 3)
+EP5_PHZ = 1.7417 * np.pi                        # the best-plateau phase: gapped, xi_M ~ 670 nm at E_Z 0.93
+EP5_EZC = np.round(np.arange(0.80, 1.0001, 0.005), 4)
+EP5_EZREF = 0.90
+
+
+def ep5_point(phi, L, tau_L, tau_R, E_Z=EP_EZ, k=EP_K):
+    """ep_point for the thesis junction of length L (nm)."""
+    P, O = st.nh_spectrum(junction('mixed', 0.7, L=float(L)), E_Z, [float(phi)], tau_L, tau_R, k=k)
+    return np.r_[P[0, :EP_K].real, P[0, :EP_K].imag, O]
+
+
+def ep5_bulk(phi, E_Z=EP_EZ):
+    """[Q, Delta_top (ueV), xi_M (nm)] of the infinite cross-section at phi (independent of L and of the probes)."""
+    q = junction('mixed', 0.7)
+    p = q.params(E_Z=float(E_Z), phi=float(phi))
+    n_S = st.n_S_of(q)
+    _, g, _ = st.gaps(p, n_S, st.k_grid(q.a))
+    lam = slowest_mode(p, n_S)
+    return np.array([st.q_point(q, E_Z, phi)[0], g * q.t * 1e3, -q.a / np.log(np.abs(lam))])
+
+
+def ep5_name(L, nm, tr):
+    return (f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_{nm}_R{tr:g}' if L == 2000.0
+            else f'scharf_absEP5_mixed_a10_EZ{EP_EZ:g}_L{L / 1000:g}_{nm}_R{tr:g}')
+
+
+# %% [ep5] --- 1. COARSE LINES AND FINE SCANS AROUND EVERY CROSSING, PER LENGTH ---
+if run_part('ep5'):
+    _x = EP_PH / np.pi
+    _tl, _tr = EP5_PAIR
+    EP5 = {}
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        for L in EP5_LS:
+            ref = st.myf.scan(partial(ep5_point, L=L, tau_L=0.0, tau_R=0.0), {'phi': EP_PH}, pool=_pool, chunksize=1,
+                              save=str(st.DATA / (ep5_name(L, 'ref', 0.0) + '.npz')))['values']
+            R = st.myf.scan(partial(ep5_point, L=L, tau_L=_tl, tau_R=_tr), {'phi': EP_PH}, pool=_pool, chunksize=1,
+                            save=str(st.DATA / (ep5_name(L, f'tauL{_tl:g}', _tr) + '.npz')))['values']
+            xs, cs = ep_windows(_x, R, EP_FINE_HALF, EP_FINE_STEP, ctrl=True)     # windows around every crossing
+            Rf = st.myf.scan(partial(ep5_point, L=L, tau_L=_tl, tau_R=_tr), {'phi': xs * np.pi}, pool=_pool,
+                             chunksize=1, save=str(st.DATA / f'scharf_absEP5_fine_mixed_a10_EZ{EP_EZ:g}_L{L / 1000:g}'
+                                                              f'_tauL{_tl:g}_R{_tr:g}.npz'))['values']
+            EP5[L] = (ref, R, xs, Rf, cs)
+            print(f"ep5: L {L / 1000:g} um done; crossings at phi/pi " + ", ".join(f"{c:.3f}" for c in cs), flush=True)
+        _cs_all = sorted({round(c, 3) for L in EP5_LS for c in EP5[L][4]})
+        EP5_B = st.myf.scan(ep5_bulk, {'phi': np.array(_cs_all) * np.pi}, pool=_pool, chunksize=1,
+                            save=str(st.DATA / f'scharf_absEP5_bulk_mixed_a10_EZ{EP_EZ:g}.npz'))['values']
+    finally:
+        _pool.shutdown()
+
+# %% [ep5] --- 2. SEGMENTS vs L: the local law, the slope at the crossings vs L, the total phase between EPs ---
+# The crossings MOVE with L (eps ~ cos(k_osc L + phi0)), so no single crossing can be followed from L to L.  Tested:
+# (a) per crossing, the measured width (fine scan) vs 2 delta_eff / |d eps / d phi| (lossless slope from the coarse
+#     reference; delta_eff = max Im split / 2 inside the segment) -- the local mechanism;
+# (b) the lossless slope at the crossings vs L against e^{-L / xi_M} (xi_M of the infinite junction at the crossing
+#     phases, gapped ones only) -- where the length enters;
+# (c) the total phase between EPs (coarse) vs L.
+if run_part('ep5'):
+    K = EP_K
+    bulk = {round(c, 3): b for c, b in zip(_cs_all, EP5_B)}
+    print(f"\n  [ep5] EP segments vs L, E_Z {EP_EZ:g}, (tau_L, tau_R) = {EP5_PAIR}; bulk at the crossing phases "
+          "(Q, Delta_top ueV, xi_M nm):", flush=True)
+    for c, b in zip(_cs_all, EP5_B):
+        print(f"    phi {c:.3f} pi: Q {b[0]:+.0f}, Delta_top {b[1]:.3f}, xi_M {b[2]:.0f}" +
+              ("  (GAPLESS: xi_M not meaningful)" if b[1] < 1e-2 else ""), flush=True)
+    rows = []                                  # L, phi_c, width, slope, delta_eff, Delta_top, xi_M
+    for L in EP5_LS:
+        ref, R, xs, Rf, cs = EP5[L]
+        eps = np.abs(ref[:, 0])
+        if len(xs) < 2:
+            print(f"    L {L / 1000:g} um: NO parity crossing along phi (lossless |eps| >= {eps.min():.2f} ueV)", flush=True)
+            continue
+        step = np.min(np.diff(xs))
+        cont = np.diff(xs) < 1.5 * step
+        groups = np.split(np.arange(len(xs)), np.flatnonzero(~cont) + 1)
+        for g in groups:
+            xg = xs[g]
+            c = [v for v in cs if xg[0] - 1e-9 <= v <= xg[-1] + 1e-9]
+            if not c:
+                continue
+            b = ep_between(Rf[g])
+            width = b.sum() * step
+            i0 = int(np.argmin(np.abs(EP_PH / np.pi - c[0])))
+            i = min(((i0 + d) % 120 for d in (-2, -1, 0, 1, 2)), key=lambda j: eps[j])   # the lossless crossing
+            slope = (eps[(i + 1) % 120] + eps[(i - 1) % 120]) / (2 * (2 / 120))           # ueV per pi
+            de = (np.abs(Rf[g][b, K] - Rf[g][b, K + 1]).max() / 2) if b.any() else np.nan
+            bb = bulk[round(c[0], 3)]
+            rows.append((L, c[0], width, slope, de, bb[1], bb[2]))
+            print(f"    L {L / 1000:g} um, crossing {c[0]:.3f} pi ({'gapped' if bb[1] >= 1e-2 else 'GAPLESS'}): segment "
+                  f"{width:.4f} pi; |d eps/d phi| {slope:.1f} ueV/pi; delta_eff {de:.3f} ueV; 2 delta_eff / slope "
+                  f"{2 * de / slope if slope > 0 else np.nan:.4f} pi", flush=True)
+    rows = np.array(rows, float)
+    FR = np.array([ep_between(EP5[L][1]).mean() * 2 for L in EP5_LS])
+    EM = np.array([np.abs(EP5[L][0][:, 0]).max() for L in EP5_LS])
+    for L, fr, em in zip(EP5_LS, FR, EM):
+        print(f"    L {L / 1000:g} um: total phase between EPs (coarse) {fr:.3f} pi; max lossless |eps| {em:.2f} ueV",
+              flush=True)
+    gp = rows[:, 5] >= 1e-2
+    xi = np.median(rows[gp, 6]) if gp.any() else np.nan
+    Ls = np.array(EP5_LS) / 1000
+    fig, axs = plt.subplots(1, 3, figsize=(15.5, 4.7), layout='constrained')
+    a = axs[0]
+    pred = 2 * rows[:, 4] / rows[:, 3]
+    a.loglog(pred[gp], rows[gp, 2], 'o', color='#2a78d6', ms=7, label='crossing in a gapped stretch')
+    a.loglog(pred[~gp], rows[~gp, 2], 'o', mfc='none', mec='#eb6834', ms=7, mew=1.5,
+             label='crossing in a gapless stretch')
+    both = np.r_[pred, rows[:, 2]]
+    both = both[np.isfinite(both) & (both > 0)]
+    lim = [0.5 * both.min(), 2 * both.max()]
+    a.loglog(lim, lim, color='#52514e', lw=0.8, ls='--', label=r'width $= 2\delta_\mathrm{eff}/|d\varepsilon/d\phi|$')
+    a.set_xlabel(r'$2\delta_\mathrm{eff}/|d\varepsilon/d\phi|$ ($\pi$)')
+    a.set_ylabel(r'EP segment width, fine scan ($\pi$)')
+    a.set_title('(a) the local law, every crossing and L', fontsize=11)
+    a.legend(fontsize=8, frameon=False)
+    a.grid(color='#e4e3df', lw=0.6, which='both')
+    a = axs[1]
+    a.semilogy(rows[gp, 0] / 1000, rows[gp, 3], 'o', color='#2a78d6', ms=7, label='gapped')
+    a.semilogy(rows[~gp, 0] / 1000, rows[~gp, 3], 'o', mfc='none', mec='#eb6834', ms=7, mew=1.5, label='gapless')
+    if gp.any():
+        s0 = np.exp(np.mean(np.log(rows[gp, 3]) + rows[gp, 0] / xi))
+        a.semilogy(Ls, s0 * np.exp(-Ls * 1000 / xi), color='#52514e', lw=1, ls=':',
+                   label=rf'$\propto e^{{-L/\xi_M}}$, median $\xi_M$ {xi:.0f} nm')
+    a.set_xlabel(r'$L$ ($\mu$m)')
+    a.set_ylabel(r'lossless $|d\varepsilon/d\phi|$ at the crossings ($\mu$eV/$\pi$)')
+    a.set_title('(b) where the length enters', fontsize=11)
+    a.legend(fontsize=8, frameon=False)
+    a.grid(color='#e4e3df', lw=0.6, which='both')
+    a = axs[2]
+    a.semilogy(Ls, FR, 'o-', color='#2a78d6', lw=1.6, label='total phase between EPs (coarse)')
+    if gp.any() and FR[0] > 0:
+        a.semilogy(Ls, FR[0] * np.exp((Ls - Ls[0]) * 1000 / xi), color='#52514e', lw=1, ls=':',
+                   label=r'$\propto e^{L/\xi_M}$ (median $\xi_M$)')
+    a.set_xlabel(r'$L$ ($\mu$m)')
+    a.set_ylabel(r'phase between EPs ($\pi$)')
+    a.set_title(rf'(c) $\tau_L$ {EP5_PAIR[0]:g}, $\tau_R$ {EP5_PAIR[1]:g}, $E_Z$ {EP_EZ:g} meV', fontsize=11)
+    a.legend(fontsize=8, frameon=False)
+    a.grid(color='#e4e3df', lw=0.6, which='both')
+    st.save_fig(fig, 'ep5_length_mixed', dpi=150)
+    plt.close(fig)
+    print("figure: plots/ep5_length_mixed.png", flush=True)
+
+# %% [ep5] --- 3. MATCHED ZEROS: along E_Z at a fixed gapped phase, the crossing nearest EP5_EZREF for every L ---
+# Along phi the crossings come and go with L (L 2.5: none at E_Z 0.93).  Along E_Z every L has zeros (spacing ~0.15 meV at
+# L 2), so the zero nearest a reference field is compared across L at (nearly) the same xi_M: width_EZ ~ 2 delta_eff /
+# |d eps / d E_Z| and |d eps / d E_Z| ~ e^{-L / xi_M}  ->  width ~ e^{+L / xi_M}.  Coarse pair line (EP5_EZC) at EP5_PHZ,
+# then a fine scan (41 fields) around the crossing nearest EP5_EZREF, the window widened to 1.5x the coarse segment.
+# Slope from the pair's own Re E just outside the segment (eps ~ sqrt(Re^2 + delta_eff^2)).  plots/ep5_lengthEZ_mixed.png.
+if run_part('ep5'):
+    _tl, _tr = EP5_PAIR
+    EP5Z = {}
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        for L in EP5_LSZ:
+            C = st.myf.scan(partial(ep5_point, EP5_PHZ, L=L, tau_L=_tl, tau_R=_tr), {'E_Z': EP5_EZC}, pool=_pool,
+                            chunksize=1, save=str(st.DATA / f'scharf_absEP5_EZline_mixed_a10_phi1.7417_L{L / 1000:g}'
+                                                            f'_tauL{_tl:g}_R{_tr:g}.npz'))['values']
+            r = np.abs(C[:, 0])
+            cz = [float(EP5_EZC[i]) for i in range(1, len(r) - 1) if r[i] <= r[i - 1] and r[i] <= r[i + 1] and r[i] < 1.0]
+            if not cz:
+                print(f"ep5 E_Z: L {L / 1000:g} um: no crossing on the coarse line", flush=True)
+                continue
+            z0 = min(cz, key=lambda e: abs(e - EP5_EZREF))
+            wc = ep_between(C).sum() * 0.005
+            half = round(max(0.005, 1.5 * wc), 4)
+            ezf = np.round(z0 + np.linspace(-half, half, 41), 6)
+            F = st.myf.scan(partial(ep5_point, EP5_PHZ, L=L, tau_L=_tl, tau_R=_tr), {'E_Z': ezf}, pool=_pool, chunksize=1,
+                            save=str(st.DATA / f'scharf_absEP5_EZfine_mixed_a10_phi1.7417_L{L / 1000:g}_z{z0:g}_h{half:g}'
+                                                f'_tauL{_tl:g}_R{_tr:g}.npz'))['values']
+            EP5Z[L] = (C, z0, ezf, F)
+            print(f"ep5 E_Z: L {L / 1000:g} um done; crossings at E_Z " + ", ".join(f"{v:.3f}" for v in cz)
+                  + f"; fine around {z0:.3f} +- {half:g} meV", flush=True)
+        _zs = sorted({round(v[1], 4) for v in EP5Z.values()})
+        EP5ZB = st.myf.scan(partial(ep5_bulk, EP5_PHZ), {'E_Z': np.array(_zs)}, pool=_pool, chunksize=1,
+                            save=str(st.DATA / 'scharf_absEP5_EZbulk_mixed_a10_phi1.7417.npz'))['values']
+    finally:
+        _pool.shutdown()
+    K = EP_K
+    print(f"\n  [ep5] matched zeros along E_Z at phi {EP5_PHZ / np.pi:.4f} pi, (tau_L, tau_R) = {EP5_PAIR}:", flush=True)
+    zrows = []                                       # L, z0, width (ueV of E_Z), slope (ueV per meV), delta_eff, xi_M
+    for L, (C, z0, ezf, F) in EP5Z.items():
+        ball = ep_between(F)
+        step = ezf[1] - ezf[0]
+        b = np.zeros_like(ball)
+        idx = np.flatnonzero(ball)
+        if idx.size:                                 # only the contiguous segment nearest z0 (the window can catch another)
+            runs = np.split(idx, np.flatnonzero(np.diff(idx) > 1) + 1)
+            j0 = int(np.argmin(np.abs(ezf - z0)))
+            b[min(runs, key=lambda r: np.min(np.abs(r - j0)))] = True
+        width = b.sum() * step * 1e3
+        trunc = bool(b[0] or b[-1])
+        de = (np.abs(F[b, K] - F[b, K + 1]).max() / 2) if b.any() else np.nan
+        bc = ep_between(C)
+        i0 = int(np.argmin(np.abs(EP5_EZC - z0)))
+        lo, hi = i0, i0
+        while lo > 0 and bc[lo]:
+            lo -= 1
+        while hi < len(EP5_EZC) - 1 and bc[hi]:
+            hi += 1
+        lo, hi = max(lo - (0 if lo < i0 else 1), 0), min(hi + (0 if hi > i0 else 1), len(EP5_EZC) - 1)
+        e_l = np.hypot(C[lo, 0], de if np.isfinite(de) else 0.0)
+        e_h = np.hypot(C[hi, 0], de if np.isfinite(de) else 0.0)
+        slope = (e_l + e_h) / (EP5_EZC[hi] - EP5_EZC[lo])
+        bb = EP5ZB[_zs.index(round(z0, 4))]
+        zrows.append((L, z0, width, slope, de, bb[2], bb[1]))
+        print(f"    L {L / 1000:g} um: zero at {z0:.3f} meV; segment {width:.2f} ueV of E_Z" + (" (TRUNCATED by the window)"
+              if trunc else "") + f"; delta_eff {de:.3f} ueV; |d eps/d E_Z| {slope:.1f} ueV/meV; 2 delta_eff / slope "
+              f"{2 * de / slope * 1e3 if slope > 0 else np.nan:.2f} ueV; bulk there: Q {bb[0]:+.0f}, Delta_top {bb[1]:.1f} ueV, "
+              f"xi_M {bb[2]:.0f} nm", flush=True)
+    zrows = np.array(zrows, float)
+    if len(zrows) >= 2:
+        good = np.isfinite(zrows[:, 2]) & (zrows[:, 2] > 0)
+        fit = np.polyfit(zrows[good, 0], np.log(zrows[good, 2]), 1) if good.sum() >= 2 else [np.nan, np.nan]
+        print(f"    fit width ~ e^(L / xi): xi_fit {1 / fit[0]:.0f} nm vs xi_M {np.mean(zrows[:, 5]):.0f} nm (mean at the zeros)",
+              flush=True)
+        fig, axs = plt.subplots(1, 3, figsize=(15.5, 4.7), layout='constrained')
+        a = axs[0]
+        Ls = zrows[:, 0] / 1000
+        a.semilogy(Ls, zrows[:, 2], 'o-', color='#2a78d6', lw=1.8, ms=7, label='EP segment width (fine scan)')
+        a.semilogy(Ls, 2 * zrows[:, 4] / zrows[:, 3] * 1e3, 'x--', color='#eb6834', lw=1.2, ms=7,
+                   label=r'$2\delta_\mathrm{eff}/|d\varepsilon/dE_Z|$')
+        xm = np.mean(zrows[:, 5])
+        j = int(np.argmin(np.abs(zrows[:, 0] - 2000.0)))
+        a.semilogy(Ls, zrows[j, 2] * np.exp((zrows[:, 0] - zrows[j, 0]) / xm), ':', color='#52514e', lw=1.2,
+                   label=rf'$\propto e^{{L/\xi_M}}$, $\xi_M$ {xm:.0f} nm (no fit)')
+        a.set_xlabel(r'$L$ ($\mu$m)')
+        a.set_ylabel(r'segment width along $E_Z$ ($\mu$eV)')
+        a.set_title(rf'(a) zero nearest $E_Z$ {EP5_EZREF:g} meV, $\phi$ {EP5_PHZ / np.pi:.3f}$\pi$', fontsize=11)
+        a.legend(fontsize=8, frameon=False)
+        a.grid(color='#e4e3df', lw=0.6, which='both')
+        cols = ('#c6c0f2', '#8a7ee0', '#4a3bb8', '#1e1757')
+        for (L, (C, z0, ezf, F)), col in zip(EP5Z.items(), cols):
+            dz = (ezf - z0) * 1e3
+            axs[1].plot(dz, F[:, 0], '.', color=col, ms=4, label=rf'$L$ {L / 1000:g} $\mu$m')
+            axs[1].plot(dz, F[:, 1], '.', color=col, ms=4)
+            axs[2].plot(dz, F[:, K], '.', color=col, ms=4)
+            axs[2].plot(dz, F[:, K + 1], '.', color=col, ms=4)
+        axs[1].set_xlabel(r'$E_Z - E_Z^0$ ($\mu$eV)')
+        axs[1].set_ylabel(r'Re $E$ of the pair ($\mu$eV)')
+        axs[1].set_title('(b) the pair through the zero: flat Re E = 0 between EPs', fontsize=11)
+        axs[1].legend(fontsize=8, frameon=False)
+        axs[2].set_xlabel(r'$E_Z - E_Z^0$ ($\mu$eV)')
+        axs[2].set_ylabel(r'Im $E$ of the pair ($\mu$eV)')
+        axs[2].set_title('(c) the split widths between the EPs', fontsize=11)
+        for a in axs[1:]:
+            a.grid(color='#e4e3df', lw=0.6)
+        st.save_fig(fig, 'ep5_lengthEZ_mixed', dpi=150)
+        plt.close(fig)
+        print("figure: plots/ep5_lengthEZ_mixed.png", flush=True)
+
+
+# ====================================================================================================================
+# PART 'ep6'  (2026-11-18)
+# ====================================================================================================================
+# STUDY: does the open junction show the (1/2) ln 2 entropy plateau between EPs of Pino, Meir & Aguado (arXiv
+# 2405.02387; one isolated Majorana, measurable through dS/dphi = -(hbar / 2e) dI/dT)?  Side study, judged NOT thesis
+# relevant (2026-11-18); the planned exact supercurrent cells (Li & Trauzettel's CPR) were dropped before they finished.
+#   ENTROPY from the full-model poles (tools.pole_entropy: Lloyd DOS = one Lorentzian per pole, exact for H_eff): a
+#   pole -i G counts (1/2) ln 2 for G << kT and ~0 for G >> kT.  The [ep] pairs (tau_R 0.1) are added to by
+#   SINGLE-PROBE lines (tau_R = 0, Pino's gamma_3 = 0).
+# E_Z = EP_EZ, thesis junction (mixed SOC, mu_C 0.7, L 2 um, a 10).  Figure plots/ep6_entropy_mixed.png; caches
+# scharf_absEP_*_R0 (single-probe poles).
+EP6_ONE = (0.3, 0.5, 0.8)                                  # single probe: tau_L, tau_R = 0
+EP6_KT = np.logspace(-2.0, np.log10(3.0), 61)              # ueV (0.12 - 35 mK); the bulk levels (>= ~20 ueV) are left
+                                                           # out of S: s_F(20 / 3) ~ 0.01 per level at the top
+
+
+def ep6_poles(tau_L, tau_R):
+    """The pole lines of [ep] / [ep6] on EP_PH: (phi / pi, complex poles (121, EP_K), between-EPs mask)."""
+    nm = 'ref' if tau_L == 0 and tau_R == 0 else f'tauL{tau_L:g}'
+    z = np.load(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_{nm}_R{tau_R:g}.npz')
+    R = z['values']
+    return z['axis_phi'] / np.pi, R[:, :EP_K] + 1j * R[:, EP_K:2 * EP_K], ep_between(R)
+
+
+def ep6_eps(btw, x):
+    """EP phases (phi / pi) from a between-EPs mask: midpoints of its switches."""
+    ch = np.flatnonzero(np.diff(btw.astype(int)))
+    return (x[ch] + x[ch + 1]) / 2
+
+
+def ep6_label(c):
+    return 'probes detached' if c == (0.0, 0.0) else rf'$\tau_L$ {c[0]:g}, $\tau_R$ {c[1]:g}'
+
+
+# %% [ep6] --- 1. SINGLE-PROBE POLE LINES (tau_R = 0), as [ep] cell 1 (plots/ep_mixed_tauL<t>_tauR0.png) ---
+if run_part('ep6'):
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        _ref = np.load(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_ref_R0.npz')['values']
+        for _tl in EP6_ONE:
+            _R = st.myf.scan(partial(ep_point, tau_L=_tl, tau_R=0.0), {'phi': EP_PH}, pool=_pool, chunksize=1,
+                             save=str(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_tauL{_tl:g}_R0.npz'))['values']
+            ep_figure(_tl, _R, _ref, tau_R=0.0)
+    finally:
+        _pool.shutdown()
+
+
+# %% [ep6] --- 2. ENTROPY S(phi, T) FROM THE POLES and the Maxwell-relation signal dI/dT = -(2 e k_B / hbar) dS/dphi ---
+if run_part('ep6'):
+    LN2 = np.log(2)
+    cfg = [(0.0, 0.0), (0.8, 0.1)] + [(t, 0.0) for t in EP6_ONE]
+    T_mK = EP6_KT / st.KB_UEV_PER_MK
+    TC = (3.0, 10.0, 30.0)                                        # mK, the cuts
+    CC = ('#2a78d6', '#1baf7a', '#eb6834')
+    ENT = {}
+    for c in cfg:
+        x, P, btw = ep6_poles(*c)
+        ENT[c] = (x, P, btw, st.pole_entropy(P[:, :2], EP6_KT) / LN2)
+    print(f"\n  [ep6] entropy of the Majorana pair (units k_B ln 2), E_Z {EP_EZ:g}; T window where 0.45 <= S <= 0.55:",
+          flush=True)
+    for c in cfg:
+        x, P, btw, S = ENT[c]
+        for ph in (0.5, 0.7333, 1.0, 1.75):
+            i = int(np.argmin(np.abs(x - ph)))
+            w = T_mK[(S[i] >= 0.45) & (S[i] <= 0.55)]
+            print(f"    {c}: phi {x[i]:.3f} pi ({'between EPs' if btw[i] else 'split'}), poles "
+                  f"{P[i, 0].real:+.2f}{P[i, 0].imag:+.3f}i / {P[i, 1].real:+.2f}{P[i, 1].imag:+.3f}i ueV: S at "
+                  + ", ".join(f"{Tc:g} mK {S[i, int(np.argmin(np.abs(T_mK - Tc)))]:.3f}" for Tc in TC)
+                  + (f"; S in [0.45, 0.55] for {w.min():.2f}-{w.max():.2f} mK" if w.size else "; never near 1/2"),
+                  flush=True)
+    fig, axs = plt.subplots(3, len(cfg), figsize=(3.9 * len(cfg), 10.8), layout='constrained', sharex=True,
+                            gridspec_kw=dict(height_ratios=(1.25, 1, 1)))
+    for j, c in enumerate(cfg):
+        x, P, btw, S = ENT[c]
+        e = np.flatnonzero(np.diff(np.r_[0, btw.astype(int), 0]))
+        a = axs[0, j]
+        im = a.pcolormesh(x, T_mK, S.T, shading='nearest', cmap='viridis', vmin=0, vmax=1, rasterized=True)
+        a.contour(x, T_mK, S.T, levels=[0.5], colors='w', linewidths=0.9, linestyles='--')
+        for ph in ep6_eps(btw, x):
+            a.axvline(ph, color='#eb6834', lw=1, ls=':')
+        a.set_yscale('log')
+        a.set_title(ep6_label(c), fontsize=11)
+        for r in (1, 2):
+            for i0, i1 in zip(e[::2], e[1::2]):
+                axs[r, j].axvspan(x[i0] - 1 / 120, x[i1 - 1] + 1 / 120, color='#f5c9b3', lw=0, zorder=0)
+            axs[r, j].grid(color='#e4e3df', lw=0.6)
+        for Tc, col in zip(TC, CC):
+            k = int(np.argmin(np.abs(T_mK - Tc)))
+            axs[1, j].plot(x, S[:, k], color=col, lw=1.6, label=f'{T_mK[k]:.0f} mK')
+            dS = np.gradient(S[:, k] * LN2, x * np.pi)
+            axs[2, j].plot(x, -st.TWO_E_KB_HBAR_NA_MK * dS, color=col, lw=1.4, label=f'{T_mK[k]:.0f} mK')
+        axs[1, j].axhline(0.5, color='#52514e', lw=0.8, ls='--')
+        axs[1, j].set_ylim(0, 1.05)
+        axs[2, j].set_xlabel(r'$\phi/\pi$')
+    axs[0, 0].set_ylabel('T (mK)')
+    axs[1, 0].set_ylabel(r'$S\,/\,k_B\ln 2$ (Majorana pair)')
+    axs[2, 0].set_ylabel(r'$\partial I/\partial T = -(2ek_B/\hbar)\,\partial S/\partial\phi$ (nA/mK)')
+    axs[1, 0].legend(fontsize=8.5, frameon=False, loc='upper left')
+    fig.colorbar(im, ax=axs[0, :], shrink=0.9, pad=0.01, label=r'$S\,/\,k_B\ln 2$')
+    fig.suptitle(rf'Entropy of the open junction from its poles (Lloyd DOS), $E_Z$ {EP_EZ:g} meV, mixed SOC, L 2 $\mu$m.'
+                 '  Shaded / dotted: between EPs / EPs; dashed: S = (1/2) ln 2 (one isolated Majorana)', fontsize=11)
+    st.save_fig(fig, 'ep6_entropy_mixed', dpi=150)
+    plt.close(fig)
+    print("figure: plots/ep6_entropy_mixed.png", flush=True)
+
+
+# ====================================================================================================================
+# PART 'ep7'  (2026-11-18)
+# ====================================================================================================================
+# STUDY: how do the EP segments show up in the THERMAL TRANSPORT between the probes?  At finite T the probes average the
+# energy-resolved transmission over |E| ~ a few kT, i.e. over the region where the poles of the open junction sit.  All
+# from the full model (tools.channel_point with separate probe bonds; poles from [ep] / [ep3] / cell 1 here):
+#   Q1  kappa(E, phi) = (T_ee + T_he,cross + T_hh + T_eh,cross)(E) / 2: where is it maximal (E*), and does E* follow the
+#       real parts of the pair poles -- is the heat transmission peaked at E = 0 throughout the EP segments?
+#   Q2  kappa(T, phi) at 0 / 5 / 10 / 20 / 50 mK: T-robustness inside vs outside the segments.
+#   Q3  the kappa ~ 1/2 plateau at 10-20 mK with EP-regime probes vs the symmetric bonds.
+# Pairs (tau_L, tau_R): (0.5, 0.1) phi = pi between EPs, det r never < 0; (0.4, 0.6) weak asymmetry, segments inside
+# det r < 0; (0.5, 0.5) symmetric control (EPs ~0.001 pi, unresolved); (0.8, 0.1) merged segments; (0.3, 0.1).
+# E_Z = EP_EZ, thesis junction.  Energy grid 0 + 60 log points 0.01-70 ueV (16 kT at 50 mK = 69 ueV).  ~42 s per energy
+# (121 phases, one thread) -> ~7.5 min per pair on EP_W workers.  Figures plots/ep7_*.png; caches scharf_absEP7_*.
+EP7_CFG = ((0.5, 0.1), (0.4, 0.6), (0.5, 0.5), (0.8, 0.1), (0.3, 0.1))
+EP7_E = np.r_[0.0, np.geomspace(0.01, 70.0, 60)]                    # ueV
+EP7_T = (0.0, 5.0, 10.0, 20.0, 50.0)                                # mK
+EP7_TCOL = ('#0b2a4a', '#1d4f8a', '#2a78d6', '#6fa8e6', '#b4d2f3')  # one hue, dark = cold
+
+
+def ep7_channels(E, tau_L, tau_R):
+    """The six channels at energy E (ueV) on EP_PH for the probe bonds (tau_L, tau_R): (6 * len(EP_PH),)."""
+    q = st.replace(junction('mixed', 0.7), tc_barr_transport=float(tau_L))
+    return st.channel_point(q, EP_EZ, float(E) * 1e-3, tuple(EP_PH), tau_R=float(tau_R))
+
+
+def ep7_poles(tau_L, tau_R):
+    """(phi / pi, the pair poles (n, 2) complex ueV, between-EPs mask) from the pole caches ([ep3] fine for (0.4, 0.6))."""
+    if (tau_L, tau_R) == EP3_FINE:
+        z = np.load(st.DATA / f'scharf_absEP3_fine_mixed_a10_EZ{EP_EZ:g}_tauL{tau_L:g}_R{tau_R:g}.npz')
+    else:
+        z = np.load(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_tauL{tau_L:g}_R{tau_R:g}.npz')
+    R = z['values']
+    return z['axis_phi'] / np.pi, R[:, :2] + 1j * R[:, EP_K:EP_K + 2], ep_between(R)
+
+
+def ep7_kappaE(V):
+    """kappa(E, phi) (n_E, n_phi) from a channel scan V (n_E, 6 n_phi)."""
+    C = V.reshape(len(V), -1, 6)
+    return (C[..., 0] + C[..., 1] + C[..., 2] + C[..., 3]) / 2
+
+
+def ep7_thermal(V, T_mK):
+    """(kappa, G, local Andreev) at T (mK) for every phase of EP_PH: (n_phi, 3)."""
+    return np.array([st.thermal_line(V[None], st.kT_of_mK(T_mK), EP7_E * 1e-3, phase=n)[0] for n in range(len(EP_PH))])
+
+
+def ep7_figure(c, V):
+    """kappa(E, phi) with the pair poles, kappa(T, phi), and the peak energy E* vs |Re| of the poles, for one pair."""
+    x = EP_PH / np.pi
+    K = ep7_kappaE(V)
+    Es = EP7_E[np.argmax(K, axis=0)]                                 # E* per phase (0 = peaked at zero energy)
+    TH = {T: ep7_thermal(V, T) for T in EP7_T}
+    xp, P, btw = ep7_poles(*c)
+    inside = np.interp(x, xp, btw.astype(float)) > 0.5
+    eph = (xp[np.flatnonzero(np.diff(btw.astype(int)))] + xp[np.flatnonzero(np.diff(btw.astype(int))) + 1]) / 2
+    e = np.flatnonzero(np.diff(np.r_[0, inside.astype(int), 0]))
+    fig, axs = plt.subplots(3, 1, figsize=(9.0, 11.0), sharex=True, layout='constrained',
+                            gridspec_kw=dict(height_ratios=(1.3, 1, 0.9)))
+    a = axs[0]
+    m = EP7_E <= 25.0
+    im = a.pcolormesh(x, EP7_E[m], K[m], shading='nearest', cmap='viridis', vmin=0, vmax=max(0.5, K[m].max()),
+                      rasterized=True)
+    a.plot(xp, np.abs(P[:, 0].real), '.', color='w', ms=2.2, label=r'$|\mathrm{Re}\,\lambda|$ of the pair poles')
+    a.plot(xp, np.abs(P[:, 1].real), '.', color='w', ms=2.2)
+    for ph in eph:
+        for b in axs:
+            b.axvline(ph, color='#eb6834', lw=1, ls=':')
+    a.set_ylim(0, 25)
+    a.set_ylabel(r'$E$ ($\mu$eV)')
+    a.legend(fontsize=8.5, frameon=False, loc='upper right', labelcolor='w')
+    fig.colorbar(im, ax=a, pad=0.01, label=r'$\kappa(E)/\kappa_0$')
+    for b in axs[1:]:
+        for i0, i1 in zip(e[::2], e[1::2]):
+            b.axvspan(x[i0] - 1 / 120, x[i1 - 1] + 1 / 120, color='#f5c9b3', lw=0, zorder=0)
+        b.grid(color='#e4e3df', lw=0.6)
+    for T, col in zip(EP7_T, EP7_TCOL):
+        axs[1].plot(x, TH[T][:, 0], color=col, lw=1.6, label=f'{T:g} mK')
+    axs[1].axhline(0.5, color='#52514e', lw=0.8, ls='--')
+    axs[1].set_ylabel(r'$\kappa(T)/\kappa_0$')
+    axs[1].legend(fontsize=8.5, frameon=False, ncol=5, loc='upper center')
+    a = axs[2]
+    a.plot(x, Es, 'o', color='#2a78d6', ms=3.5, mew=0, label=r'$E^*$: maximum of $\kappa(E)$')
+    a.plot(xp, np.abs(P[:, :2].real).max(axis=1), '-', color='#52514e', lw=1.0,
+           label=r'$\max|\mathrm{Re}\,\lambda|$ of the pair')
+    a.set_yscale('symlog', linthresh=0.05)
+    a.set_ylim(-0.01, 30)
+    a.set_ylabel(r'$E^*$ ($\mu$eV)')
+    a.set_xlabel(r'$\phi/\pi$')
+    a.legend(fontsize=8.5, frameon=False, loc='upper right')
+    axs[0].set_xlim(0, 2)
+    fig.suptitle(rf'Heat transport across the EP segments: $\tau_L$ {c[0]:g}, $\tau_R$ {c[1]:g}, $E_Z$ {EP_EZ:g} meV, '
+                 r'mixed SOC, L 2 $\mu$m' '\n' 'dotted: EPs (full-model poles); shaded: between EPs', fontsize=11)
+    name = f'ep7_kappaE_mixed_tauL{c[0]:g}_tauR{c[1]:g}'
+    st.save_fig(fig, name, dpi=150)
+    plt.close(fig)
+    k0, k20 = TH[0.0][:, 0], TH[20.0][:, 0]
+    ok = k0 > 0.05
+    print(f"  ({c[0]:g}, {c[1]:g}): phases between EPs {inside.mean() * 2:.3f} pi; E* = 0 on {np.mean(Es[inside] == 0) * 100 if inside.any() else np.nan:.0f} % "
+          f"of them and on {np.mean(Es[~inside] == 0) * 100:.0f} % outside; kappa(20 mK)/kappa(0) (where kappa(0) > 0.05) median "
+          f"{np.median((k20 / k0)[ok & inside]) if (ok & inside).any() else np.nan:.3f} inside / "
+          f"{np.median((k20 / k0)[ok & ~inside]) if (ok & ~inside).any() else np.nan:.3f} outside; max kappa at 0 / 10 / 20 mK "
+          + " / ".join(f"{TH[T][:, 0].max():.3f}" for T in (0.0, 10.0, 20.0)), flush=True)
+    print(f"figure: plots/{name}.png", flush=True)
+    return K, Es, TH
+
+
+# %% [ep7] --- 1. CHANNELS ON THE ENERGY GRID PER PROBE PAIR (pole line first where it is missing), one figure each ---
+if run_part('ep7'):
+    EP7 = {}
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        for c in EP7_CFG:
+            if c != EP3_FINE:
+                st.myf.scan(partial(ep_point, tau_L=c[0], tau_R=c[1]), {'phi': EP_PH}, pool=_pool, chunksize=1,
+                            save=str(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_tauL{c[0]:g}_R{c[1]:g}.npz'))
+            V = st.myf.scan(partial(ep7_channels, tau_L=c[0], tau_R=c[1]), {'E': EP7_E}, pool=_pool, chunksize=1,
+                            save=str(st.DATA / f'scharf_absEP7_ch_mixed_a10_EZ{EP_EZ:g}_tauL{c[0]:g}_R{c[1]:g}.npz'))['values']
+            EP7[c] = (V,) + ep7_figure(c, V)
+    finally:
+        _pool.shutdown()
+
+
+# ====================================================================================================================
+# PART 'ep8'  (2026-11-18)
+# ====================================================================================================================
+# STUDY: how the probe couplings -- their DIFFERENCE and their overall STRENGTH -- set the length of the EP segments ALONG
+# THE ZEEMAN FIELD, and how that relates to the broadening Gamma, to the kappa = 1/2 plateau along E_Z and to the
+# transport quantities kappa is made of.  Full model only; phi fixed at EP8_PHI (the best-plateau phase of [plateau] /
+# [ep4]), E_Z 0.80-1.10 meV in 5 ueV steps (the [ep4] cut).
+#   EP segments: D = ((lambda_1 - lambda_2) / 2)^2 of the pair poles is real -- > 0 for a split pair (+-a - i G), < 0
+#     between EPs (-i G_1, -i G_2) -- and, a symmetric function of the two poles, smooth across the EPs, where it
+#     vanishes.  EPs = zeros of D (linear interpolation on the grid); a segment narrower than the grid shows as a local
+#     minimum of D whose parabola through the three points dips below 0 (EPs at its roots).
+#   'Unresolved' range: max |Re lambda| <= Gbar = -Im(lambda_1 + lambda_2) / 2 (the splitting hidden by the width).
+#   Gamma_1(tau, E_Z) = -Im(lambda_1 + lambda_2) with ONE probe of bond tau (single-probe rows; the junction is mirror
+#     symmetric, so it serves either side).  SigmaGamma / DeltaGamma of a pair = sum / difference of its two Gamma_1 at
+#     the lossless zero crossings E_c of eps(E_Z) (probes detached: pair (0, 0)).
+#   Transport at E = 0, T = 0: kappa, G, local Andreev, det r_L -> T_ee = (kappa + G)/2, T_he = (kappa - G)/2;
+#     plateau = plat_mask (the [plateau] criterion), windows along E_Z in ueV.
+# One task per field computes every pair (the ribbon set-up, ~40 s, is shared: ~6-8 s poles + ~2 s transport per pair).
+# Figures plots/ep8_coupling_mixed.png, ep8_lines_mixed.png; cache scharf_absEP8_field_*.
+EP8_PHI = 1.7417 * np.pi
+EP8_EZ = EP4_EZ
+EP8_DE = 5.0                                                     # ueV, the field step
+EP8_T = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8)
+EP8_PAIRS = ([(0.0, 0.0)] + [(t, 0.0) for t in EP8_T]
+             + [(tl, tr) for tl in EP8_T for tr in EP8_T if tr <= tl])
+EP8_NV = 2 * EP_K + 1 + 5                                        # ep_point values + transport row
+EP8_SHOW = ((0.5, 0.5), (0.6, 0.4), (0.5, 0.1), (0.8, 0.1))
+
+
+def ep8_field(E_Z):
+    """At one field: ep_point (k = 16, the broad pole of strong probes is kept) and the E = 0 transport row
+    (kappa, G, Andreev, det r_L, n_bad; NaN for a single probe) for every pair of EP8_PAIRS, flattened."""
+    out = []
+    for tl, tr in EP8_PAIRS:
+        p = ep_point(EP8_PHI, tl, tr, E_Z=float(E_Z), k=16)
+        t = (st.transport_phis(junction('mixed', 0.7, tl), float(E_Z), [EP8_PHI], tau_R=tr)[0] if tr > 0
+             else np.full(5, np.nan))
+        out.append(np.r_[p, t])
+    return np.array(out).ravel()
+
+
+def ep8_segments(E, D):
+    """Segments with D < 0 along the open grid E: sorted (start, end, truncated) in the units of E.  Edges at the linear
+    zeros of D; a local minimum of D > 0 whose parabola through the three points dips below 0 adds the segment between
+    its roots."""
+    n, segs, i = len(E), [], 0
+    neg = D < 0
+    while i < n:
+        if neg[i]:
+            j = i
+            while j + 1 < n and neg[j + 1]:
+                j += 1
+            s = E[i] if i == 0 else E[i - 1] - D[i - 1] * (E[i] - E[i - 1]) / (D[i] - D[i - 1])
+            e = E[j] if j == n - 1 else E[j] - D[j] * (E[j + 1] - E[j]) / (D[j + 1] - D[j])
+            segs.append((s, e, i == 0 or j == n - 1))
+            i = j + 1
+        else:
+            i += 1
+    for i in range(1, n - 1):
+        if D[i] > 0 and D[i] <= D[i - 1] and D[i] <= D[i + 1]:
+            a, b, c = np.polyfit(E[i - 1:i + 2] - E[i], D[i - 1:i + 2], 2)
+            disc = b * b - 4 * a * c
+            if a > 0 and disc > 0:
+                r = np.sort((-b + np.array([-1.0, 1.0]) * np.sqrt(disc)) / (2 * a)) + E[i]
+                if r[0] >= E[i - 1] and r[1] <= E[i + 1]:
+                    segs.append((r[0], r[1], False))
+    return sorted(segs)
+
+
+def ep8_crossings(E, s, tol=1.0):
+    """Zero crossings of the lossless eps(E_Z) from |eps| = s on the grid: local minima below tol (ueV), placed by a
+    linear sign-flipping interpolation towards the smaller neighbour."""
+    out = []
+    for i in range(1, len(E) - 1):
+        if s[i] <= s[i - 1] and s[i] <= s[i + 1] and s[i] < tol:
+            j = i + 1 if s[i + 1] < s[i - 1] else i - 1
+            out.append(E[i] + (E[j] - E[i]) * s[i] / (s[i] + s[j]))
+    return np.array(out)
+
+
+def ep8_seg_near(segs, ec, reach=15.0):
+    """The segment containing E_c, else the one whose centre is nearest within `reach` (ueV): (length, segment) or (0,
+    None) -- the probes shift the level, so a segment need not contain the lossless crossing."""
+    best = None
+    for sg in segs:
+        if sg[0] <= ec <= sg[1]:
+            return sg[1] - sg[0], sg
+        d = abs((sg[0] + sg[1]) / 2 - ec)
+        if d <= reach and (best is None or d < best[0]):
+            best = (d, sg)
+    return (best[1][1] - best[1][0], best[1]) if best else (0.0, None)
+
+
+# %% [ep8] --- 1. POLES AND E = 0 TRANSPORT FOR EVERY PAIR, ONE TASK PER FIELD ---
+if run_part('ep8'):
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        EP8_F = st.myf.scan(ep8_field, {'E_Z': EP8_EZ}, pool=_pool, chunksize=1,
+                            save=str(st.DATA / f'scharf_absEP8_field_mixed_a10_phi{EP8_PHI / np.pi:.4f}.npz'))['values']
+    finally:
+        _pool.shutdown()
+    EP8_F = EP8_F.reshape(len(EP8_EZ), len(EP8_PAIRS), EP8_NV)
+    print("ep8: all fields done", flush=True)
+
+
+# %% [ep8] --- 2. EP LENGTH ALONG E_Z vs THE COUPLINGS, Gamma, THE kappa PLATEAU AND THE kappa INGREDIENTS ---
+if run_part('ep8'):
+    E = EP8_EZ * 1e3                                                 # ueV
+    IDX = {c: n for n, c in enumerate(EP8_PAIRS)}
+    lam = lambda c: (EP8_F[:, IDX[c], 0] + 1j * EP8_F[:, IDX[c], EP_K], EP8_F[:, IDX[c], 1] + 1j * EP8_F[:, IDX[c], EP_K + 1])
+    TR = lambda c: EP8_F[:, IDX[c], 2 * EP_K + 1:]
+    l1, _ = lam((0.0, 0.0))
+    EC = ep8_crossings(E, np.abs(l1.real))
+    G1 = {0.0: np.zeros(len(E))}
+    for t in EP8_T:
+        a_, b_ = lam((t, 0.0))
+        G1[t] = -(a_.imag + b_.imag)
+    print(f"\n  [ep8] phi {EP8_PHI / np.pi:.4f} pi, E_Z {E[0]:.0f}-{E[-1]:.0f} ueV: lossless zero crossings at E_Z = "
+          + ", ".join(f"{v:.1f}" for v in EC) + " ueV", flush=True)
+    print("    Gamma_1(tau) at the crossings (ueV): " + "; ".join(
+        f"tau {t:g}: " + "/".join(f"{np.interp(ec, E, G1[t]):.2f}" for ec in EC) for t in EP8_T), flush=True)
+    SEG, ROW = {}, {}
+    for c in EP8_PAIRS[1:]:
+        a_, b_ = lam(c)
+        D = (((a_ - b_) / 2) ** 2).real
+        segs = ep8_segments(E, D)
+        Gbar = -(a_.imag + b_.imag) / 2
+        un = ep8_segments(E, np.abs(np.c_[a_.real, b_.real]).max(axis=1) - Gbar - 1e-9)
+        SEG[c] = (segs, un, D)
+        r = dict(L_EP=sum(e - s for s, e, _ in segs), n_seg=len(segs), trunc=any(t for *_, t in segs),
+                 L_un=sum(e - s for s, e, _ in un))
+        r['L_c'] = [ep8_seg_near(segs, ec)[0] for ec in EC]
+        r['SG'] = [np.interp(ec, E, G1[c[0]]) + np.interp(ec, E, G1[c[1]]) for ec in EC]
+        r['DG'] = [np.interp(ec, E, G1[c[0]]) - np.interp(ec, E, G1[c[1]]) for ec in EC]
+        r['Gp'] = [np.interp(ec, E, 2 * Gbar) for ec in EC]
+        if c[1] > 0:
+            T = TR(c)
+            k, G = T[:, 0], T[:, 1]
+            m = plat_mask(T)
+            r['plat'], r['plat_all'] = longest_run(m) * EP8_DE, m.sum() * EP8_DE
+            r['k_c'] = [np.interp(ec, E, k) for ec in EC]
+            r['Tee_c'] = [np.interp(ec, E, (k + G) / 2) for ec in EC]
+            r['The_c'] = [np.interp(ec, E, (k - G) / 2) for ec in EC]
+            ins = np.zeros(len(E), bool)
+            for s, e, _ in segs:
+                ins |= (E >= s) & (E <= e)
+            r['plat_in'] = (m & ins).sum() * EP8_DE
+            r['k_in'] = float(k[ins].mean()) if ins.any() else np.nan
+            r['k_max'] = float(np.nanmax(k))
+        ROW[c] = r
+    print("    tau_L tau_R | EP length along E_Z (ueV): total [n seg] / at each crossing | unresolved | SigmaGamma, "
+          "DeltaGamma at the crossings | plateau: longest window / all / inside EP segs | kappa at crossings", flush=True)
+    for c in EP8_PAIRS[1:]:
+        r = ROW[c]
+        line = (f"    {c[0]:4.1f}  {c[1]:4.1f} | {r['L_EP']:6.1f} [{r['n_seg']}{'*' if r['trunc'] else ''}] / "
+                + "/".join(f"{v:.1f}" for v in r['L_c']) + f" | {r['L_un']:6.1f} | "
+                + "/".join(f"{v:.2f}" for v in r['SG']) + ", " + "/".join(f"{v:+.2f}" for v in r['DG']))
+        if c[1] > 0:
+            line += (f" | {r['plat']:4.0f} / {r['plat_all']:4.0f} / {r['plat_in']:4.0f} | "
+                     + "/".join(f"{v:.3f}" for v in r['k_c']))
+        print(line, flush=True)
+    print("    (* = a segment reaches the window edge)", flush=True)
+    # length law: L_EP x |d eps/dE_Z| / |DeltaGamma| at each crossing (untruncated segments > 5 ueV, tau_L != tau_R);
+    # the slope from +-2 grid points around E_c on either side, averaged
+    for ec in EC:
+        i, s0 = int(np.searchsorted(E, ec)), np.abs(l1.real)
+        sl = 0.5 * (abs(s0[i + 2] - s0[i]) / (E[i + 2] - E[i]) + abs(s0[i - 1] - s0[i - 3]) / (E[i - 1] - E[i - 3]))
+        q, sh = [], []
+        for c in EP8_PAIRS[8:]:
+            L, sg = ep8_seg_near(SEG[c][0], ec)
+            if c[0] != c[1] and sg is not None and not sg[2] and L > 5:
+                q.append(L * sl / abs(np.interp(ec, E, G1[c[0]]) - np.interp(ec, E, G1[c[1]])))
+                sh.append((sg[0] + sg[1]) / 2 - ec)
+        print(f"    length law at E_c {ec:.1f} (|d eps/dE_Z| = {sl:.3f}): L_EP |d eps/dE_Z| / |DeltaGamma| = "
+              f"{np.mean(q):.2f} +- {np.std(q):.2f} (n {len(q)}); segment centre shift {min(sh):+.1f} .. {max(sh):+.1f} ueV",
+              flush=True)
+    # longest kappa-only windows |kappa - 1/2| < tol, and the two pole widths / splitting in the tol 0.02 window
+    print("    kappa-only windows (ueV) for tol 0.01/0.02/0.03, and the poles in the tol-0.02 window:", flush=True)
+    for c in sorted(EP8_PAIRS[8:], key=lambda c: -longest_run(np.abs(TR(c)[:, 0] - 0.5) < 0.02))[:8]:
+        k = TR(c)[:, 0]
+        a_, b_ = lam(c)
+        m = np.abs(k - 0.5) < 0.02
+        n = longest_run(m)
+        j = next(j for j in range(len(m) - n + 1) if m[j:j + n].all())
+        w = np.sort(np.c_[-a_.imag, -b_.imag][j:j + n], axis=1)
+        re = np.abs(np.c_[a_.real, b_.real][j:j + n]).max(axis=1)
+        print(f"     {c}: " + "/".join(f"{longest_run(np.abs(k - 0.5) < t) * EP8_DE:.0f}" for t in (0.01, 0.02, 0.03))
+              + f" | E_Z {E[j]:.0f}-{E[j + n - 1]:.0f}: widths {w[:, 0].min():.1f}-{w[:, 0].max():.1f} and "
+              f"{w[:, 1].min():.1f}-{w[:, 1].max():.1f}, max|Re lambda| {re.min():.1f}-{re.max():.1f} ueV", flush=True)
+    vals = (0.0,) + EP8_T
+
+    def square(key):
+        M = np.full((len(vals), len(vals)), np.nan)
+        for c, r in ROW.items():
+            if key in r:
+                i, j = vals.index(c[0]), vals.index(c[1])
+                M[i, j] = M[j, i] = r[key]
+        return M
+
+    fig, axs = plt.subplots(2, 3, figsize=(17.5, 10.5), layout='constrained')
+    a = axs[0, 0]
+    for n, ec in enumerate(EC):
+        a.semilogy(EP8_T, [np.interp(ec, E, G1[t]) for t in EP8_T], 'o-', ms=5, lw=1.4,
+                   color=('#2a78d6', '#1baf7a', '#eb6834', '#9b59d0', '#52514e')[n % 5], label=f'crossing at {ec:.0f} ueV')
+    a.set_xlabel(r'probe bond $\tau$')
+    a.set_ylabel(r'$\Gamma_1(\tau)$: pair width with ONE probe ($\mu$eV)')
+    a.set_title('(a) broadening by one probe, at the lossless crossings', fontsize=11)
+    a.legend(fontsize=8.5, frameon=False)
+    a.grid(color='#e4e3df', lw=0.6, which='both')
+    for a, key, title in ((axs[0, 1], 'L_EP', r'(b) EP length along $E_Z$ ($\mu$eV), strict'),
+                          (axs[0, 2], 'plat', r'(c) longest $\kappa = 1/2$ plateau window along $E_Z$ ($\mu$eV)')):
+        M = square(key)
+        im = a.imshow(M, origin='lower', cmap='viridis', vmin=0, vmax=max(np.nanmax(M), 1.0))
+        for i in range(len(vals)):
+            for j in range(len(vals)):
+                if np.isfinite(M[i, j]):
+                    a.text(j, i, f'{M[i, j]:.0f}', ha='center', va='center', fontsize=7,
+                           color='w' if M[i, j] < 0.6 * np.nanmax(M) else 'k')
+        a.set_xticks(range(len(vals)), [f'{v:g}' for v in vals])
+        a.set_yticks(range(len(vals)), [f'{v:g}' for v in vals])
+        a.set_xlabel(r'$\tau_R$')
+        a.set_ylabel(r'$\tau_L$')
+        a.set_title(title, fontsize=11)
+        fig.colorbar(im, ax=a, shrink=0.85)
+    a = axs[1, 0]
+    xs, ys, cs = [], [], []
+    for c, r in ROW.items():
+        for n in range(len(EC)):
+            if r['L_c'][n] > 0 and abs(r['DG'][n]) > 0:
+                xs.append(abs(r['DG'][n]))
+                ys.append(r['L_c'][n])
+                cs.append(r['SG'][n])
+    sc = a.scatter(xs, ys, c=cs, s=34, cmap='viridis', norm=mpl.colors.LogNorm())
+    a.set_xscale('log')
+    a.set_yscale('log')
+    a.set_xlabel(r'$|\Delta\Gamma| = |\Gamma_1(\tau_L) - \Gamma_1(\tau_R)|$ at the crossing ($\mu$eV)')
+    a.set_ylabel(r'EP segment at the crossing ($\mu$eV of $E_Z$)')
+    a.set_title(r'(d) segment length vs the width difference (colour: $\Sigma\Gamma$)', fontsize=11)
+    a.grid(color='#e4e3df', lw=0.6, which='both')
+    fig.colorbar(sc, ax=a, label=r'$\Sigma\Gamma$ ($\mu$eV)')
+    a = axs[1, 1]
+    for key, col, lab, ms in (('k_c', '#2a78d6', r'$\kappa$', 34), ('Tee_c', '#1baf7a', r'$T_{ee}$', 20),
+                              ('The_c', '#eb6834', r'$T_{he}$', 20)):
+        xs, ys = [], []
+        for c, r in ROW.items():
+            if key in r:
+                for n in range(len(EC)):
+                    xs.append(abs(r['DG'][n]) / r['SG'][n])
+                    ys.append(r[key][n])
+        a.scatter(xs, ys, color=col, s=ms, label=lab + ' at the crossings')
+    a.set_xlabel(r'$|\Delta\Gamma|\,/\,\Sigma\Gamma$ at the crossing')
+    a.set_ylabel(r'$E = 0$, $T = 0$')
+    a.set_title(r'(e) the $\kappa$ ingredients at the crossings', fontsize=11)
+    a.legend(fontsize=8.5, frameon=False)
+    a.grid(color='#e4e3df', lw=0.6)
+    a = axs[1, 2]
+    cc = [c for c in ROW if 'plat' in ROW[c]]
+    sc = a.scatter([np.mean(ROW[c]['SG']) for c in cc], [ROW[c]['plat'] for c in cc],
+                   c=[np.mean(np.abs(ROW[c]['DG']) / np.array(ROW[c]['SG'])) for c in cc], s=40, cmap='viridis',
+                   vmin=0, vmax=1)
+    for c in cc:
+        a.annotate(f'{c[0]:g}/{c[1]:g}', (np.mean(ROW[c]['SG']), ROW[c]['plat']), fontsize=6.5,
+                   xytext=(3, 2), textcoords='offset points', color='#52514e')
+    a.set_xscale('log')
+    a.set_xlabel(r'$\Sigma\Gamma$, mean over the crossings ($\mu$eV)')
+    a.set_ylabel(r'longest plateau window along $E_Z$ ($\mu$eV)')
+    a.set_title(r'(f) plateau vs overall strength (colour: $|\Delta\Gamma|/\Sigma\Gamma$)', fontsize=11)
+    a.grid(color='#e4e3df', lw=0.6, which='both')
+    fig.colorbar(sc, ax=a, label=r'$|\Delta\Gamma|/\Sigma\Gamma$')
+    fig.suptitle(rf'EP segments and the $\kappa$ plateau ALONG $E_Z$ vs the probe couplings, $\phi$ = '
+                 rf'{EP8_PHI / np.pi:.4f} $\pi$, mixed SOC, L 2 $\mu$m (full model; $\tau_L\geq\tau_R$ computed, mirrored)',
+                 fontsize=12)
+    st.save_fig(fig, 'ep8_coupling_mixed', dpi=150)
+    plt.close(fig)
+    print("figure: plots/ep8_coupling_mixed.png", flush=True)
+    fig, axs = plt.subplots(3, len(EP8_SHOW), figsize=(4.6 * len(EP8_SHOW), 10.0), sharex=True, layout='constrained',
+                            gridspec_kw=dict(height_ratios=(1.1, 1.1, 0.8)))
+    for j, c in enumerate(EP8_SHOW):
+        a_, b_ = lam(c)
+        segs, un, D = SEG[c]
+        T = TR(c)
+        m = plat_mask(T)
+        for a in axs[:, j]:
+            for s, e, _ in segs:
+                a.axvspan(s, e, color='#f5c9b3', lw=0, zorder=0)
+            for i in np.flatnonzero(m):
+                a.axvspan(E[i] - EP8_DE / 2, E[i] + EP8_DE / 2, ymin=0.0, ymax=0.04, color='#1baf7a', lw=0)
+            for ec in EC:
+                a.axvline(ec, color='#52514e', lw=0.8, ls=':')
+            a.grid(color='#e4e3df', lw=0.6)
+        a = axs[0, j]
+        a.plot(E, T[:, 0], color='#2a78d6', lw=1.6, label=r'$\kappa$')
+        a.plot(E, T[:, 1], color='#eb6834', lw=1.2, label=r'$G$')
+        a.plot(E, (T[:, 0] + T[:, 1]) / 2, color='#1baf7a', lw=1.0, ls='--', label=r'$T_{ee}$')
+        a.plot(E, (T[:, 0] - T[:, 1]) / 2, color='#9b59d0', lw=1.0, ls='--', label=r'$T_{he}$')
+        a.axhline(0.5, color='#52514e', lw=0.8, ls='--')
+        a.set_title(rf'$\tau_L$ {c[0]:g}, $\tau_R$ {c[1]:g}', fontsize=11)
+        a = axs[1, j]
+        a.plot(E, a_.real, '.', color='#2a78d6', ms=3)
+        a.plot(E, b_.real, '.', color='#2a78d6', ms=3, label=r'Re $\lambda$')
+        a.plot(E, a_.imag, '.', color='#eb6834', ms=3)
+        a.plot(E, b_.imag, '.', color='#eb6834', ms=3, label=r'Im $\lambda$')
+        a.plot(E, np.abs(l1.real), color='#52514e', lw=1.0, ls='--', label=r'$|\varepsilon|$, probes detached')
+        a = axs[2, j]
+        a.plot(E, D, color='#2a78d6', lw=1.4)
+        a.axhline(0, color='#52514e', lw=0.8)
+        a.set_yscale('symlog', linthresh=0.05)
+        a.set_xlabel(r'$E_Z$ ($\mu$eV)')
+    axs[0, 0].set_ylabel(r'$E = 0$, $T = 0$')
+    axs[1, 0].set_ylabel(r'pair poles ($\mu$eV)')
+    axs[2, 0].set_ylabel(r'$D = ((\lambda_1-\lambda_2)/2)^2$ ($\mu$eV$^2$)')
+    axs[0, 0].legend(fontsize=8, frameon=False, ncol=2)
+    axs[1, 0].legend(fontsize=8, frameon=False)
+    fig.suptitle(rf'Along $E_Z$ at $\phi$ = {EP8_PHI / np.pi:.4f} $\pi$: orange = between EPs, green ticks = $\kappa = 1/2$ '
+                 'plateau points, dotted = lossless zero crossings', fontsize=11)
+    st.save_fig(fig, 'ep8_lines_mixed', dpi=150)
+    plt.close(fig)
+    print("figure: plots/ep8_lines_mixed.png", flush=True)

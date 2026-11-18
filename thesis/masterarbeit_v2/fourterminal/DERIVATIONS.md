@@ -525,7 +525,7 @@ What the papers state themselves:
 - Code: `resonance_point`, [study_oscillation.py:479](computations/study_oscillation.py#L479).
 
 **Code that uses these relations**
-- $x$ from $\det r$: [study_tuning.py:466-475](computations/study_tuning.py#L466-L475) (`x_of`) and
+- $x$ from $\det r$: [study_tuning.py:467-476](computations/study_tuning.py#L467-L476) (`x_of`) and
   [study_mixed.py:170](computations/study_mixed.py#L170);
 - $\kappa(x)$: [study_oscillation.py:456](computations/study_oscillation.py#L456) (`kappa_model`) and the collapse
   figure [slides_nov.py:432](computations/slides_nov.py#L432).
@@ -545,7 +545,7 @@ parameter.
 Majorana: $dI/dV=\frac{2e^2}{h}\frac{4\Gamma_F^2}{(eV)^2+4\Gamma_F^2}$, with height $2e^2/h$ and half width
 $2\Gamma_F$. His coupling $\Gamma_F$ (**Eq. (9)**) is normalised differently: $\Gamma=2\Gamma_F$.
 - **Code:** `gamma_point` [study_mixed.py:91](computations/study_mixed.py#L91) and `gamma_job`
-  [study_tuning.py:497](computations/study_tuning.py#L497) bisect, in $\ln E$, for where
+  [study_tuning.py:498](computations/study_tuning.py#L498) bisect, in $\ln E$, for where
   (`eh_local`+`he_local`)/2 falls to half its $E=0$ value.
 
 ### 5.3 Effective coupling, exponent, and the plateau criterion (definitions)
@@ -554,7 +554,7 @@ $2\Gamma_F$. His coupling $\Gamma_F$ (**Eq. (9)**) is normalised differently: $\
   - Physics: if transport sees the box splitting, $\Gamma_\mathrm{eff}$ must stay smooth while $\varepsilon$ varies
     by decades.
 - **$\Gamma\propto\tau^p$:** $p=\ln(x_a/x_b)/\ln(\tau_b/\tau_a)$ at the same points of two maps,
-  [study_tuning.py:478-484](computations/study_tuning.py#L478-L484).
+  [study_tuning.py:479-485](computations/study_tuning.py#L479-L485).
   - Golden-rule expectation **[follows from source]**:
     - Flensberg **Eq. (9)** gives $\Gamma=2\pi\sum_{k\sigma}|V_{k\sigma}|^2\delta(\omega-\varepsilon_{k\sigma})$, with
       $V_{k\sigma}=\int dx\,f_\sigma(x)\,t_k(x)$ (Majorana wavefunction times tunnel amplitude, his Eq. (3) and the
@@ -563,7 +563,7 @@ $2\Gamma_F$. His coupling $\Gamma_F$ (**Eq. (9)**) is normalised differently: $\
     - Nilsson's $\Gamma_i=2\pi w_i^2$ is the same statement.
   - Measured: $p\approx2.6$. Why it differs from 2 has **not** been established.
 - **Plateau point [model choice]:**
-  - $|\kappa-\tfrac12|<0.03$ and $|G|<0.1\kappa$: [study_tuning.py:402-404](computations/study_tuning.py#L402-L404);
+  - $|\kappa-\tfrac12|<0.03$ and $|G|<0.1\kappa$: [study_tuning.py:403-405](computations/study_tuning.py#L403-L405);
   - the stricter version, which also requires $Q=-1$ and $|\kappa-\tfrac12(1-\det r^2)|<0.01$:
     [study_mixed.py:285-288](computations/study_mixed.py#L285-L288).
   - It marks an $\varepsilon\approx\Gamma$ region, never a protected plateau.
@@ -776,9 +776,9 @@ $$
 - **det r is a different condition.** $\det r=(\varepsilon^2-\Gamma_L\Gamma_R)/(\varepsilon^2+\Gamma_L\Gamma_R)$
   (§5.1) depends on the product, the EPs on the difference. In the diagonal model ($c=0$) the EP segment lies inside
   $\det r<0$ iff $\Gamma_L/\Gamma_R<3+2\sqrt2$.
-- Code: the EP test [study_tuning.py:1797](computations/study_tuning.py#L1797) (`ep_between`: both poles at
+- Code: the EP test [study_tuning.py:1798](computations/study_tuning.py#L1798) (`ep_between`: both poles at
   $\lvert\mathrm{Re}\,E\rvert<10^{-3}$ $\mu$eV with different $\mathrm{Im}\,E$); one phase,
-  [study_tuning.py:1709](computations/study_tuning.py#L1709).
+  [study_tuning.py:1710](computations/study_tuning.py#L1710).
 - Context: Li & Trauzettel, arXiv:2507.23022, have this structure for a p-wave junction with a loss
   $-iV\delta(x)$, for $Z\ll1$. They were read through the arXiv HTML, not checked against the LaTeX source.
 
@@ -811,7 +811,7 @@ Code: [tools.py:300](computations/tools.py#L300).
 | $\kappa$ | $\mathcal T^{ee}+\mathcal T^{he}$; kernel $\frac{3}{\pi^2}x^2W_\mathrm{el}$ | [tools.py:296](computations/tools.py#L296), [transport.py:118](my_functions/transport.py#L118) | Gresta Eqs. (4), (6); Klees Sec. IV and App. C |
 | local Andreev | $R_{eh}+R_{he}$ | [tools.py:296](computations/tools.py#L296) | follows from Klees App. C; Flensberg Eq. (13); Law–Lee–Ng |
 | $\det r$ | $-1+i\Gamma^{1/2}G_{LL}\Gamma^{1/2}$ | [tools.py:272](computations/tools.py#L272) | LM Eqs. (5), (8); Fulga Table I; Akhmerov Eq. (3) |
-| two-Majorana $\kappa$, $\det r$ | $\frac{2x^2}{(1+x^2)^2}$, $\frac{x^2-1}{x^2+1}$ | [study_tuning.py:466](computations/study_tuning.py#L466) | follows from Nilsson Eqs. (1)–(6) (limit stated after their Eq. (8)); $\kappa(\det r)$ also from Akhmerov Eq. (3) |
+| two-Majorana $\kappa$, $\det r$ | $\frac{2x^2}{(1+x^2)^2}$, $\frac{x^2-1}{x^2+1}$ | [study_tuning.py:467](computations/study_tuning.py#L467) | follows from Nilsson Eqs. (1)–(6) (limit stated after their Eq. (8)); $\kappa(\det r)$ also from Akhmerov Eq. (3) |
 | $\Gamma$ (direct) | HWHM of $R_{he}(E)$ | [study_mixed.py:91](computations/study_mixed.py#L91) | follows from Nilsson Eqs. (4)–(6); Flensberg Eq. (13) |
 | $Q$ | $\mathrm{sgn\,Pf}\tilde B(0)\,\mathrm{sgn\,Pf}\tilde B(\pi)$ | [tools.py:177](computations/tools.py#L177) | Kitaev Eq. (26); Wimmer (Parlett–Reid) |
 | $\xi_M$, $k_\mathrm{osc}$ | $-a/\ln\lvert\lambda\rvert$, $\lvert\arg\lambda\rvert/a$ | [study_oscillation.py:69](computations/study_oscillation.py#L69) | modes: Kwant Eqs. (5)–(6); $\xi_M$, $k_\mathrm{osc}$ derived here |
@@ -821,7 +821,7 @@ Code: [tools.py:300](computations/tools.py#L300).
 | $\varepsilon_\mathrm{RR}$ | Rayleigh–Ritz in $\{\psi_L,\psi_R\}$ | [study_mixed.py:705](computations/study_mixed.py#L705) | derived here |
 | LDOS | $-\frac1\pi\mathrm{Im\,Tr}\,G^r$ | [spectra.py:149](my_functions/spectra.py#L149) | Gresta Eq. (8); LM Eq. (12) |
 | poles of the open junction | $(H_C+\Sigma(0))\psi=EM\psi$, $M=1-\Sigma_\mathrm{rib}'(0)$ | [tools.py:666](computations/tools.py#L666) | derived here |
-| EPs, eigenvector overlap | $\lvert\varepsilon\rvert=\sqrt{\delta^2+c^2}$; $\lvert\varepsilon\rvert/\delta_\mathrm{eff}$ | [study_tuning.py:1797](computations/study_tuning.py#L1797) | poles follow from Nilsson Eqs. (4)–(6); $c$, overlap derived here |
+| EPs, eigenvector overlap | $\lvert\varepsilon\rvert=\sqrt{\delta^2+c^2}$; $\lvert\varepsilon\rvert/\delta_\mathrm{eff}$ | [study_tuning.py:1798](computations/study_tuning.py#L1798) | poles follow from Nilsson Eqs. (4)–(6); $c$, overlap derived here |
 | two-Majorana reduction | $\Gamma_2=\tfrac i2(H_2-H_2^\dagger)$ on the lossless pair | [tools.py:626](computations/tools.py#L626) | derived here |
 
 ## 9. Sources

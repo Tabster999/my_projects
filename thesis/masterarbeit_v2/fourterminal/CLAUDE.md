@@ -66,7 +66,7 @@ correct recursion.  Tags (2026-11-06): [source, verified] / [follows from source
 | `study_rashba.py` | W, wbands, delta, tc, checks, T, transition, soc_shift, fermi (check_fermi), a -- pure Rashba, mostly a = 20 (wbands: mixed vs Rashba bands over W) |
 | `study_oscillation.py` | oscillation, branches, fingerprint -- eps(E_Z), pure Rashba a = 20 |
 | `study_tuning.py` | topology, coupling, tuning, maps, leads, spectrum, ep, ep2, ep3, ep4 -- a = 10 couplings / topology / survey maps; a = 5 (E_Z, phi) maps; mixed SOC vs tc and tau (+ checks: tc > 1, tau 1 charge); DOS(E, phi) vs probe bond; exceptional points of the open junction (tools.nh_spectrum) |
-| `study_mixed.py` | oscillation, plateau, amplitude, deck, combine, angle -- the mixed SOC (thesis case): eps(E_Z), the best plateau, the end-mode amplitude, the advisor-deck runs, the Gresta + Scharf combination checks, the SOC angle (cell 4 not run) |
+| `study_mixed.py` | oscillation, plateau, amplitude, deck, combine, angle -- the mixed SOC (thesis case): eps(E_Z), the best plateau, the end-mode amplitude, the advisor-deck runs, the Gresta + Scharf combination checks, the SOC angle and field rotation |
 | `slides_nov.py`, `figures.py`, `disorder.py` | advisor-deck figures, Scharf paper figures (own parameters), disorder -- CAUTION: disorder.py takes ldos.PP, now an a = 10 sandbox, NOT its documented junction |
 * `python study_mixed.py plateau` runs one part (several: list them; none: all, in order).  `run_part('part')`
   replaced the `if __name__ == "__main__":` guard; cells are tagged `# %% [part]`.  References below read
@@ -926,7 +926,7 @@ plots/plateau_mixed_best.png; caches scharf_absPlat_*.  Plateau point = |kappa-1
 alpha = 16 cos(theta pi), beta = 16 sin(theta pi) meV nm (theta 0 = Rashba 16; thesis 0.15); W 100, L 2 um, mu_C 0.7, a 10;
 transport tau 0.5.  Figures plots/angle_mechanism.png, angle_bulk.png, angle_maps.png, angle_transport.png,
 angle_summary.png; caches scharf_absAngle_*; logs/study_mixed_angle.log (cells 1-3, complete), study_mixed_angle2.log
-(cells 1b, 3b partial).  Cell 4 (field rotation) is written but NOT RUN.
+(cells 1b, 3b partial), study_mixed_angle3.log (2026-11-18: 3b and cell 4 complete; plots/angle_rotation.png).
 * MECHANISM (cell 1, phi pi, E_Z 0.6): the middle BdG pair along k is e_+- = t +- g (t: tilt, g: half gap).  max |t| ~
   sin 4 theta (t / t(0.1 pi) 0.62-0.66 / 1 / 0.93-1.00 / 0.55-0.62 at theta 0.05 / 0.1 / 0.15 / 0.2; sin ratio 0.618 / 1 / 1 /
   0.618); g ~ cos 2 theta at tc 1 (g / g(0) 0.955 / 0.812 / 0.594 / 0.315 vs 0.951 / 0.809 / 0.588 / 0.309), faster at tc 0.5
@@ -939,8 +939,15 @@ angle_summary.png; caches scharf_absAngle_*; logs/study_mixed_angle.log (cells 1
   -0.5 (1.2), -2.9 (1.3), -5.1 (1.4) ueV.
 * FIELD ROTATION (cell 1b, single points: theta 0.15, E_Z 0.6, phi pi; field d [pi] off theta_z,opt): tc 1: Delta_top
   +35.2 (d 0) -> +38.5 (-0.005), +36.0 (-0.010), +32.5 (-0.015), +22.1 (-0.03), +1.4 (-0.06), gapless at -0.1; +31.9 at
-  +0.005.  tc 0.5: gapless at d 0 (-3.65) but GAPPED at -0.010 (+4.16) and -0.005 (+1.27), gapless from -0.015.  So a
-  small rotation (~0.005-0.01 pi) helps a little; whether over the (phi, E_Z) map is cell 4 (not run).
+  +0.005.  tc 0.5: gapless at d 0 (-3.65) but GAPPED at -0.010 (+4.16) and -0.005 (+1.27), gapless from -0.015.
+* FIELD ROTATION, full (cell 4, 2026-11-18).  phi = pi lines (gapped E_Z range; max Delta_top ueV), d = 0 / -0.005 /
+  -0.010 / -0.015: tc 0.5 none (gapless) / 0.45-1.25, 1.7 / 0.05-1.30, 4.2 / 0.05-0.40, 0.7; tc 0.75 0.10-1.15, 9.8 /
+  0.10-1.70 (all of Q = -1), 14.3 / 0.10-1.70, 15.5 / 0.10-1.35, 10.2; tc 1 always gapped, 37.5 / 38.5 / 38.0 / 33.9.
+  (phi, E_Z) map, tc 1 (21 x 16), d = -0.010 / 0 / +0.010: Q = -1 45.4 % at all; gapped 44.1 / 40.3 / 36.8 %; gapless share
+  of Q = -1 2.8 / 11.2 / 18.9 %; max Delta_top 81.6 / 80.9 / 74.6, mean 30.1 / 30.1 / 29.0 ueV.  Transport (tau 0.5, coarse)
+  at d = -0.010 vs 0: kappa > 0.25 27.1 vs 27.8 % (neutral 0.83 both), plateau in gapped Q = -1 2.4 vs 2.5 %, longest run
+  0.80 pi (E_Z 0.95) both.  => a ~1.8 deg rotation the right way removes 3/4 of the gapless strip (protection by AREA, not
+  by gap size; at tc 0.75 also +50 % gap) and changes nothing for kappa = 1/2.  The other sense makes it worse.
 * BULK vs theta (cell 2, phi pi, tc 1): max Delta_top 66.5 / 60.1 / 50.5 / 37.5 / 20.0 ueV for theta 0 ... 0.2; tc 0.5
   gapless from theta 0.10 on; tc 0.75 gapped to E_Z 1.30 / 1.15 / 1.10 (theta 0.10 / 0.15 / 0.20); theta 0.25 gapless at
   every tc.  (phi, E_Z) map (tc 1, E_Z 0-2 step 0.1 x 15 phases): Q = -1 47.9 / 46.7 / 46.7 / 45.4 / 43.5 %, gapped 47.6 /
@@ -953,14 +960,15 @@ angle_summary.png; caches scharf_absAngle_*; logs/study_mixed_angle.log (cells 1
   0.01, 240 phases; Q, Delta_top every 4th phase): best run in gapped Q = -1 1.125 (E_Z 0.910) / 1.100 (0.910) / 0.667
   (1.050) / 1.367 (0.930) / 0.908 (1.060) pi; on the runs kappa 0.471-0.500, |G| <= 0.048, 2M residual <= 7.3e-4.  The best
   lines look alike at every theta (kappa ~ 1/2 over phi ~ 1-2 pi, dips near 0.25 and 0.75 pi).  Cell 3b (E_Z refined to
-  0.0025; partial): theta 0 -> 1.225 pi at 0.9150 (gapped Q = -1); theta 0.05 -> 1.250 pi at 0.9175 WITHOUT the Q check (its
-  Q line 48 / 61 phases when paused; Q = -1 on all done phases, gapless at 0.50-0.60 pi); 0.10-0.20 not refined.  The 0.15
+  0.0025, all in gapped Q = -1): 1.225 (0.9150) / 1.250 (0.9175) / 0.783 (1.0550) / 1.367 (0.9300) / 1.050 (1.0675) pi for
+  theta 0 ... 0.2; for 0.05 and 0.20 the best sits on the edge of the +-0.0075 window (optimum may lie beyond).  The 0.15
   winner is itself field-sensitive (1.23 / 1.37 / 1.15 pi at 0.9225 / 0.930 / 0.935).
 * READING: Rashba-like (theta -> 0) has the most protection (Delta_top 66.5 vs 37.5 ueV at 0.15, no gapless strip) but the
-  plateau does not improve with it: the plateau % falls only slightly with theta and the best single line (1.1-1.37 pi for
-  all theta but 0.10) is set by fine-tuning the field.  theta is a lever for protection, not for kappa = 1/2.
-* OPEN: cell 4 (field-rotation lines and maps, rotated transport; installed in study_mixed.py, run ~1-1.5 h); 3b for theta
-  0.10-0.20 and the theta 0.05 Q line; whether the mixed-SOC xi_poly / xi_M != 1 (dip redo) comes from the tilt.
+  plateau does not improve with it: the plateau % falls only slightly with theta and the best single line (1.05-1.37 pi
+  for all theta but 0.10) is set by fine-tuning the field.  The field rotation likewise buys gapped area, not plateau.
+  theta and the field angle are levers for protection, not for kappa = 1/2.
+* OPEN: the 3b optimum beyond the window for theta 0.05 / 0.20; whether the mixed-SOC xi_poly / xi_M != 1 (dip redo)
+  comes from the tilt.
 
 ## SCHARF: DOS(E, phi) vs probe bond, and EXCEPTIONAL POINTS of the open junction (2026-11-13/18, `study_tuning.py` [spectrum], [ep], [ep2]-[ep4])
 Thesis junction a 10 (mixed SOC, mu_C 0.7, tc 1, W 100, L 2 um).  Formulas (poles, EP condition, overlap, 2x2
@@ -1077,8 +1085,83 @@ ep_mixed_tauL<t>[_tauR0.5].png, ep_fine_mixed_tauL<t>.png; caches scharf_absSpec
     at E_Z 0.70 the bulk levels sit at |Re E| 25-40 ueV, so at tau_L 0.8 the broad Majorana pole (Im ~ -48) was not among
     the k = 8 poles closest to 0 and a bulk pole was taken as 'pole 2' (fake EPs at 0.142 / 1.775 pi); fixed by k = 16,
     keeping the 8 with the smallest |Re E| (ep_point k=).  Check any new strong-loss run for this.
-  - NOT DONE: full-text read of Cayao & Sato / Pikulin & Nazarov against the 'possibly specific' points above; DOS(E)
-    line shapes across an EP.
+  - FULL-TEXT READ (2026-11-18, via the arXiv / ar5iv HTML, tool summaries): Cayao & Sato 2307.15472 -- minimal JJ models,
+    leads as -i Gamma (Gamma_L != Gamma_R or a spin-polarised lead on N), Rashba S-N-S nanowire; EPs vs phi, Re E pinned
+    between EPs, supercurrent enhanced at zero-energy EPs; EPs both below and above B_c, and below B_c 'these EPs do not
+    depend on the length of the S regions'; no DOS / conductance, no topological-vs-trivial claim.  Cayao & Sato
+    2508.19433 -- four-MZM effective model, leads on outer or inner MZMs; zero-real-energy lines bounded by EPs near
+    phi = pi, and with one outer lead off EPs also near phi = 0 (a longer zero line -- cf. our merging); local / nonlocal
+    spectral weight largest between EPs; length only via the overlap t'/t.  Pikulin & Nazarov PRB 87, 235421 -- 'pole
+    transition' = change of the number of purely imaginary S-matrix poles, offset from the bulk transition by ~ v/L, can
+    occur in the trivial region; one lead; conductance peaks approach zero bias but 'never merge' (narrow ZBP on a wider
+    dip).  => OPEN and possibly new: EP-segment width vs L (end Majoranas: eps ~ e^{-L/xi_M} -> exponential growth; the
+    trivial-regime EPs above are L-independent); finite-bias local / nonlocal conductance with two asymmetric probes in a
+    realistic geometry; where EPs occur relative to Q and the gapless strip.
+  - EP SEGMENT vs LENGTH (2026-11-18, [ep5], (tau_L, tau_R) = (0.3, 0.1)).  ALONG phi at E_Z 0.93 (plots/ep5_length_mixed.png):
+    NOT a clean test -- the crossings move with L (eps ~ cos(k_osc L + phi0)): L 1.5 at 0.133 / 1.333 pi, L 2 at 0.467 / 0.983,
+    L 2.5 NONE (|eps| >= 1.66 ueV); total phase between EPs 0.099 / 0.050 / 0 pi; delta_eff 0.81 / 0.42 ueV at the L 1.5 / 2
+    crossings (different phases -> different G_L, G_R, c); all crossings gapped (Q = -1, Delta_top 17-51 ueV, xi_M 0.74-1.49
+    um).  ALONG E_Z at phi 1.742 pi, the zero nearest 0.90 meV (plots/ep5_lengthEZ_mixed.png):
+        L [um]   zero [meV]   width [ueV of E_Z]   2 delta_eff/|d eps/d E_Z|   delta_eff [ueV]   |d eps/d E_Z| [ueV/meV]   xi_M [nm]
+        1.5      0.905         12.4                 13.1                         1.04               159                      629
+        2.0      0.850         42.0                 39.4                         1.06                54                      547
+        2.5      0.945         21.0                 24.4                         0.99                81                      695
+        3.0      0.895        >= 243 (window)      133                           1.08                16                      613
+    The local law width = 2 delta_eff / |d eps / d E_Z| holds to 5-15 % (L <= 2.5); delta_eff is L-independent here (set by
+    the probes); L enters only through the slope, which falls ~10x from 1.5 to 3 um (e^{1.5 / 0.62} ~ 11); fit xi 607 nm vs
+    xi_M 621 nm (no fit), but lobe-to-lobe scatter ~2x (the matched zeros sit in different lobes; L 2.5 below the trend) and
+    L 3 is a lower bound (eps < delta_eff over a whole lobe: segments merge).  => the pinned range grows ~ e^{L / xi_M}, a
+    property of END Majoranas (cf. the L-independent trivial-regime EPs of Cayao & Sato) -- consistent, not a precision test.
+  - ENTROPY BETWEEN EPs (2026-11-18, [ep6], plots/ep6_entropy_mixed.png; SIDE STUDY, user: not thesis relevant).  Pino,
+    Meir & Aguado (arXiv 2405.02387) predict S = (1/2) ln 2 between EPs (one pole sharper than kT, one broader), visible
+    via dS/dphi = -(hbar/2e) dI/dT.  S from the full-model pair poles (tools.pole_entropy, Lloyd DOS, checked limits).
+    Single-probe lines (tau_R = 0, plots/ep_mixed_tauL<t>_tauR0.png): at phi = pi poles -0.97i / -2.84i (0.5, 0) vs
+    -1.19i / -2.73i (0.5, 0.1); -1.38i / -19.24i (0.8, 0) vs -1.49i / -19.23i (0.8, 0.1) ueV -> the sharp pole's width
+    comes mainly from the LEFT probe itself (grows with tau_L), not from the right one.  Result: NO (1/2) ln 2 plateau;
+    S rises smoothly through it (0.8, 0) at pi: 0.06 / 0.24 / 0.53 / 0.81 at 1 / 7 / 37 / 206 mK (a -0.01i / -20i
+    test pair holds 0.48-0.56 over 1-20 mK); S and dI/dT smooth through every EP; the pair's dI/dT drops from +-0.25
+    nA/mK (closed, 3 mK) to +-0.015 (tau_L 0.8).  The planned exact supercurrent (Li & Trauzettel's CPR) was dropped.
+  - THERMAL TRANSPORT ACROSS THE EP SEGMENTS (2026-11-18, [ep7], plots/ep7_kappaE_mixed_tauL<l>_tauR<r>.png; full model:
+    kappa(E, phi) from tools.channel_point (now with tau_R), 0 + 60 log energies 0.01-70 ueV, kappa(T) by tools.thermal).
+    E* = energy of the maximum of kappa(E):
+        pair        E* = 0 in / out of segments   kappa max 0 / 10 / 20 mK   kappa(20)/kappa(0) median in / out
+        (0.3, 0.1)  100 % / 1 %                   0.488 / 0.077 / 0.064      0.004 / 0.134
+        (0.5, 0.1)  100 % / 5 %                   0.448 / 0.075 / 0.059      0.021 / 0.841
+        (0.8, 0.1)  100 % / 36 % (seg. 1.82 pi)   0.280 / 0.077 / 0.033      0.134 / --
+        (0.4, 0.6)  91 % / 85 %                   0.531 / 0.469 / 0.390      0.254 / 0.711
+        (0.5, 0.5)  33 % / 49 % (seg. 0.05 pi)    0.542 / 0.497 / 0.449      0.350 / 0.823
+    Outside the segments, where the splitting is resolved, E* follows |Re lambda| of the full-model pair poles (just below
+    it).  Inside the segments kappa(E) is a zero-energy peak as narrow as the sharp pole -> the EP SEGMENTS ARE THE
+    T-FRAGILE PART OF kappa(phi) for every pair.  Weak or strongly asymmetric probes: the large kappa (0.45-0.49) exists
+    ONLY inside the segments at T = 0 and is gone by 5-10 mK.  Strong balanced probes ((0.4, 0.6), (0.5, 0.5)): widths
+    exceed the splitting over most of phi (kappa(E) peaked at 0 also outside the segments), the kappa ~ 1/2 plateau lies
+    OUTSIDE the segments and is the T-robust one (0.39-0.45 at 20 mK); the segments sit in the crossing dips.  Equal bonds
+    0.5 / 0.5 have RESOLVED segments (0.05 pi total; ~0.001 pi at 0.1 / 0.1): they grow with the overall strength too.
+  - EP SEGMENTS AND THE kappa PLATEAU ALONG E_Z vs THE PROBE COUPLINGS (2026-11-18, [ep8], plots/ep8_coupling_mixed.png,
+    ep8_lines_mixed.png, logs/study_tuning_ep8_analysis.log; full model, phi 1.7417 pi, E_Z 0.80-1.10 meV step 5 ueV,
+    36 bond pairs from {0, 0.1..0.6, 0.8}, E = 0, T = 0).  Lossless crossings of eps(E_Z) at 841.7 / 1026.7 ueV
+    (|d eps/dE_Z| = 0.058 / 0.198).  One-probe pair width Gamma_1(tau) at the crossings: 0.23, 0.97, 2.36, 4.72, 8.64,
+    15.2, 47.6 ueV for tau 0.1..0.6, 0.8 (~tau^2 up to 0.4, steeper beyond); two-probe widths add (a split pole has
+    -Im lambda ~ SigmaGamma / 2, within the ~10 % drift of Gamma_1 between the two crossings).
+    LENGTH LAW: an EP segment along E_Z spans L_EP = (1.07 +- 0.10) |DeltaGamma| / |d eps/dE_Z|, DeltaGamma =
+    Gamma_1(tau_L) - Gamma_1(tau_R) (17 untruncated segments, both crossings; up to 1.37 for the longest, where eps(E_Z)
+    curves) -> set by the width DIFFERENCE, not by the overall strength.  SigmaGamma only shifts the segment to lower
+    E_Z (by 1-23 ueV, growing with the stronger bond) and leaves a short residual segment at equal bonds (0.4/0.4 1.7,
+    0.5/0.5 9, 0.6/0.6 19, 0.8/0.8 51 ueV total).  tau_L = 0.8 with tau_R <= 0.5: the whole 300 ueV window is one segment.
+    kappa INGREDIENTS: G ~ 0 along E_Z (|G| <= 0.025 for the four pairs of the lines figure), T_ee ~ T_he ~ kappa / 2; the lossless crossings are kappa dips whose
+    depth is set by the asymmetry (tau_L 0.5, crossing 1027: kappa 0.13 / 0.15 / 0.20 / 0.29 / 0.44 for tau_R 0.5..0.1;
+    at equal bonds the dip deepens with strength: 0.19 / 0.16 / 0.10 / 0.05 for 0.2 / 0.4 / 0.6 / 0.8).
+    kappa = 1/2 PLATEAU ALONG E_Z (longest |kappa - 1/2| < 0.02 window; tol 0.01 / 0.03 in brackets) -- two routes:
+      (A) balanced probes, SigmaGamma ~ 10-30 ueV: a dome between the crossings OUTSIDE the segments, pair split with both
+          poles equally broad: (0.5, 0.4) 85 [30 / 95] ueV, widths 6.2-6.5, |Re lambda| 4.9-6.9; (0.5, 0.5), (0.6, 0.4),
+          (0.6, 0.6) 40 ueV, widths 8-14.  The (tiny) segments sit in the crossing dips.
+      (B) strong + weak bond (0.8, 0.2): 85 [80 / 90] ueV entirely INSIDE one segment, carried by a narrow pole pinned
+          at E = 0 (width 1.6-2.1 ueV) next to a 44 ueV one; (0.8, 0.4) 35 ueV also inside (narrow pole 7.5-12 ueV).  By
+          [ep7] a 2 ueV carrier is the T-fragile kind (k_B x 20 mK = 1.7 ueV) -- finite T along E_Z NOT yet computed.
+      Too weak (SigmaGamma < 5 ueV): <= 10 ueV.  Too strong (0.8 / 0.6, 0.8 / 0.8): kappa max 0.45 / 0.25, no plateau.
+      The tol-0.03 windows are threshold-sensitive (the domes peak at 0.497-0.499): (0.6, 0.3) 100 -> 35 -> 20 ueV.
+  - NOT DONE: finite-bias local / nonlocal conductance with asymmetric probes; where EPs occur relative to Q and the gapless
+    strip; the L test averaged over all zeros (removes the lobe scatter); DOS(E) line shapes across an EP.
 
 ## Numerics — measured on the GRESTA point unless stated
 (eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,

@@ -367,10 +367,13 @@ K_B = 0.0861733                                    # meV / K
 CHANNELS = ('ee', 'hh', 'eh_cross', 'he_cross', 'eh_local', 'he_local')
 
 
-def channel_point(q, E_Z, E, phis=(np.pi,)):
-    """The six channels at energy E (meV) for each phase in phis, concatenated (6 per phase)."""
-    rgf = myf.RGFFourTerminal(myf.FourTerminalJunction(q.params_transport(E_Z=float(E_Z))),
-                              np.array([float(E) / q.t]))
+def channel_point(q, E_Z, E, phis=(np.pi,), tau_R=None):
+    """The six channels at energy E (meV) for each phase in phis, concatenated (6 per phase).
+    tau_R: a different bond for the RIGHT probe (as transport_phis; the left keeps q.tc_barr_transport)."""
+    J = myf.FourTerminalJunction(q.params_transport(E_Z=float(E_Z)))
+    if tau_R is not None:
+        J.lead_R = myf.FourTerminalJunction(replace(q.params_transport(E_Z=float(E_Z)), tc_barr=float(tau_R))).lead_R
+    rgf = myf.RGFFourTerminal(J, np.array([float(E) / q.t]))
     out = []
     for ph in phis:
         c = rgf.channels_at_phi(ph, 'left')
@@ -691,6 +694,34 @@ def nh_spectrum(q, E_Z, phis, tau_L, tau_R, k=8, dE=2e-3):
         poles.append(w * q.t * 1e3)
         ovl.append(abs(np.vdot(v1, v2)) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
     return np.array(poles), np.array(ovl)
+
+
+KB_UEV_PER_MK = 0.0861733     # k_B in ueV / mK
+TWO_E_KB_HBAR_NA_MK = 2 * 0.243414 * 0.0861733   # 2 e k_B / hbar in nA / mK (Maxwell relation dI/dT = -this x dS/dphi)
+
+
+def pole_entropy(poles, kT, n_theta=20001):
+    """
+    Entropy (units of k_B) of the open junction from its poles lambda_k = e_k - i G_k (ueV), Lloyd DOS = one Lorentzian
+    per pole (exact for an energy-independent H_eff, EPs included: Tr (E - H_eff)^-1 = sum_k 1 / (E - lambda_k)):
+        S = 1/2 sum_k int dE L_k(E) s_F(E / kT),   L_k = (1/pi) G_k / ((E - e_k)^2 + G_k^2),
+        s_F(x) = ln(1 + e^-x) + x / (1 + e^x)  (one fermion level),  1/2 = BdG double counting.
+    Checks: a closed pair +-eps: s_F(eps / kT) (ln 2 at eps = 0); ONE purely imaginary pole with G << kT: (1/2) ln 2 (an
+    isolated Majorana); G >> kT: pi kT / (6 G) -> 0 (a Majorana merged with the reservoir).  Pino, Meir & Aguado
+    (arXiv 2405.02387) get the same 1/2 ln 2 plateau for T between the two pole widths of a pair between EPs.
+    poles (..., k) complex, kT (n_T,) ueV -> (..., n_T).  Integrated over theta, E = e + G tan(theta) (midpoints).
+    """
+    from scipy.special import expit
+    poles = np.asarray(poles, complex)
+    th = (np.arange(n_theta) + 0.5) / n_theta * np.pi - np.pi / 2
+    e, G = poles.real[..., None], np.abs(poles.imag)[..., None]
+    E = e + G * np.tan(th)                                               # (..., k, n_theta)
+    out = []
+    for t in np.atleast_1d(kT):
+        x = E / t
+        s = np.logaddexp(0.0, -x) + x * expit(-x)
+        out.append(0.5 * s.mean(axis=-1).sum(axis=-1))
+    return np.moveaxis(np.array(out), 0, -1)
 
 
 def peak_energies(E, D):
