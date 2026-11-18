@@ -65,7 +65,7 @@ correct recursion.  Tags (2026-11-06): [source, verified] / [follows from source
 | `tools.py`, `ldos.py` | shared functions; PhysParams |
 | `study_rashba.py` | W, wbands, delta, tc, checks, T, transition, soc_shift, fermi (check_fermi), a -- pure Rashba, mostly a = 20 (wbands: mixed vs Rashba bands over W) |
 | `study_oscillation.py` | oscillation, branches, fingerprint -- eps(E_Z), pure Rashba a = 20 |
-| `study_tuning.py` | topology, coupling, tuning, maps, leads -- a = 10 couplings / topology / survey maps; a = 5 (E_Z, phi) maps; mixed SOC vs tc and tau (+ checks: tc > 1, tau 1 charge) |
+| `study_tuning.py` | topology, coupling, tuning, maps, leads, spectrum, ep, ep2, ep3, ep4 -- a = 10 couplings / topology / survey maps; a = 5 (E_Z, phi) maps; mixed SOC vs tc and tau (+ checks: tc > 1, tau 1 charge); DOS(E, phi) vs probe bond; exceptional points of the open junction (tools.nh_spectrum) |
 | `study_mixed.py` | oscillation, plateau, amplitude -- the mixed SOC (thesis case) |
 | `slides_nov.py`, `figures.py`, `disorder.py` | advisor-deck figures, Scharf paper figures (own parameters), disorder -- CAUTION: disorder.py takes ldos.PP, now an a = 10 sandbox, NOT its documented junction |
 * `python study_mixed.py plateau` runs one part (several: list them; none: all, in order).  `run_part('part')`
@@ -915,6 +915,113 @@ plots/plateau_mixed_best.png; caches scharf_absPlat_*.  Plateau point = |kappa-1
 * TEMPERATURE (a 20, L 2, phi pi): best neutral kappa at 0/10/20/50 mK, tau 0.7: 0 at every T (no neutral peak).
   Best region (a 10, tau 0.5, L 2): along phi at E_Z 0.93, kappa = 1/2 +- 0.03 with |G| < 0.1 kappa over 1.37 / 1.07 /
   0 / 0 pi (max kappa 0.542 / 0.499 / 0.446 / 0.212); along E_Z at phi 1.742 pi: 55 / 30 / 0 / 0 ueV.
+
+## SCHARF: DOS(E, phi) vs probe bond, and EXCEPTIONAL POINTS of the open junction (2026-11-13, `study_tuning.py` [spectrum], [ep])
+Thesis junction a 10 (mixed SOC, mu_C 0.7, tc 1, W 100, L 2 um).  Figures plots/spectrum_mixed_a10.png,
+ep_mixed_tauL<t>[_tauR0.5].png, ep_fine_mixed_tauL<t>.png; caches scharf_absSpec_*, scharf_absEP_*.
+* [spectrum] DOS(E = 0) survey at tau 0.5 (E_Z 0.30-1.30 step 0.025, eta 1e-4 meV, probes ATTACHED): brightest spot inside
+  (eroded) Q = -1 at E_Z 0.325, phi 0.85 pi (370 /meV, median 41).  There Delta_top = 0 (Q = -1 but gapless at phi
+  0.833-0.867 pi, k 0.0275 /nm: the band tilt of study_mixed [angle]) and transport is CHARGED (kappa 0.82 / |G| 0.75 at
+  tau 0.5, 0.89 / 0.78 at tau 1).  DOS(E = 0) at the spot vs median over the Q = -1 phases: tau 0: 234 vs 527 (a DIP),
+  tau 0.5: 245 vs 65, tau 1: 61 vs 14 (peaks) -> the bright spots exist only with the probes attached (reading, untested:
+  the probes broaden the end Majoranas strongly, the extended gap-closing states much less).  DOS(E, phi) (E 0-40 ueV
+  step 1, eta 0.5 ueV, tau 0 / 0.5 / 1): tau 0 = a sharp E = 0 line over phi 0.58-1.42 pi (the Q = -1 range) ending at the
+  Q boundaries; the probes only broaden it.  DOS(-E) = DOS(E) to 5e-13.  ~11 s per energy (121 phases); 6 workers x 2
+  BLAS threads were only ~1.3x faster than one process (the 121 per-phase 800 x 800 solves dominate).
+* tools.nh_spectrum = poles of the G of transport / dos_total_phis: eigenvalues of H_C + Sigma_ribbons(0) + Sigma_L(tau_L)
+  + Sigma_R(tau_R) with metric M = 1 - Sigma_rib'(0) (ribbons linearised around E = 0 -> generalised problem; probes at
+  E = 0; tau_L, tau_R separate).  Checks at E_Z 0.93, pi: top-ribbon gauge rotation = direct ribbon to 7e-16; lossless
+  pair +-0.407 ueV = closed box (study_oscillation.box_point) 0.40717; next level 57.60 vs box 57.20.  Frozen Sigma(0)
+  (M = 1) puts EVERY energy x1.64 too high (0.668, 99.8 ueV; quasiparticle weight in the strip ~0.61): EP positions
+  would survive (eps and Gamma scale alike), absolute energies not.  The pair = the two poles with the smallest |Re E|
+  (ordering by |E| swapped in a bulk pole at tau_L 0.8: Im -45 vs Re 40 ueV).  ~8 s per phase, one thread.
+* MODEL.  Li & Trauzettel, PRB 112, 184504 (arXiv 2507.23022): p-wave JJ with a loss -iV delta(x), Z << 1 ONLY (figures
+  Z = 0.2); EPs at cos(phi/2) = +-Z around the MZM crossing at pi, poles purely imaginary between them, one mode sharp.
+  Here the loss is the probe leads.  Two Majoranas with loss matrix [[G_L, c], [c, G_R]] (c: each probe also touches the
+  OTHER Majorana's tail): E = -i Gbar +- sqrt(eps^2 - delta^2 - c^2), delta = (G_L - G_R)/2 -> EPs at |eps| =
+  sqrt(delta^2 + c^2) =: delta_eff; between EPs Re E = 0; eigenvector overlap |<psi_1|psi_2>| = |eps| / delta_eff inside,
+  delta_eff / |eps| outside: 1 at the EPs, 0 at eps = 0 (pure gamma_L, gamma_R).  [derived here, 2x2 algebra]
+* RESULTS, E_Z 0.93 (phi = pi is a lossless box zero), 121 phases, then fine scans (0.001 pi; control 0.0002 pi) around
+  every EP.  Lossless eps(phi): crossings ~0.47 and ~0.99 pi, max 9.2 ueV at 0.73 pi.  tau_R 0.1, EPs (phi / pi):
+      tau_L   around the 0.47 crossing     around the 0.98 crossing     other
+      0.1     0.4691-0.4699 (0.0008)       0.9877-0.9883 (0.0006)        (EQUAL bonds)
+      0.2     0.4685-0.4765                0.9815-0.9885
+      0.3     0.4645-0.4875                0.9705-0.9905
+      0.4     0.4575-0.5055                0.9545-0.9945
+      0.5     0.4395-0.5295                0.9315-1.0055 (phi = pi inside: poles -1.19i, -2.73i ueV)
+      0.6     0.3805-0.5625                0.9015-1.0405                 1.6145-1.9595 (no crossing)
+      0.7     merged: Re E = 0 except 0.6025-0.8645 (around the eps maximum)
+      0.8     merged: Re E = 0 except 0.6475-0.8245
+  Overlap 0.97-1.000 at every EP on the fine grid.  Each crossing opens into a segment bounded by two EPs (the paper's
+  structure); the segment roughly doubles per 0.1 in tau_L.  H is 2 pi-periodic in phi, so the parity crossings come in
+  pairs -> EP pairs in pairs (the paper: one crossing per 2 pi, 4 pi-periodic p-wave ABS, the outer Majoranas left out).
+  - EQUAL BONDS ALSO HAVE EPs, ~0.001 pi wide (Im split -0.088 / -0.116 ueV; overlap 0.996 at an EP).  MIRROR CHECK:
+    (tau_L, tau_R) = (0.1, 0.5) and (0.5, 0.1) give the same pair to 0.000 ueV at the same phi (6.3 ueV at 2 pi - phi):
+    the junction is exactly left/right equivalent, delta = 0 for equal bonds, so those EPs come from c ~ 0.017 ueV
+    (c / Gbar ~ 0.17, same order as e^{-L/xi_M} ~ 0.1-0.2 here -- order of magnitude only, not derived).  [An earlier
+    reading 'Gamma_L / Gamma_R ~ 1.4, junction not symmetric' was WRONG.]  The 'delta' read off the overlap is delta_eff.
+  - STRONG ASYMMETRY (tau_L >= 0.6 at tau_R 0.1): delta_eff exceeds eps also where eps has no zero -> loss-driven segment
+    1.6145-1.9595 pi (overlap 1.000 at both EPs); at 0.7 / 0.8 the segments merge and a real splitting survives only around
+    the eps maximum (damped-oscillator picture: overdamped wherever eps < delta_eff).  NOT in the paper (Z << 1 only;
+    their closed form has 1/(1 - Z^2)); other literature not checked.  The broad pole reaches 24 / 45 ueV (tau_L 0.7 / 0.8)
+    > Delta_top 19 ueV at pi: the two-Majorana reading is at its limit there (the poles themselves are exact).
+  - tau_R 0.5 sweep (coarse grid), range with Re E = 0: tau_L 0.1 / 0.2 / 0.3 / 0.4: 0.165 / 0.149 / 0.132 / 0.066 pi;
+    0.6 / 0.7 / 0.8: 0.116 / 1.058 / 1.851 pi.  Shrinks towards tau_L = tau_R and reappears above, faster above (Gamma(tau)
+    is steep: the width DIFFERENCE sets it, not |tau_L - tau_R|).  Segment centres move with the probes' level shift
+    (0.51 / 0.94 pi at tau_R 0.5 vs 0.47 / 0.98 at 0.1).
+  - det r and kappa at E = 0 depend only on G_L G_R in the Nilsson model (c = 0): (1, 1) and (4, 0.25) ueV give equal kappa
+    and det r but only the second has EPs.  det r < 0 <=> eps < sqrt(G_L G_R) is a DIFFERENT boundary from eps = delta_eff
+    (diagonal model: EP segments inside det r < 0 iff G_L / G_R < 3 + 2 sqrt 2 ~ 5.8).  The det r regimes of the symmetric
+    data (lobes with eps_max above / below Gamma) are NOT EP regimes (EPs there ~0.001 pi).  EPs show in energy-resolved
+    quantities (poles, DOS(E) line shape), not in E = 0 transport.
+  - TWO-MAJORANA REDUCTION FROM THE FULL MODEL ([ep2], tools.nh_pair_2x2, plots/ep2_mixed.png, no fit): lossless pair ->
+    left / right-localised combinations -> probe self-energies projected (first order).  Equal bonds 0.1 / 0.1: G_L = G_R
+    EXACTLY along all phi (0.06-0.22 ueV), |c| 0.0005-0.014 ueV; inside the tiny segment (0.4695 pi) 2x2 poles -0.086 i /
+    -0.114 i vs exact -0.087 i / -0.116 i -> the equal-bond EPs ARE the cross term (CONFIRMED).  Asymmetric: delta >> |c|
+    (|c| <= 0.07 ueV at (0.3, 0.1) vs delta up to ~1).  EP positions, 2x2 vs exact: (0.3, 0.1) 0.4664-0.4847 / 0.9779-0.9865
+    vs 0.4645-0.4875 / 0.9705-0.9905 (segments 20-60 % too narrow); worse with tau_L: at (0.5, 0.1) phi = pi falls outside
+    the 2x2 segment but inside the exact one (2x2 total loss 2.62 vs exact 3.91 ueV there); the loss-driven segment (0.6)
+    and the merging (0.7, 0.8) are ABSENT from the 2x2 (it keeps four EPs at the crossings).  -> first order in the probes
+    holds only for tau_L <~ 0.3; beyond, the probe reshapes gamma_L and only the full poles are quantitative -- the
+    strong-loss regime is non-perturbative.  (Equal bonds: the 2x2 has no sign change of D on the 121-phase grid only
+    because those segments are ~0.001 pi wide.)  The mirror pairs give identical 2x2 eigenvalues.
+  - det r / kappa WITH ASYMMETRIC PROBES (2026-11-16, [ep3], tools.transport_phis tau_R=; checked: tau_R = tau_L
+    reproduces exactly; kappa, G identical under tau_L <-> tau_R, det r_L differs slightly).  plots/ep3_detr_mixed.png:
+    det r = 0 and the EPs are DIFFERENT points.  (0.5, 0.1): det r_L never crosses 0 (fine 0.0005 pi: min +0.21 / +0.39 at
+    the two crossings) although phi = pi etc. lie between EPs (det r there +0.29..+0.81); (0.6, 0.1): min +0.50.  So EP
+    segments sit in det r > 0 at strong asymmetry.  The two-Majorana relation kappa = (1 - det r^2)/2 still holds to 0.011.
+    The parity-crossing kappa dip is filled in: kappa one broad maximum 0.468 / 0.415 instead of 1/2 - 0 - 1/2 (reading,
+    untested: the strong probe also reaches the other Majorana's tail = a direct path at eps = 0) -- but below 1/2,
+    |G| / kappa 0.13-0.17 and kappa ~0.05 elsewhere (the small G_L G_R).  Weak asymmetry (0.4, 0.6), 801 phases
+    (plots/ep3_fine_mixed_tauL0.4_tauR0.6.png): EPs 0.4563-0.5638 and 0.8962-0.9813 pi, overlap 0.996 at the EPs and
+    ~0.01 at eps = 0 (the full W); both segments INSIDE det r < 0 (det r -0.67..-0.13 there; G_L / G_R < 5.8), but det r < 0
+    also extends beyond them and appears where there is no EP (phi < 0.095, > 1.486 pi; det r = 0 at 0.095, 0.376, 0.574,
+    0.890, 1.030, 1.486 pi); kappa 0.49-0.50 with |G| ~ 0 over most of phi, dips only in the EP segments (0.28 / 0.38) and
+    at the eps maximum (0.11).
+  - ASYMMETRIC BONDS AND THE PLATEAU (2026-11-16, [ep4], plots/ep4_plateau_mixed.png, ep4_EZcut_mixed.png): longest
+    [plateau] run along phi (241 phases, Q = -1; scoring reproduces 1.367 pi for 0.5 / 0.5 at 0.930) over (tau_L, tau_R) in
+    {0.3..0.7}^2 at E_Z 0.925 / 0.930 / 0.935: the long runs lie on the anti-diagonal tau_L tau_R ~ 0.21-0.25 (constant
+    G_L G_R), symmetric under the swap; best 1.367 pi = (0.5, 0.5) at 0.930 = (0.3, 0.7) at 0.925; off the ridge ~0.
+    Along E_Z (0.80-1.10, step 5 ueV) at phi 1.742 pi: windows 50 (0.5/0.5), 55 (0.6/0.4), 65 (0.7/0.3), 25 (0.6/0.5),
+    25 (0.5/0.3) ueV; the ridge curves nearly coincide, (0.7, 0.3) wins only because its slightly smaller product puts the
+    lobe top at det r -0.06 (x_max ~ 1) instead of -0.14 (the existing Gamma ~ (0.72-1) eps_max rule); a symmetric
+    tau ~ 0.47-0.48 should do the same (not computed).  At phi = pi all windows 5-15 ueV.  => ASYMMETRY DOES NOT IMPROVE
+    THE PLATEAU: it is a function of G_L G_R (Nilsson), asymmetry only re-tunes the product; the EP segments sit where the
+    plateau already breaks (the crossing dips).
+  - SECOND FIELD E_Z 0.70 ([ep3] cell 3, plots/ep_mixed_tauL<t>_EZ0.7.png): lossless eps 1.85 ueV at pi, max 7.6; FOUR
+    crossings (~0.16, 0.58, 0.92, 1.38 pi; eps < 0.6 ueV over ~1.3 -> 0.25 pi).  Equal bonds 0.1 / 0.1: an EP segment
+    resolved on the coarse grid at the slow 0.16 pi crossing.  (0.2, 0.1): segments 0.042-0.242 and 1.325-1.475 pi (0.35 pi
+    vs 0.017 pi at E_Z 0.93); (0.3, 0.1): merged 1.258 -> 0.325 pi through phi = 0 plus small ones at the steep crossings
+    (1.12 pi in all), real splitting only around the three eps maxima.  Range with Re E = 0 for tau_L 0.1 ... 0.8:
+    0.017 / 0.35 / 1.12 / 1.34 / 1.65 / 1.79 / 1.82 / 1.87 pi; from tau_L 0.6 only the window around the big eps maximum
+    keeps a real splitting (EPs 0.658-0.875 / 0.675-0.858 / 0.692-0.825 pi for 0.6 / 0.7 / 0.8) and phi = pi is between EPs
+    (poles -0.95 / -5.96 i, -0.62 / -11.35 i, -0.44 / -20.7 i ueV: the narrow one sharpens as the broad one takes the
+    loss).  The segment width is set by |d eps / d phi| at the crossing; merging needs delta_eff > eps over a range, so it
+    sets in at weak probes where eps is small (lower field: tau_L 0.3 here vs 0.7 at E_Z 0.93).  PAIR-SELECTION TRAP:
+    at E_Z 0.70 the bulk levels sit at |Re E| 25-40 ueV, so at tau_L 0.8 the broad Majorana pole (Im ~ -48) was not among
+    the k = 8 poles closest to 0 and a bulk pole was taken as 'pole 2' (fake EPs at 0.142 / 1.775 pi); fixed by k = 16,
+    keeping the 8 with the smallest |Re E| (ep_point k=).  Check any new strong-loss run for this.
+  - NOT DONE: literature on the strong-loss regime; DOS(E) line shapes across an EP.
 
 ## Numerics — measured on the GRESTA point unless stated
 (eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,

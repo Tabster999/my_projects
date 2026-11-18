@@ -10,6 +10,9 @@ PARTS (one per former script; the cells of each part are tagged [part]):
   leads        (2026-11-11)  STUDY: the mixed-SOC junction vs BOTH lead couplings -- S/N bond tc (SC leads) and probe bond tau
   spectrum     (2026-11-13)  STUDY: DOS(E, phi) at one field through a bright E = 0 DOS spot, vs the probe bond tau (a = 10)
   ep           (2026-11-13)  STUDY: exceptional points of the open junction (poles with the probe leads), asymmetric tau_L, tau_R
+  ep2          (2026-11-13)  the two-Majorana reduction of [ep] from the full model (G_L, G_R, c along phi), no fit
+  ep3          (2026-11-16)  [ep] follow-ups: det r / kappa with asymmetric probes, a weak pair on a fine grid, E_Z 0.70
+  ep4          (2026-11-16)  STUDY: can asymmetric probe bonds improve the kappa = 1/2 plateau? (along E_Z and phi)
 
 Run one part:   python study_tuning.py topology      (several: list them; no argument: every part, in order)
 In the interactive window the cells run as usual.  run_part(part) replaces the old `if __name__ == "__main__":`
@@ -25,7 +28,7 @@ from functools import partial
 import tools as st
 from study_oscillation import slowest_mode
 
-PARTS = ('topology', 'coupling', 'tuning', 'maps', 'leads', 'spectrum', 'ep')
+PARTS = ('topology', 'coupling', 'tuning', 'maps', 'leads', 'spectrum', 'ep', 'ep2', 'ep3', 'ep4')
 _SELECTED = {a for a in sys.argv[1:] if a in PARTS}
 
 
@@ -1703,13 +1706,15 @@ EP_K = 8
 EP_W = 6
 
 
-def ep_point(phi, tau_L, tau_R=EP_TAU_R, E_Z=EP_EZ):
-    """[Re of the EP_K poles closest to 0, their Im, overlap of the two closest] (ueV) at one phase."""
-    P, O = st.nh_spectrum(junction('mixed', 0.7), E_Z, [float(phi)], tau_L, tau_R, k=EP_K)
-    return np.r_[P[0].real, P[0].imag, O]
+def ep_point(phi, tau_L, tau_R=EP_TAU_R, E_Z=EP_EZ, k=EP_K):
+    """[Re of EP_K poles, their Im, overlap of the pair] (ueV) at one phase: the k poles closest to 0, ordered by |Re E|
+    (nh_spectrum), the first EP_K kept.  k > EP_K when the broad Majorana pole lies farther from 0 than EP_K bulk poles
+    (E_Z 0.70, tau_L 0.8: Im ~ -48 ueV vs bulk levels at |Re E| 25-40 -- with k = 8 it was not even computed)."""
+    P, O = st.nh_spectrum(junction('mixed', 0.7), E_Z, [float(phi)], tau_L, tau_R, k=k)
+    return np.r_[P[0, :EP_K].real, P[0, :EP_K].imag, O]
 
 
-def ep_figure(tau_L, R, ref, tau_R=EP_TAU_R):
+def ep_figure(tau_L, R, ref, tau_R=EP_TAU_R, E_Z=EP_EZ):
     """Re E, Im E of the poles and the eigenvector overlap of the two closest to 0 along phi; prints the EP phases."""
     K, x = EP_K, EP_PH / np.pi
     Re, Im, ov = R[:, :K], R[:, K:2 * K], R[:, 2 * K]
@@ -1749,10 +1754,11 @@ def ep_figure(tau_L, R, ref, tau_R=EP_TAU_R):
     a.set_ylabel(r'$|\langle\psi_1|\psi_2\rangle|$')
     a.set_xlabel(r'$\phi/\pi$')
     a.set_xlim(0, 2)
-    fig.suptitle(rf'Poles of the open junction: probe bonds $\tau_L$ = {tau_L:g}, $\tau_R$ = {tau_R:g}, $E_Z$ = {EP_EZ:g} meV'
+    fig.suptitle(rf'Poles of the open junction: probe bonds $\tau_L$ = {tau_L:g}, $\tau_R$ = {tau_R:g}, $E_Z$ = {E_Z:g} meV'
                  '\n' r'mixed SOC, L 2 $\mu$m, a 10.  Shaded: both poles at Re $E$ = 0 (between EPs); dotted: EPs',
                  fontsize=11)
-    name = f'ep_mixed_tauL{tau_L:g}'
+    name = (f'ep_mixed_tauL{tau_L:g}' + ('' if tau_R == EP_TAU_R else f'_tauR{tau_R:g}')
+            + ('' if E_Z == EP_EZ else f'_EZ{E_Z:g}'))
     st.save_fig(fig, name, dpi=150)
     plt.close(fig)
     j = int(np.argmin(np.abs(EP_PH - np.pi)))
@@ -1777,3 +1783,561 @@ if run_part('ep'):
                 ep_figure(_tl, EP_R[_nm], EP_R['ref'], _tr)
     finally:
         _pool.shutdown()
+
+
+# %% [ep] --- 2. FINE phi SCANS AROUND EVERY EP, and the tau_L = tau_R control around its crossings ---
+# Coarse step 0.0167 pi: EPs known to +-0.008 pi, segments a few points wide.  Fine: +-EP_FINE_HALF around every coarse EP
+# at EP_FINE_STEP (windows of close EPs merge).  Control tau_L = tau_R = 0.1: the pole pair gives delta = (G_L - G_R)/2
+# ~ 0.017 ueV (overlap x eps), i.e. EP segments ~0.001 pi wide if the junction is not exactly left-right symmetric ->
+# +-EP_CTRL_HALF around both crossings at EP_CTRL_STEP.  Figures plots/ep_fine_mixed_tauL<tau>.png.
+EP_FINE_HALF, EP_FINE_STEP = 0.012, 0.001                          # units of pi
+EP_CTRL_HALF, EP_CTRL_STEP = 0.01, 0.0002
+
+
+def ep_between(R):
+    """Both poles of the pair on Re E = 0 with different Im (between two EPs), per phase."""
+    Re, Im = R[:, :EP_K], R[:, EP_K:2 * EP_K]
+    return (np.abs(Re[:, 0]) < 1e-3) & (np.abs(Re[:, 1]) < 1e-3) & (np.abs(Im[:, 0] - Im[:, 1]) > 1e-3)
+
+
+def ep_windows(x, R, half, step, ctrl=False):
+    """Fine phase grid (units of pi) +-half around every coarse EP (ctrl: around every crossing = local minimum of
+    |Re E| of the pair below 1 ueV), overlapping windows merged; and the centres."""
+    if ctrl:
+        r = np.abs(R[:, 0])
+        c = [float(x[i]) for i in range(1, len(x) - 1) if r[i] <= r[i - 1] and r[i] <= r[i + 1] and r[i] < 1.0]
+    else:
+        ch = np.flatnonzero(np.diff(ep_between(R).astype(int)))
+        c = list((x[ch] + x[ch + 1]) / 2)
+    if not c:
+        return np.array([]), c
+    pts = np.concatenate([np.arange(v - half, v + half + step / 2, step) for v in c])
+    return np.unique(np.round(np.round(pts / step) * step % 2.0, 6)), c
+
+
+def ep_fine_figure(tau_L, xs, R, c, tau_R=EP_TAU_R, ctrl=False):
+    """One column per window: Re E, Im E of the pair (+ other poles), overlap; EPs located on the fine grid."""
+    K = EP_K
+    Re, Im, ov = R[:, :K], R[:, K:2 * K], R[:, 2 * K]
+    b = ep_between(R)
+    step = np.min(np.diff(xs))
+    cont = np.diff(xs) < 1.5 * step
+    groups = np.split(np.arange(len(xs)), np.flatnonzero(~cont) + 1)
+    ch = np.flatnonzero((np.diff(b.astype(int)) != 0) & cont)
+    epf = (xs[ch] + xs[ch + 1]) / 2
+    C1, C2, CO = '#2a78d6', '#1baf7a', '#b5b4ae'
+    fig, axs = plt.subplots(3, len(groups), figsize=(3.4 * len(groups) + 1.2, 8.4), sharex='col', squeeze=False,
+                            layout='constrained', gridspec_kw=dict(height_ratios=(1.1, 1.1, 0.8)))
+    print(f"  fine, tau_L {tau_L:g} / tau_R {tau_R:g} (step {step:g} pi): EPs at phi/pi = "
+          + (", ".join(f"{v:.4f}" for v in epf) or "none") + "  (coarse: " + ", ".join(f"{v:.3f}" for v in c) + ")",
+          flush=True)
+    for j, g in enumerate(groups):
+        xg = xs[g]
+        e = np.flatnonzero(np.diff(np.r_[0, b[g].astype(int), 0]))
+        for r_, Y, lab in ((0, Re, r'Re $E$ ($\mu$eV)'), (1, Im, r'Im $E$ ($\mu$eV)')):
+            a = axs[r_, j]
+            a.plot(xg, Y[g, 2:], '.', color=CO, ms=2)
+            a.plot(xg, Y[g, 1], 'o', color=C2, ms=4.5, mew=0, label='pair: pole 2')
+            a.plot(xg, Y[g, 0], 'o', color=C1, ms=2.2, mew=0, label='pair: pole 1')
+            span = np.abs(Y[g, :2]).max()
+            if r_ == 0:
+                a.set_ylim(-1.3 * max(span, 0.02), 1.3 * max(span, 0.02))
+            else:
+                a.set_ylim(-1.15 * max(span, 0.02), 0.05 * max(span, 0.02))
+            if j == 0:
+                a.set_ylabel(lab)
+        axs[2, j].plot(xg, ov[g], color=C1, lw=1.6)
+        axs[2, j].set_ylim(0, 1.05)
+        axs[2, j].set_xlabel(r'$\phi/\pi$')
+        for a in axs[:, j]:
+            for i0, i1 in zip(e[::2], e[1::2]):
+                a.axvspan(xg[i0] - step / 2, xg[i1 - 1] + step / 2, color='#f5c9b3', lw=0, zorder=0)
+            for v in epf[(epf > xg[0]) & (epf < xg[-1])]:
+                a.axvline(v, color='#eb6834', lw=1, ls=':')
+            a.grid(color='#e4e3df', lw=0.6)
+        inside = b[g]
+        print(f"    window {xg[0]:.3f}-{xg[-1]:.3f} pi: between-EP width {inside.sum() * step:.4f} pi; overlap max "
+              f"{ov[g].max():.3f}" + (f", min inside {ov[g][inside].min():.3f}" if inside.any() else "")
+              + f"; pair Im range {Im[g, :2].min():.3f}..{Im[g, :2].max():.3f} ueV", flush=True)
+    axs[0, 0].legend(fontsize=8, frameon=False)
+    axs[2, 0].set_ylabel(r'$|\langle\psi_1|\psi_2\rangle|$')
+    fig.suptitle(rf'Fine $\phi$ scans: $\tau_L$ = {tau_L:g}, $\tau_R$ = {tau_R:g}, $E_Z$ = {EP_EZ:g} meV, step {step:g}$\pi$'
+                 + (' (symmetric control, around the crossings)' if ctrl else '')
+                 + '\nshaded: both poles at Re E = 0 (between EPs); dotted: EPs', fontsize=11)
+    name = f'ep_fine_mixed_tauL{tau_L:g}'
+    st.save_fig(fig, name, dpi=150)
+    plt.close(fig)
+    print(f"figure: plots/{name}.png", flush=True)
+
+
+if run_part('ep'):
+    _x = EP_PH / np.pi
+    EP_F = {}
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        for _tl in EP_TAUS:
+            _nm = f'tauL{_tl:g}'
+            _ctrl = _tl == EP_TAU_R
+            _xs, _c = ep_windows(_x, EP_R[_nm], EP_CTRL_HALF if _ctrl else EP_FINE_HALF,
+                                 EP_CTRL_STEP if _ctrl else EP_FINE_STEP, _ctrl)
+            if not len(_xs):
+                continue
+            EP_F[_tl] = (_xs, st.myf.scan(partial(ep_point, tau_L=_tl, tau_R=EP_TAU_R), {'phi': _xs * np.pi}, pool=_pool,
+                                          chunksize=1, save=str(st.DATA / f'scharf_absEP_fine_mixed_a10_EZ{EP_EZ:g}_{_nm}'
+                                                                          f'_R{EP_TAU_R:g}.npz'))['values'])
+            ep_fine_figure(_tl, EP_F[_tl][0], EP_F[_tl][1], _c, ctrl=_ctrl)
+    finally:
+        _pool.shutdown()
+
+
+# %% [ep] --- 2b. tau_L 0.2: the 0.47 pi crossing, missed by cell 2 (no coarse EP there, coarse overlap 0.76) ---
+if run_part('ep'):
+    _xs2, _c2 = ep_windows(_x, EP_R['tauL0.2'], EP_FINE_HALF, EP_FINE_STEP, ctrl=True)    # around both crossings
+    _xs2 = _xs2[_xs2 < 0.7]                                                              # the 0.47 pi one only
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        _Rx = st.myf.scan(partial(ep_point, tau_L=0.2, tau_R=EP_TAU_R), {'phi': _xs2 * np.pi}, pool=_pool, chunksize=1,
+                          save=str(st.DATA / f'scharf_absEP_fine2_mixed_a10_EZ{EP_EZ:g}_tauL0.2_R{EP_TAU_R:g}.npz'))['values']
+    finally:
+        _pool.shutdown()
+    _xa, _Ra = EP_F[0.2]
+    _o = np.argsort(np.r_[_xs2, _xa])
+    EP_F[0.2] = (np.r_[_xs2, _xa][_o], np.r_[_Rx, _Ra][_o])
+    ep_fine_figure(0.2, EP_F[0.2][0], EP_F[0.2][1], [float(v) for v in _c2])
+
+
+# %% [ep] --- 3. A SECOND FIXED tau_R = 0.5: tau_L on both sides of it ---
+# EPs need G_L != G_R.  With tau_R = 0.5 the left probe is the WEAKER one for tau_L < 0.5 and the stronger one above:
+# does the EP structure follow |G_L - G_R| only (EPs shrink towards tau_L = tau_R, reappear on both sides)?  And
+# (tau_L, tau_R) = (0.1, 0.5) is the mirror of cell 1's (0.5, 0.1): equal poles <=> left and right equivalent (cf. the
+# control's delta ~ 0.017 ueV).  tau_L = tau_R skipped (cell 1 has the control).  plots/ep_mixed_tauL<tau>_tauR0.5.png.
+EP_TAU_R2 = 0.5
+EP_TAUS2 = (0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8)
+
+if run_part('ep'):
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        for _tl in EP_TAUS2:
+            EP_R[(_tl, EP_TAU_R2)] = st.myf.scan(
+                partial(ep_point, tau_L=_tl, tau_R=EP_TAU_R2), {'phi': EP_PH}, pool=_pool, chunksize=1,
+                save=str(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_tauL{_tl:g}_R{EP_TAU_R2:g}.npz'))['values']
+            ep_figure(_tl, EP_R[(_tl, EP_TAU_R2)], EP_R['ref'], EP_TAU_R2)
+        _pair = lambda R: np.c_[np.abs(R[:, 0]), np.sort(R[:, EP_K:EP_K + 2], axis=1)]    # |Re E|, sorted Im (order-free)
+        _m, _o = _pair(EP_R[(0.1, EP_TAU_R2)]), _pair(EP_R['tauL0.5'])
+        print(f"  mirror check, pair (|Re E|, Im E) of (tau_L, tau_R) = (0.1, 0.5) vs (0.5, 0.1): max difference "
+              f"{np.abs(_m - _o).max():.3f} ueV at the same phi, {np.abs(_m - _o[::-1]).max():.3f} ueV at phi -> 2 pi - phi "
+              f"(pair widths up to {np.abs(_o[:, 1:]).max():.2f} ueV)", flush=True)
+    finally:
+        _pool.shutdown()
+
+
+# ====================================================================================================================
+# PART 'ep2'  (2026-11-13)
+# ====================================================================================================================
+# The two-Majorana reduction of [ep] from the full model, no fit (tools.nh_pair_2x2): the lossless pair spans the
+# subspace, gamma_L / gamma_R = its left- / right-localised combinations, the probe self-energies projected onto it
+# (first order in the probes).  Gives G_L, G_R, the cross term c and eps (incl. the probe shift) along phi, and the EPs
+# of the 2x2 (sign changes of D = ((lam_1 - lam_2)/2)^2, linearly interpolated) vs the exact EPs of [ep].
+# Spot checks (E_Z 0.93): equal bonds 0.1 / 0.1 -> G_L = G_R = 0.100 ueV, |c| 0.011-0.014 ueV; inside the tiny segment
+# (0.4695 pi) the 2x2 poles -0.086 i / -0.114 i vs exact -0.087 i / -0.116 i -> the equal-bond EPs come from c.
+# (0.3, 0.1): Re to ~0.02 ueV, broad Im 10-16 % low.  (0.5, 0.1) at pi: 2x2 +-0.83 - 1.31 i (split) vs exact -1.19 i,
+# -2.73 i (between EPs): first order misses ~1/3 of the total loss once the probe reshapes gamma_L.
+# One eigensolve per phase (~8 s), all pairs projected from it.  plots/ep2_mixed.png; cache scharf_absEP2_*.
+EP2_PAIRS = tuple((t, EP_TAU_R) for t in EP_TAUS) + tuple((t, EP_TAU_R2) for t in EP_TAUS2)
+
+
+def ep2_point(phi):
+    """nh_pair_2x2 for every pair in EP2_PAIRS at one phase, flattened (len(EP2_PAIRS) * 9)."""
+    return st.nh_pair_2x2(junction('mixed', 0.7), EP_EZ, float(phi), EP2_PAIRS).ravel()
+
+
+def ep_positions(xs, R):
+    """EP phases (units of pi) on a phase grid xs (units of pi): changes of ep_between within contiguous stretches."""
+    b = ep_between(R)
+    step = np.min(np.diff(xs))
+    cont = np.diff(xs) < 1.5 * step
+    ch = np.flatnonzero((np.diff(b.astype(int)) != 0) & cont)
+    return (xs[ch] + xs[ch + 1]) / 2
+
+
+def zero_crossings(x, D):
+    """x where D changes sign (linear interpolation)."""
+    i = np.flatnonzero(np.sign(D[:-1]) * np.sign(D[1:]) < 0)
+    return x[i] - D[i] * (x[i + 1] - x[i]) / (D[i + 1] - D[i])
+
+
+if run_part('ep2'):
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        EP2 = st.myf.scan(ep2_point, {'phi': EP_PH}, pool=_pool, chunksize=1,
+                          save=str(st.DATA / f'scharf_absEP2_mixed_a10_EZ{EP_EZ:g}.npz'))['values']
+    finally:
+        _pool.shutdown()
+    EP2 = EP2.reshape(len(EP_PH), len(EP2_PAIRS), 9)
+    _x = EP_PH / np.pi
+    _ref = np.load(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_ref_R0.npz')['values']
+    print(f"\n  [ep2] two-Majorana reduction, E_Z {EP_EZ:g}: EPs of the 2x2 vs exact (phi / pi)")
+    _cmp = []
+    for j, (tl, tr) in enumerate(EP2_PAIRS):
+        pred = zero_crossings(_x, EP2[:, j, 8])
+        fine = st.DATA / f'scharf_absEP_fine_mixed_a10_EZ{EP_EZ:g}_tauL{tl:g}_R{tr:g}.npz'
+        if fine.exists():
+            _z = np.load(fine)
+            ex = ep_positions(_z['axis_phi'] / np.pi, _z['values'])
+            if tl == 0.2 and tr == EP_TAU_R:
+                _z2 = np.load(st.DATA / f'scharf_absEP_fine2_mixed_a10_EZ{EP_EZ:g}_tauL0.2_R{tr:g}.npz')
+                ex = np.sort(np.r_[ex, ep_positions(_z2['axis_phi'] / np.pi, _z2['values'])])
+        else:
+            _c = np.load(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_tauL{tl:g}_R{tr:g}.npz')['values']
+            ex = ep_positions(_x, _c)
+        _cmp.append((tl, tr, pred, ex))
+        g = EP2[:, j]
+        print(f"    ({tl:g}, {tr:g}): 2x2 " + (", ".join(f"{v:.4f}" for v in pred) or "none") + "  |  exact "
+              + (", ".join(f"{v:.4f}" for v in ex) or "none") + f"  |  along phi: G_L {g[:, 4].min():.3f}-{g[:, 4].max():.3f}, "
+              f"G_R {g[:, 5].min():.3f}-{g[:, 5].max():.3f}, |c| {g[:, 6].min():.4f}-{g[:, 6].max():.4f} ueV", flush=True)
+    C1, C2, C3, C4 = '#2a78d6', '#1baf7a', '#eb6834', '#52514e'
+    fig, axs = plt.subplots(1, 3, figsize=(15, 4.8), layout='constrained')
+    for a, (tl, tr) in zip(axs[:2], ((0.1, 0.1), (0.3, 0.1))):
+        g = EP2[:, EP2_PAIRS.index((tl, tr))]
+        a.semilogy(_x, np.abs(_ref[:, 0]), color=C4, lw=1.2, ls='--', label=r'$\varepsilon$, probes detached')
+        a.semilogy(_x, g[:, 7], color=C4, lw=1.6, label=r'$\varepsilon$ with the probes (2x2)')
+        a.semilogy(_x, g[:, 4], color=C1, lw=1.8, label=r'$\Gamma_L$')
+        a.semilogy(_x, g[:, 5], color=C2, lw=1.8, label=r'$\Gamma_R$')
+        a.semilogy(_x, g[:, 6], color=C3, lw=1.8, label=r'$|c|$ (cross term)')
+        a.semilogy(_x, np.sqrt(((g[:, 4] - g[:, 5]) / 2) ** 2 + g[:, 6] ** 2), color=C3, lw=1.0, ls=':',
+                   label=r'$\sqrt{\delta^2 + |c|^2}$ (EP threshold)')
+        a.set_ylim(1e-3, 30)
+        a.set_xlim(0, 2)
+        a.set_xlabel(r'$\phi/\pi$')
+        a.set_ylabel(r'$\mu$eV')
+        a.set_title(rf'2x2 from the full model: $\tau_L$ {tl:g}, $\tau_R$ {tr:g}', fontsize=11)
+        a.grid(color='#e4e3df', lw=0.6, which='both')
+    axs[0].legend(fontsize=8, frameon=False, loc='lower right', ncol=2)
+    a = axs[2]
+    for tl, tr, pred, ex in _cmp:
+        if tr != EP_TAU_R:
+            continue
+        a.plot(np.full(len(ex), tl), ex, 'o', color=C1, ms=6, mfc='none', mew=1.5)
+        a.plot(np.full(len(pred), tl) + 0.015, pred, 'x', color=C3, ms=6, mew=1.5)
+    a.plot([], [], 'o', color=C1, mfc='none', mew=1.5, label='exact (poles of the full model, fine scans)')
+    a.plot([], [], 'x', color=C3, mew=1.5, label='2x2 reduction (first order in the probes)')
+    a.set_xlabel(r'$\tau_L$  ($\tau_R$ = 0.1)')
+    a.set_ylabel(r'EP phase $\phi/\pi$')
+    a.set_ylim(0, 2)
+    a.set_title('Where the two-Majorana reduction holds', fontsize=11)
+    a.legend(fontsize=8, frameon=False, loc='upper left')
+    a.grid(color='#e4e3df', lw=0.6)
+    fig.suptitle(rf'Two-Majorana reduction of the open junction from the full model (no fit), $E_Z$ = {EP_EZ:g} meV, '
+                 r'mixed SOC, L 2 $\mu$m, a 10', fontsize=11)
+    st.save_fig(fig, 'ep2_mixed', dpi=150)
+    plt.close(fig)
+    print("figure: plots/ep2_mixed.png", flush=True)
+
+
+# ====================================================================================================================
+# PART 'ep3'  (2026-11-16)
+# ====================================================================================================================
+# Follow-ups of [ep] / [ep2]:
+# 1. kappa, G, det r (left probe) with ASYMMETRIC probes along phi (tools.transport_phis tau_R=) over the EP segments of
+#    [ep]: det r = 0 <=> eps = sqrt(G_L G_R) (Nilsson, c = 0) is not the EP condition |eps| = sqrt(delta^2 + c^2).
+#    First look (E_Z 0.93, (0.5, 0.1), phi = pi): det r_L = +0.775 while both poles are purely imaginary (between EPs);
+#    kappa and G are identical for (0.5, 0.1) and (0.1, 0.5), det r_L differs slightly (+0.775 / +0.780).
+# 2. A weak-asymmetry pair (tau_L, tau_R) = EP3_FINE over the whole phase on a fine grid (EP3_PHF): poles and transport.
+# 3. The tau_R = 0.1 sweep of [ep] at a second field EP3_EZ2, the middle of the neutral kappa = 1/2 window at L 2 um
+#    ([deck]: 0.60-0.92 meV), where eps is smaller.
+# Figures plots/ep3_detr_mixed.png, ep3_fine_mixed_tauL0.4_tauR0.6.png, ep_mixed_tauL<t>_EZ0.7.png; caches scharf_absEP3_*.
+EP3_TR_PAIRS = ((0.2, 0.1), (0.3, 0.1), (0.4, 0.1), (0.5, 0.1), (0.6, 0.1))
+EP3_FINE = (0.4, 0.6)
+EP3_PHF = np.linspace(0.0, 2 * np.pi, 801)                          # step 0.0025 pi
+EP3_CHUNK = 89                                                       # 9 chunks of the fine transport line
+EP3_EZ2 = 0.70
+
+
+def ep3_tr(i):
+    """transport_phis along EP_PH for EP3_TR_PAIRS[i] (left bond in q, right bond tau_R), E_Z = EP_EZ."""
+    tl, tr = EP3_TR_PAIRS[int(i)]
+    return st.transport_phis(junction('mixed', 0.7, tl), EP_EZ, EP_PH, tau_R=tr)
+
+
+def ep3_tr_fine(n):
+    """transport_phis for EP3_FINE on chunk n of EP3_PHF (one RGF set-up per chunk, so the pool shares the line)."""
+    tl, tr = EP3_FINE
+    return st.transport_phis(junction('mixed', 0.7, tl), EP_EZ, EP3_PHF[int(n) * EP3_CHUNK:(int(n) + 1) * EP3_CHUNK],
+                             tau_R=tr)
+
+
+def ep3_shade(a, x, b, step):
+    """Shade the between-EP stretches b (bool along x) on axis a."""
+    e = np.flatnonzero(np.diff(np.r_[0, b.astype(int), 0]))
+    for i0, i1 in zip(e[::2], e[1::2]):
+        a.axvspan(x[i0] - step / 2, x[i1 - 1] + step / 2, color='#f5c9b3', lw=0, zorder=0)
+
+
+# %% [ep3] --- 1. kappa, G, det r WITH ASYMMETRIC PROBES over the EP segments (E_Z = EP_EZ) ---
+if run_part('ep3'):
+    _x = EP_PH / np.pi
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        EP3_T = st.myf.scan(ep3_tr, {'i': np.arange(len(EP3_TR_PAIRS))}, pool=_pool, chunksize=1,
+                            save=str(st.DATA / f'scharf_absEP3_tr_mixed_a10_EZ{EP_EZ:g}.npz'))['values']
+    finally:
+        _pool.shutdown()
+    print(f"\n  [ep3] det r (left probe) with asymmetric probes vs the EP segments, E_Z {EP_EZ:g}:", flush=True)
+    fig, axs = plt.subplots(len(EP3_TR_PAIRS), 1, figsize=(9.5, 2.3 * len(EP3_TR_PAIRS) + 0.8), sharex=True,
+                            layout='constrained')
+    for a, (tl, tr), T in zip(axs, EP3_TR_PAIRS, EP3_T):
+        R = np.load(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_tauL{tl:g}_R{tr:g}.npz')['values']
+        b = ep_between(R)
+        ep3_shade(a, _x, b, 2 / 120)
+        dz = zero_crossings(_x, T[:, 3])
+        for v in dz:
+            a.axvline(v, color='#1baf7a', lw=1, ls='--')
+        a.plot(_x, T[:, 0], color='#2a78d6', lw=1.8, label=r'$\kappa/\kappa_0$')
+        a.plot(_x, np.abs(T[:, 1]), color='#eb6834', lw=1.2, ls=':', label=r'$|G|/G_0$')
+        a.plot(_x, T[:, 3], color='#1baf7a', lw=1.8, label=r'det $r_L$')
+        a.axhline(0, color='#52514e', lw=0.6)
+        a.set_ylim(-1.05, 1.05)
+        a.set_ylabel(rf'$\tau_L$ {tl:g}, $\tau_R$ {tr:g}', fontsize=10)
+        a.grid(color='#e4e3df', lw=0.6)
+        ins = T[b, 3]
+        print(f"    ({tl:g}, {tr:g}): EPs " + (", ".join(f"{v:.3f}" for v in ep_positions(_x, R)) or "none")
+              + "  |  det r = 0 at " + (", ".join(f"{v:.3f}" for v in dz) or "none")
+              + (f"  |  det r between EPs {ins.min():+.3f} .. {ins.max():+.3f}" if b.any() else "")
+              + f"  |  failed solves {int(np.nansum(T[:, 4]))}", flush=True)
+    axs[0].legend(fontsize=9, frameon=False, ncol=3, loc='lower right')
+    axs[-1].set_xlabel(r'$\phi/\pi$')
+    axs[-1].set_xlim(0, 2)
+    fig.suptitle(rf'Asymmetric probes, $E_Z$ = {EP_EZ:g} meV: shaded = between EPs (poles, [ep]); dashed = det $r_L$ = 0',
+                 fontsize=11)
+    st.save_fig(fig, 'ep3_detr_mixed', dpi=150)
+    plt.close(fig)
+    print("figure: plots/ep3_detr_mixed.png", flush=True)
+
+# %% [ep3] --- 2. THE WEAK-ASYMMETRY PAIR EP3_FINE OVER THE WHOLE PHASE, FINE GRID: poles and transport ---
+if run_part('ep3'):
+    _xf = EP3_PHF / np.pi
+    _tl, _tr = EP3_FINE
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        EP3_TF = st.myf.scan(ep3_tr_fine, {'n': np.arange(len(EP3_PHF) // EP3_CHUNK)}, pool=_pool, chunksize=1,
+                             save=str(st.DATA / f'scharf_absEP3_trfine_mixed_a10_EZ{EP_EZ:g}_tauL{_tl:g}_R{_tr:g}.npz')
+                             )['values'].reshape(-1, 5)
+        EP3_PF = st.myf.scan(partial(ep_point, tau_L=_tl, tau_R=_tr), {'phi': EP3_PHF}, pool=_pool, chunksize=1,
+                             save=str(st.DATA / f'scharf_absEP3_fine_mixed_a10_EZ{EP_EZ:g}_tauL{_tl:g}_R{_tr:g}.npz')
+                             )['values']
+    finally:
+        _pool.shutdown()
+    K = EP_K
+    Re, Im, ov = EP3_PF[:, :K], EP3_PF[:, K:2 * K], EP3_PF[:, 2 * K]
+    b = ep_between(EP3_PF)
+    epf = ep_positions(_xf, EP3_PF)
+    dz = zero_crossings(_xf, EP3_TF[:, 3])
+    _ref = np.load(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP_EZ:g}_ref_R0.npz')['values']
+    fig, axs = plt.subplots(4, 1, figsize=(10, 11), sharex=True, layout='constrained',
+                            gridspec_kw=dict(height_ratios=(1.2, 1.1, 0.7, 1.0)))
+    for a in axs:
+        ep3_shade(a, _xf, b, 2 / 800)
+        for v in epf:
+            a.axvline(v, color='#eb6834', lw=0.9, ls=':')
+        for v in dz:
+            a.axvline(v, color='#1baf7a', lw=0.9, ls='--')
+        a.grid(color='#e4e3df', lw=0.6)
+    for a, Y, lab in ((axs[0], Re, r'Re $E$ ($\mu$eV)'), (axs[1], Im, r'Im $E$ ($\mu$eV)')):
+        a.plot(_xf, Y[:, 2:], '.', color='#b5b4ae', ms=1.5)
+        a.plot(_xf, Y[:, 1], 'o', color='#1baf7a', ms=3.2, mew=0, label='pair: pole 2')
+        a.plot(_xf, Y[:, 0], 'o', color='#2a78d6', ms=1.6, mew=0, label='pair: pole 1')
+        a.set_ylabel(lab)
+    axs[0].plot(EP_PH / np.pi, np.abs(_ref[:, 0]), '--', color='#52514e', lw=1, label=r'$\pm\varepsilon$, probes detached')
+    axs[0].plot(EP_PH / np.pi, -np.abs(_ref[:, 0]), '--', color='#52514e', lw=1)
+    axs[0].set_ylim(-1.4 * np.abs(Re[:, :2]).max(), 1.4 * np.abs(Re[:, :2]).max())
+    axs[0].legend(fontsize=8.5, frameon=False, ncol=3, loc='upper right')
+    axs[1].set_ylim(1.15 * Im[:, :2].min(), 0.05 * abs(Im[:, :2].min()))
+    axs[2].plot(_xf, ov, color='#2a78d6', lw=1.4)
+    axs[2].set_ylim(0, 1.05)
+    axs[2].set_ylabel(r'$|\langle\psi_1|\psi_2\rangle|$')
+    axs[3].plot(_xf, EP3_TF[:, 0], color='#2a78d6', lw=1.6, label=r'$\kappa/\kappa_0$')
+    axs[3].plot(_xf, np.abs(EP3_TF[:, 1]), color='#eb6834', lw=1.1, ls=':', label=r'$|G|/G_0$')
+    axs[3].plot(_xf, EP3_TF[:, 3], color='#1baf7a', lw=1.6, label=r'det $r_L$')
+    axs[3].axhline(0, color='#52514e', lw=0.6)
+    axs[3].set_ylim(-1.05, 1.05)
+    axs[3].legend(fontsize=8.5, frameon=False, ncol=3, loc='lower right')
+    axs[3].set_xlabel(r'$\phi/\pi$')
+    axs[3].set_xlim(0, 2)
+    fig.suptitle(rf'$\tau_L$ = {_tl:g}, $\tau_R$ = {_tr:g}, $E_Z$ = {EP_EZ:g} meV, step 0.0025$\pi$: shaded = between EPs '
+                 r'(dotted: EPs); dashed green = det $r_L$ = 0', fontsize=11)
+    name = f'ep3_fine_mixed_tauL{_tl:g}_tauR{_tr:g}'
+    st.save_fig(fig, name, dpi=150)
+    plt.close(fig)
+    ins = EP3_TF[b, 3]
+    print(f"\n  [ep3] fine ({_tl:g}, {_tr:g}), E_Z {EP_EZ:g}: EPs at phi/pi = " + ", ".join(f"{v:.4f}" for v in epf)
+          + f"; between EPs {b.mean() * 2:.3f} pi; max overlap {ov.max():.3f}; det r = 0 at "
+          + ", ".join(f"{v:.4f}" for v in dz) + (f"; det r between EPs {ins.min():+.3f} .. {ins.max():+.3f}" if b.any()
+                                                  else "") + f"; failed solves {int(np.nansum(EP3_TF[:, 4]))}", flush=True)
+    print(f"figure: plots/{name}.png", flush=True)
+
+# %% [ep3] --- 3. THE tau_R = 0.1 SWEEP AT A SECOND FIELD (E_Z = EP3_EZ2) ---
+if run_part('ep3'):
+    EP3_R2 = {}
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        for _tl, _tr, _nm in [(0.0, 0.0, 'ref')] + [(t, EP_TAU_R, f'tauL{t:g}') for t in EP_TAUS]:
+            EP3_R2[_nm] = st.myf.scan(partial(ep_point, tau_L=_tl, tau_R=_tr, E_Z=EP3_EZ2, k=16), {'phi': EP_PH}, pool=_pool,
+                                      chunksize=1,
+                                      save=str(st.DATA / f'scharf_absEP_mixed_a10_EZ{EP3_EZ2:g}_{_nm}_R{_tr:g}.npz'))['values']
+            if _nm == 'ref':
+                print(f"\n  [ep3] E_Z {EP3_EZ2:g}: lossless eps at phi = pi {abs(EP3_R2['ref'][60, 0]):.3f} ueV, max over "
+                      f"phi {np.abs(EP3_R2['ref'][:, 0]).max():.2f} ueV", flush=True)
+            else:
+                ep_figure(_tl, EP3_R2[_nm], EP3_R2['ref'], _tr, E_Z=EP3_EZ2)
+    finally:
+        _pool.shutdown()
+
+
+# ====================================================================================================================
+# PART 'ep4'  (2026-11-16)
+# ====================================================================================================================
+# STUDY: can ASYMMETRIC probe bonds improve the kappa = 1/2 plateau?  [ep3] showed that strong asymmetry ((0.5, 0.1),
+# E_Z 0.93) removes the parity-crossing dip (det r_L stays > 0, kappa one broad maximum 0.47 / 0.42) -- but below 1/2,
+# |G| / kappa 0.13-0.17 and only ~0.03 pi wide.  Here mild asymmetry around the best symmetric point (tau 0.5, E_Z 0.93,
+# study_mixed [plateau]: 1.37 pi along phi, 50 ueV along E_Z at 1.742 pi):
+# 1. kappa, G, det r_L vs E_Z (0.80-1.10, step 0.005) at phi = pi and 1.742 pi for EP4_PAIRS_CUT;
+# 2. the longest plateau run along phi (241 phases; |kappa - 1/2| < 0.03, |G| < 0.1 kappa, |kappa - (1 - det r^2)/2| < 0.01,
+#    Q = -1 from the [plateau] Q lines) over (tau_L, tau_R) in EP4_TAUS^2 at E_Z 0.925 / 0.930 / 0.935.
+#    Check: (0.5, 0.5) at 0.930 must give the [plateau] 1.37 pi.
+# Figures plots/ep4_EZcut_mixed.png, ep4_plateau_mixed.png; caches scharf_absEP4_*.
+EP4_PAIRS_CUT = ((0.5, 0.5), (0.6, 0.4), (0.7, 0.3), (0.6, 0.5), (0.5, 0.3))
+EP4_EZ = np.round(np.arange(0.80, 1.10001, 0.005), 4)
+EP4_PHC = (np.pi, 1.7417 * np.pi)
+EP4_TAUS = (0.3, 0.4, 0.5, 0.6, 0.7)
+EP4_EZP = (0.925, 0.93, 0.935)
+EP4_PHP = np.linspace(0.0, 2 * np.pi, 241)                          # = study_mixed.PHI_F (the Q lines' grid)
+
+
+def ep4_cut(i, E_Z):
+    """kappa, G, andreev, det r_L, n_bad at the two phases EP4_PHC for EP4_PAIRS_CUT[i] at one field: (2, 5)."""
+    tl, tr = EP4_PAIRS_CUT[int(i)]
+    return st.transport_phis(junction('mixed', 0.7, tl), E_Z, EP4_PHC, tau_R=tr)
+
+
+def ep4_line(E_Z, i, j):
+    """transport along EP4_PHP for (tau_L, tau_R) = (EP4_TAUS[i], EP4_TAUS[j]) at one field: (241, 5)."""
+    return st.transport_phis(junction('mixed', 0.7, EP4_TAUS[int(i)]), E_Z, EP4_PHP, tau_R=EP4_TAUS[int(j)])
+
+
+def plat_mask(T, Q=None):
+    """The [plateau] criterion on transport rows T (..., 5); Q (same leading shape) adds Q = -1."""
+    k, G, d = T[..., 0], T[..., 1], T[..., 3]
+    m = (np.abs(k - 0.5) < 0.03) & (np.abs(G) < 0.1 * k) & (np.abs(k - (1 - d ** 2) / 2) < 0.01)
+    return m & (Q < 0) if Q is not None else m
+
+
+def longest_periodic(m):
+    """Longest run of True on a periodic phase grid whose last point repeats the first (points)."""
+    m = np.asarray(m[:-1], bool)
+    if m.all():
+        return len(m)
+    mm = np.roll(m, -int(np.argmin(m)))
+    best = cur = 0
+    for v in mm:
+        cur = cur + 1 if v else 0
+        best = max(best, cur)
+    return best
+
+
+def longest_run(m):
+    """Longest run of True on an open grid (points)."""
+    best = cur = 0
+    for v in m:
+        cur = cur + 1 if v else 0
+        best = max(best, cur)
+    return best
+
+
+# %% [ep4] --- 1-2. SCANS ---
+if run_part('ep4'):
+    _pool = st.myf.scans.make_pool(EP_W)
+    try:
+        EP4_L = st.myf.scan(ep4_line, {'E_Z': np.array(EP4_EZP), 'i': np.arange(len(EP4_TAUS)),
+                                       'j': np.arange(len(EP4_TAUS))}, pool=_pool, chunksize=1,
+                            save=str(st.DATA / 'scharf_absEP4_lines_mixed_a10.npz'))['values']
+        print("ep4: plateau lines done", flush=True)
+        EP4_C = st.myf.scan(ep4_cut, {'i': np.arange(len(EP4_PAIRS_CUT)), 'E_Z': EP4_EZ}, pool=_pool, chunksize=1,
+                            save=str(st.DATA / 'scharf_absEP4_EZcut_mixed_a10.npz'))['values']
+        print("ep4: E_Z cuts done", flush=True)
+    finally:
+        _pool.shutdown()
+
+# %% [ep4] --- 3. PLATEAU ALONG phi OVER (tau_L, tau_R): numbers and figure ---
+if run_part('ep4'):
+    dphi = 2.0 / (len(EP4_PHP) - 1)
+    RUN = np.zeros((len(EP4_EZP), len(EP4_TAUS), len(EP4_TAUS)))
+    print("\n  [ep4] longest plateau run along phi (units of pi), Q = -1 included; rows tau_L, columns tau_R "
+          + " ".join(f"{t:g}" for t in EP4_TAUS), flush=True)
+    for a_, e in enumerate(EP4_EZP):
+        Qe = np.load(st.DATA / f'scharf_absPlat_Q_mu0.7_EZ{e:g}.npz')['values'][0, :, 0]
+        for i in range(len(EP4_TAUS)):
+            for j in range(len(EP4_TAUS)):
+                RUN[a_, i, j] = longest_periodic(plat_mask(EP4_L[a_, i, j], Qe)) * dphi
+        print(f"    E_Z {e:g}:", flush=True)
+        for i, tl in enumerate(EP4_TAUS):
+            print(f"      tau_L {tl:g}: " + "  ".join(f"{RUN[a_, i, j]:.3f}" for j in range(len(EP4_TAUS))), flush=True)
+    ib = np.unravel_index(np.argmax(RUN), RUN.shape)
+    print(f"    best: E_Z {EP4_EZP[ib[0]]:g}, (tau_L, tau_R) = ({EP4_TAUS[ib[1]]:g}, {EP4_TAUS[ib[2]]:g}): {RUN[ib]:.3f} pi;"
+          f" symmetric (0.5, 0.5) at 0.93: {RUN[1, 2, 2]:.3f} pi ([plateau]: 1.37 pi); failed solves "
+          f"{int(np.nansum(EP4_L[..., 4]))}", flush=True)
+    fig, axs = plt.subplots(1, len(EP4_EZP), figsize=(4.3 * len(EP4_EZP) + 1, 4.2), layout='constrained')
+    for a_, (a, e) in enumerate(zip(axs, EP4_EZP)):
+        im = a.imshow(RUN[a_], origin='lower', cmap='viridis', vmin=0, vmax=max(RUN.max(), 1e-3),
+                      extent=(EP4_TAUS[0] - 0.05, EP4_TAUS[-1] + 0.05, EP4_TAUS[0] - 0.05, EP4_TAUS[-1] + 0.05))
+        for i, tl in enumerate(EP4_TAUS):
+            for j, tr in enumerate(EP4_TAUS):
+                a.text(tr, tl, f'{RUN[a_, i, j]:.2f}', ha='center', va='center', fontsize=8,
+                       color='w' if RUN[a_, i, j] < 0.6 * RUN.max() else 'k')
+        a.plot([0.25, 0.75], [0.25, 0.75], color='w', lw=0.8, ls=':')
+        a.set_xticks(EP4_TAUS)
+        a.set_yticks(EP4_TAUS)
+        a.set_xlabel(r'$\tau_R$')
+        a.set_ylabel(r'$\tau_L$')
+        a.set_title(rf'$E_Z$ = {e:g} meV', fontsize=11)
+    fig.colorbar(im, ax=axs, label=r'longest plateau run along $\phi$ ($\pi$)', shrink=0.9)
+    fig.suptitle(r'$\kappa = 1/2 \pm 0.03$, $|G| < 0.1\kappa$, two-Majorana relation, $Q = -1$: asymmetric probe bonds '
+                 r'(dotted: $\tau_L = \tau_R$)', fontsize=11)
+    st.save_fig(fig, 'ep4_plateau_mixed', dpi=150)
+    plt.close(fig)
+    print("figure: plots/ep4_plateau_mixed.png", flush=True)
+
+# %% [ep4] --- 4. kappa, G, det r ALONG E_Z AT phi = pi, 1.742 pi: numbers and figure ---
+if run_part('ep4'):
+    dE = (EP4_EZ[1] - EP4_EZ[0]) * 1e3
+    cols = ('#0b0b0b', '#2a78d6', '#1baf7a', '#eb6834', '#8a7ee0')
+    fig, axs = plt.subplots(3, 2, figsize=(12.5, 8.6), sharex=True, layout='constrained',
+                            gridspec_kw=dict(height_ratios=(1.3, 0.8, 1.0)))
+    print(f"\n  [ep4] plateau windows along E_Z (step {dE:g} ueV; criterion without Q, Q = -1 throughout 0.80-1.10 here):",
+          flush=True)
+    for c_, ph in enumerate(EP4_PHC):
+        for i, ((tl, tr), col) in enumerate(zip(EP4_PAIRS_CUT, cols)):
+            T = EP4_C[i, :, c_]
+            lab = rf'$\tau_L$ {tl:g}, $\tau_R$ {tr:g}'
+            axs[0, c_].plot(EP4_EZ, T[:, 0], color=col, lw=1.8 if i == 0 else 1.3, label=lab)
+            axs[1, c_].plot(EP4_EZ, np.abs(T[:, 1]), color=col, lw=1.3)
+            axs[2, c_].plot(EP4_EZ, T[:, 3], color=col, lw=1.8 if i == 0 else 1.3)
+            m = plat_mask(T)
+            print(f"    phi {ph / np.pi:.4f} pi, ({tl:g}, {tr:g}): longest window {longest_run(m) * dE:.0f} ueV, all plateau "
+                  f"points {m.sum() * dE:.0f} ueV; kappa max {T[:, 0].max():.3f}; min det r {T[:, 3].min():+.3f}; "
+                  f"failed {int(np.nansum(T[:, 4]))}", flush=True)
+        axs[0, c_].axhspan(0.47, 0.53, color='#2a78d6', alpha=0.08, lw=0)
+        axs[0, c_].axhline(0.5, color='#52514e', lw=0.8, ls='--')
+        axs[0, c_].set_title(rf'$\phi$ = {ph / np.pi:.3f}$\pi$', fontsize=11)
+        axs[2, c_].axhline(0, color='#52514e', lw=0.6)
+        axs[2, c_].set_xlabel(r'$E_Z$ (meV)')
+        for a in axs[:, c_]:
+            a.grid(color='#e4e3df', lw=0.6)
+    axs[0, 0].set_ylabel(r'$\kappa/\kappa_0$')
+    axs[1, 0].set_ylabel(r'$|G|/G_0$')
+    axs[2, 0].set_ylabel(r'det $r_L$')
+    axs[0, 0].legend(fontsize=8.5, frameon=False, loc='upper left')
+    fig.suptitle(r'Asymmetric probe bonds along $E_Z$ (mixed SOC, L 2 $\mu$m, a 10); band: $\kappa = 1/2 \pm 0.03$',
+                 fontsize=11)
+    st.save_fig(fig, 'ep4_EZcut_mixed', dpi=150)
+    plt.close(fig)
+    print("figure: plots/ep4_EZcut_mixed.png", flush=True)

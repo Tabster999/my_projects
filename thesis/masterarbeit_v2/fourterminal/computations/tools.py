@@ -297,10 +297,15 @@ def transport_point(q, E_Z, phi=np.pi):
                      det_r(rgf, float(phi)), myf.leads.N_UNRELIABLE - n0])
 
 
-def transport_phis(q, E_Z, phis):
-    """transport_point for every phase in phis from ONE RGF set-up (the phase is cheap): (len(phis), 5)."""
+def transport_phis(q, E_Z, phis, tau_R=None):
+    """transport_point for every phase in phis from ONE RGF set-up (the phase is cheap): (len(phis), 5).
+    tau_R: a different bond for the RIGHT probe (the left keeps q.tc_barr_transport); the RGF reads both probes'
+    self-energies from the junction's lead objects at set-up, so the right lead is swapped in before it."""
     n0 = myf.leads.N_UNRELIABLE
-    rgf = myf.RGFFourTerminal(myf.FourTerminalJunction(q.params_transport(E_Z=float(E_Z))), np.array([0.0]))
+    J = myf.FourTerminalJunction(q.params_transport(E_Z=float(E_Z)))
+    if tau_R is not None:
+        J.lead_R = myf.FourTerminalJunction(replace(q.params_transport(E_Z=float(E_Z)), tc_barr=float(tau_R))).lead_R
+    rgf = myf.RGFFourTerminal(J, np.array([0.0]))
     rgf.green_blocks = lru_cache(maxsize=1)(rgf.green_blocks)       # channels and det r share one solve
     out = []
     for ph in phis:
@@ -566,6 +571,98 @@ def _ribbon_sigmas(q, E_Z, dE):
     return _RIB_CACHE[key]
 
 
+def _probe_sigmas(q, E_Z, tau_L, tau_R):
+    """Left / right probe self-energies at E = 0 (4 ny x 4 ny, units of t) for separate bonds (0 = detached)."""
+    p = q.params_transport(E_Z=float(E_Z))
+    d = 4 * p.ny
+    zN = np.array([1j * p.eta])[:, None, None] * np.eye(d)[None]
+    S_L = (myf.FourTerminalJunction(replace(p, tc_barr=float(tau_L))).lead_L.self_energy(zN)[0] if tau_L > 0
+           else np.zeros((d, d), complex))
+    S_R = (myf.FourTerminalJunction(replace(p, tc_barr=float(tau_R))).lead_R.self_energy(zN)[0] if tau_R > 0
+           else np.zeros((d, d), complex))
+    return S_L, S_R
+
+
+def _nh_setup(q, E_Z, tau_L, tau_R, dE=2e-3):
+    """The phase-independent pieces of the open-junction pencil of nh_spectrum: H_C + probe self-energies (csr), the
+    ribbon self-energies and E-derivatives at phase 0, and the edge-row index grid."""
+    import scipy.sparse as sps
+    p = q.params_transport(E_Z=float(E_Z))
+    nx, ny = p.nx, p.ny
+    d = 4 * ny
+    J = myf.FourTerminalJunction(replace(p, phi=0.0))
+    Hs, V = J.slice_blocks_x()
+    S_L, S_R = _probe_sigmas(q, E_Z, tau_L, tau_R)
+    off = sps.diags(np.ones(nx - 1), 1)
+    H0 = (sps.kron(sps.eye(nx), sps.csr_matrix(Hs)) + sps.kron(off, sps.csr_matrix(V))
+          + sps.kron(off.T, sps.csr_matrix(V.conj().T))).tolil()
+    H0[:d, :d] = H0[:d, :d].toarray() + S_L
+    H0[-d:, -d:] = H0[-d:, -d:].toarray() + S_R
+    sT0, sB, dT0, dB = _ribbon_sigmas(q, E_Z, dE)
+    top = (np.arange(nx)[:, None] * d + np.arange(4)[None]).ravel()                  # row iy = 0 of every column
+    bot = (np.arange(nx)[:, None] * d + 4 * (ny - 1) + np.arange(4)[None]).ravel()     # row iy = ny - 1
+    edge = np.r_[top, bot]
+    Rows, Cols = np.meshgrid(edge, edge, indexing='ij')
+    return dict(H0=H0.tocsr(), sT0=sT0, sB=sB, dT0=dT0, dB=dB, nx=nx, d=d, n=nx * d, Rows=Rows.ravel(),
+                Cols=Cols.ravel())
+
+
+def _nh_pencil(s, ph):
+    """(A, M) of nh_spectrum at phase ph: the top ribbon is the gauge rotation of phase 0 (as dos_total_phis)."""
+    import scipy.sparse as sps
+    nx, n, m = s['nx'], s['n'], 4 * s['nx']
+    u = np.tile(np.array([1.0, 1.0, np.exp(1j * ph), np.exp(1j * ph)]), nx)
+    g = lambda A: (u.conj()[:, None] * A) * u[None, :]
+    blk = np.zeros((2 * m, 2 * m), complex)
+    blk[:m, :m], blk[m:, m:] = g(s['sT0']), s['sB']
+    dblk = np.zeros_like(blk)
+    dblk[:m, :m], dblk[m:, m:] = g(s['dT0']), s['dB']
+    A = (s['H0'] + sps.csr_matrix((blk.ravel(), (s['Rows'], s['Cols'])), shape=(n, n))).tocsc()
+    Md = -(dblk + dblk.conj().T) / 2
+    M = (sps.eye(n, format='csr') + sps.csr_matrix((Md.ravel(), (s['Rows'], s['Cols'])), shape=(n, n))).tocsc()
+    return A, M
+
+
+def nh_pair_2x2(q, E_Z, phi, tau_pairs, dE=2e-3):
+    """
+    Two-Majorana reduction of nh_spectrum from the full model, no fit.  The lossless pair (probes detached; the two
+    poles with the smallest |Re E|) spans the subspace; gamma_L, gamma_R = its M-orthonormal combinations with the
+    largest / smallest weight on the left half of the strip.  The probe self-energies are projected onto it (Rayleigh-
+    Ritz: first order in the probes, valid while the widths << the next level, ~57 ueV at E_Z 0.93).  H2 = H2h - i G2 with
+    G2 = i (H2 - H2^dag) / 2 = [[G_L, c], [c*, G_R]] in the (gamma_L, gamma_R) basis.  For each (tau_L, tau_R):
+    [Re, Im of the two eigenvalues of H2 (ueV, ordered by Re), G_L, G_R, |c|, |H2h_LR| (= eps incl. the probe shift),
+    D = ((lam_1 - lam_2) / 2)^2 (real: > 0 split pair, < 0 between EPs; ueV^2)], shape (len(tau_pairs), 9).
+    """
+    import scipy.sparse.linalg as spla
+    s = _nh_setup(q, E_Z, 0.0, 0.0, dE)
+    A0, M = _nh_pencil(s, float(phi))
+    w, vec = spla.eigs(A0, k=4, M=M, sigma=0.0, which='LM')
+    o = np.argsort(np.abs(w.real))[:2]
+    V2 = vec[:, o]
+    G = V2.conj().T @ (M @ V2)
+    L_ = np.linalg.cholesky(G)
+    V2 = V2 @ np.linalg.inv(L_).conj().T                               # M-orthonormal
+    nx, d = s['nx'], s['d']
+    left = (np.arange(nx * d) // d) < nx // 2
+    Wl = V2[left].conj().T @ V2[left]
+    _, U = np.linalg.eigh((Wl + Wl.conj().T) / 2)
+    V = V2 @ U[:, ::-1]                                                # columns: gamma_L (most left), gamma_R
+    H0p = V.conj().T @ (A0 @ V)
+    out = []
+    for tl, tr in tau_pairs:
+        S_L, S_R = _probe_sigmas(q, E_Z, tl, tr)
+        H2 = H0p + V[:d].conj().T @ S_L @ V[:d] + V[-d:].conj().T @ S_R @ V[-d:]
+        G2 = 1j * (H2 - H2.conj().T) / 2
+        H2h = (H2 + H2.conj().T) / 2
+        lam = np.linalg.eigvals(H2)
+        lam = lam[np.argsort(lam.real)]
+        Dv = ((lam[0] - lam[1]) / 2) ** 2
+        sc = q.t * 1e3
+        out.append([lam[0].real * sc, lam[0].imag * sc, lam[1].real * sc, lam[1].imag * sc, G2[0, 0].real * sc,
+                    G2[1, 1].real * sc, abs(G2[0, 1]) * sc, abs(H2h[0, 1]) * sc, Dv.real * sc ** 2])
+    return np.array(out)
+
+
 def nh_spectrum(q, E_Z, phis, tau_L, tau_R, k=8, dE=2e-3):
     """
     Complex spectrum of the OPEN junction near E = 0: the k poles closest to zero of
@@ -580,42 +677,11 @@ def nh_spectrum(q, E_Z, phis, tau_L, tau_R, k=8, dE=2e-3):
     Majorana pair --, and the overlap |psi_1^dag psi_2| / (|psi_1| |psi_2|) of those two (len(phis),) -> 1 where two
     eigenvectors coalesce (exceptional point).
     """
-    import scipy.sparse as sps
     import scipy.sparse.linalg as spla
-    p = q.params_transport(E_Z=float(E_Z))
-    nx, ny = p.nx, p.ny
-    d = 4 * ny
-    J = myf.FourTerminalJunction(replace(p, phi=0.0))
-    Hs, V = J.slice_blocks_x()
-    zN = np.array([1j * p.eta])[:, None, None] * np.eye(d)[None]
-    S_L = (myf.FourTerminalJunction(replace(p, tc_barr=float(tau_L))).lead_L.self_energy(zN)[0] if tau_L > 0
-           else np.zeros((d, d), complex))
-    S_R = (myf.FourTerminalJunction(replace(p, tc_barr=float(tau_R))).lead_R.self_energy(zN)[0] if tau_R > 0
-           else np.zeros((d, d), complex))
-    sT0, sB, dT0, dB = _ribbon_sigmas(q, E_Z, dE)
-    off = sps.diags(np.ones(nx - 1), 1)
-    H0 = (sps.kron(sps.eye(nx), sps.csr_matrix(Hs)) + sps.kron(off, sps.csr_matrix(V))
-          + sps.kron(off.T, sps.csr_matrix(V.conj().T))).tolil()
-    H0[:d, :d] = H0[:d, :d].toarray() + S_L
-    H0[-d:, -d:] = H0[-d:, -d:].toarray() + S_R
-    H0 = H0.tocsr()
-    top = (np.arange(nx)[:, None] * d + np.arange(4)[None]).ravel()                  # row iy = 0 of every column
-    bot = (np.arange(nx)[:, None] * d + 4 * (ny - 1) + np.arange(4)[None]).ravel()     # row iy = ny - 1
-    n = nx * d
-    edge = np.r_[top, bot]
-    Rows, Cols = np.meshgrid(edge, edge, indexing='ij')
+    s = _nh_setup(q, E_Z, tau_L, tau_R, dE)
     poles, ovl = [], []
     for ph in phis:
-        u = np.tile(np.array([1.0, 1.0, np.exp(1j * ph), np.exp(1j * ph)]), nx)
-        g = lambda A: (u.conj()[:, None] * A) * u[None, :]           # ribbon at phi = gauge rotation of phi = 0
-        sT, dT = g(sT0), g(dT0)
-        blk = np.zeros((2 * 4 * nx, 2 * 4 * nx), complex)
-        blk[:4 * nx, :4 * nx], blk[4 * nx:, 4 * nx:] = sT, sB
-        dblk = np.zeros_like(blk)
-        dblk[:4 * nx, :4 * nx], dblk[4 * nx:, 4 * nx:] = dT, dB
-        A = (H0 + sps.csr_matrix((blk.ravel(), (Rows.ravel(), Cols.ravel())), shape=(n, n))).tocsc()
-        Md = -(dblk + dblk.conj().T) / 2
-        M = (sps.eye(n, format='csr') + sps.csr_matrix((Md.ravel(), (Rows.ravel(), Cols.ravel())), shape=(n, n))).tocsc()
+        A, M = _nh_pencil(s, ph)
         w, vec = spla.eigs(A, k=k, M=M, sigma=0.0, which='LM')
         # order by |Re E| first: the Majorana pair has |Re E| <= eps (0 between EPs), the bulk poles sit at |Re E| ~ Delta_top;
         # ordering by |E| swapped in a bulk pole once the lossy pole's width exceeded it (tau_L 0.8: Im -45 vs Re 40 ueV)
