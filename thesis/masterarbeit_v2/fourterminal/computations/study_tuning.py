@@ -1691,8 +1691,8 @@ if run_part('spectrum'):
 # opens into a purely imaginary segment bounded by two EPs (Re E = 0, Im E split, eigenvectors coalesce at the EPs).
 # Here the loss is the PROBE LEADS themselves: tools.nh_spectrum = poles of G with the exact ribbon and probe
 # self-energies (the G of transport_point / dos_total_phis).  Two-Majorana poles
-#     E = -i (G_L + G_R)/2 +- sqrt(eps^2 - (G_L - G_R)^2 / 4)
-# -> EPs need G_L != G_R, i.e. tau_L != tau_R (equal bonds + left-right symmetric end modes give a plain crossing).
+#     E = -i Gbar +- sqrt(eps^2 - delta^2 - c^2), delta = (G_L - G_R)/2, c = cross term (probe touches the far tail)
+# -> EPs at |eps| = sqrt(delta^2 + c^2); equal bonds: delta = 0 exactly (mirror check), EPs ~0.001 pi wide from c alone.
 # tau_R fixed at EP_TAU_R, tau_L over EP_TAUS (tau_L = tau_R: the symmetric control); the lossless reference (probes
 # detached) gives +-eps(phi).  Thesis junction (mixed SOC, mu_C 0.7, tc 1, W 100, L 2 um, a 10) at E_Z = EP_EZ:
 # phi = pi is a closed-box zero there (lossless pole 0.407 ueV = the cached box eps 0.40717).
@@ -1787,8 +1787,8 @@ if run_part('ep'):
 
 # %% [ep] --- 2. FINE phi SCANS AROUND EVERY EP, and the tau_L = tau_R control around its crossings ---
 # Coarse step 0.0167 pi: EPs known to +-0.008 pi, segments a few points wide.  Fine: +-EP_FINE_HALF around every coarse EP
-# at EP_FINE_STEP (windows of close EPs merge).  Control tau_L = tau_R = 0.1: the pole pair gives delta = (G_L - G_R)/2
-# ~ 0.017 ueV (overlap x eps), i.e. EP segments ~0.001 pi wide if the junction is not exactly left-right symmetric ->
+# at EP_FINE_STEP (windows of close EPs merge).  Control tau_L = tau_R = 0.1: the pole pair gives delta_eff = overlap x eps
+# ~ 0.017 ueV (= |c|, the cross term; [ep2]: G_L = G_R exactly), i.e. EP segments ~0.001 pi wide (found: 0.0006-0.0008) ->
 # +-EP_CTRL_HALF around both crossings at EP_CTRL_STEP.  Figures plots/ep_fine_mixed_tauL<tau>.png.
 EP_FINE_HALF, EP_FINE_STEP = 0.012, 0.001                          # units of pi
 EP_CTRL_HALF, EP_CTRL_STEP = 0.01, 0.0002

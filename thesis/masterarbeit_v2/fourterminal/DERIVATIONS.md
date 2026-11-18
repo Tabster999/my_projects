@@ -152,7 +152,7 @@ At $t_b=1$ it is an ordinary bulk bond. Why this matters: CLAUDE.md, "INTERFACE 
 | Thouless energy | $E_T=\frac{\pi}{2}\frac{\hbar v_F}{W}$, $v_F$ of the N strip | **Scharf, Eq. (8)** and the text after it | [ldos.py:157-159](computations/ldos.py#L157-L159) |
 | field angle | $\mathbf E_Z\perp\mathbf n_\mathrm{soc}$: $\theta_z=\arctan2(\alpha,\beta)$ ('100') | **[derived here]**, below | [ldos.py:161-165](computations/ldos.py#L161-L165) |
 | mixed SOC | $(\alpha,\beta)=16\,(\cos0.15\pi,\ \sin0.15\pi)$ meV nm | [model choice] (the thesis case) | [tools.py:72-74](computations/tools.py#L72-L74) |
-| temperature | $1\ \mu\mathrm{eV}/k_B=11.6$ mK | $k_B=86.17\ \mu$eV/K | [tools.py:355](computations/tools.py#L355) |
+| temperature | $1\ \mu\mathrm{eV}/k_B=11.6$ mK | $k_B=86.17\ \mu$eV/K | [tools.py:366](computations/tools.py#L366) |
 
 **Field angle [derived here].**
 - For propagation along the junction ($k_x$), the SOC field is $\mathbf n_\mathrm{soc}\propto(\alpha,\beta)$ (§1.1).
@@ -351,7 +351,7 @@ of $e^2/h$.
 electron or as a hole with **equal** probability. Nilsson et al.: "with equal probabilities $p$", see §5.1. So
 $G=0$ exactly. Charge neutrality is the Majorana fingerprint that the code tests as $|G|<0.1\,\kappa$.
 
-**Code:** `G = ee − he_cross`, [tools.py:290](computations/tools.py#L290). The finite-bias version is
+**Code:** `G = ee − he_cross`, [tools.py:296](computations/tools.py#L296). The finite-bias version is
 `current()` [transport.py:52-66](my_functions/transport.py#L52-L66), with the $\tfrac12$ that removes the Nambu
 double counting.
 
@@ -397,7 +397,7 @@ This $\kappa$ is taken at zero voltage. The open-circuit value adds a thermoelec
   the universal quantized value, $\kappa=0.5\kappa_0$". This is the chiral (Gresta) case.
 - In the localized-pair (Scharf) case, ½ is reached only on resonance (§5.1).
 
-**Code:** `kappa = ee + he_cross`, [tools.py:290](computations/tools.py#L290);
+**Code:** `kappa = ee + he_cross`, [tools.py:296](computations/tools.py#L296);
 `linear_response` [compute.py:35](my_functions/compute.py#L35); finite-$T$ kernels in §4.4.
 
 ### 4.3 Local Andreev conductance
@@ -415,8 +415,8 @@ is the $\mathcal T^{eh}_{RR}(f^e_R-f^h_R)$ term of Klees et al., App. C (§4.1):
 - This quantity needs only one Majorana, so it is not sensitive to the splitting. Its plateau is real but not
   specific to Majoranas (CLAUDE.md, "THE PLATEAU THAT DOES EXIST").
 
-**Code:** `andreev = eh_local + he_local`, [tools.py:290](computations/tools.py#L290); finite $T$ in
-[tools.py:376-385](computations/tools.py#L376-L385).
+**Code:** `andreev = eh_local + he_local`, [tools.py:296](computations/tools.py#L296); finite $T$ in
+[tools.py:387-396](computations/tools.py#L387-L396).
 
 ### 4.4 Finite temperature
 **Equations:** the kernels of §4.1 and §4.2,
@@ -428,7 +428,7 @@ $$
 They are evaluated with the trapezoid rule in $x$, and $E<0$ is folded onto $E>0$ by particle–hole symmetry. That
 is why `thermal()` sums `ee+he+hh+eh` over $E\ge0$, with weight ½ at $T=0$.
 - **Code:** [transport.py:118-164](my_functions/transport.py#L118-L164) and
-  [tools.py:370-391](computations/tools.py#L370-L391).
+  [tools.py:381-402](computations/tools.py#L381-L402).
 - Grid rule: the energy grid must reach about $16\,k_BT$.
 
 ### 4.5 $\det r$: the topological number seen by a probe
@@ -460,7 +460,7 @@ $$
   each process twice.
 - In a finite junction $\det r$ follows the Majoranas' overlap, not only the bulk phase (§5.1).
 
-**Code:** [tools.py:266-277](computations/tools.py#L266-L277).
+**Code:** [tools.py:272-283](computations/tools.py#L272-L283).
 
 ---
 
@@ -522,13 +522,13 @@ What the papers state themselves:
 - $\kappa(E)=2E_M^2\Gamma^2/|Z|^2$ with $|Z|^2=(E_M^2-E^2+\Gamma^2)^2+4E^2\Gamma^2$.
 - Minimising over $u=E^2$ gives $E^*=\sqrt{E_M^2-\Gamma^2}$ and $|Z|^2_\mathrm{min}=4E_M^2\Gamma^2$.
 - So $\max_E\kappa(E)=\tfrac12$ for every $E_M\ge\Gamma$.
-- Code: `resonance_point`, [study_oscillation.py:476](computations/study_oscillation.py#L476).
+- Code: `resonance_point`, [study_oscillation.py:479](computations/study_oscillation.py#L479).
 
 **Code that uses these relations**
-- $x$ from $\det r$: [study_tuning.py:458-467](computations/study_tuning.py#L458-L467) (`x_of`) and
-  [study_mixed.py:151](computations/study_mixed.py#L151);
-- $\kappa(x)$: [study_oscillation.py:453](computations/study_oscillation.py#L453) (`kappa_model`) and the collapse
-  figure [slides_nov.py:417](computations/slides_nov.py#L417).
+- $x$ from $\det r$: [study_tuning.py:466-475](computations/study_tuning.py#L466-L475) (`x_of`) and
+  [study_mixed.py:170](computations/study_mixed.py#L170);
+- $\kappa(x)$: [study_oscillation.py:456](computations/study_oscillation.py#L456) (`kappa_model`) and the collapse
+  figure [slides_nov.py:432](computations/slides_nov.py#L432).
 
 ### 5.2 Measuring $\Gamma$ directly: the Andreev Lorentzian
 **[follows from source]** from Nilsson Eqs. (4)–(6) with $E_M=0$:
@@ -544,17 +544,17 @@ parameter.
 **[source, verified]** Flensberg, **Eq. (13)**, gives the same line shape for the conductance into an isolated
 Majorana: $dI/dV=\frac{2e^2}{h}\frac{4\Gamma_F^2}{(eV)^2+4\Gamma_F^2}$, with height $2e^2/h$ and half width
 $2\Gamma_F$. His coupling $\Gamma_F$ (**Eq. (9)**) is normalised differently: $\Gamma=2\Gamma_F$.
-- **Code:** `gamma_point` [study_mixed.py:88](computations/study_mixed.py#L88) and `gamma_job`
-  [study_tuning.py:489](computations/study_tuning.py#L489) bisect, in $\ln E$, for where
+- **Code:** `gamma_point` [study_mixed.py:91](computations/study_mixed.py#L91) and `gamma_job`
+  [study_tuning.py:497](computations/study_tuning.py#L497) bisect, in $\ln E$, for where
   (`eh_local`+`he_local`)/2 falls to half its $E=0$ value.
 
 ### 5.3 Effective coupling, exponent, and the plateau criterion (definitions)
 - **$\Gamma_\mathrm{eff}=\varepsilon_\mathrm{box}/x(\det r)$**, on two-Majorana points only (neutral, and relation
-  §5.1 within 0.01): [study_mixed.py:146-152](computations/study_mixed.py#L146-L152).
+  §5.1 within 0.01): [study_mixed.py:165-171](computations/study_mixed.py#L165-L171).
   - Physics: if transport sees the box splitting, $\Gamma_\mathrm{eff}$ must stay smooth while $\varepsilon$ varies
     by decades.
 - **$\Gamma\propto\tau^p$:** $p=\ln(x_a/x_b)/\ln(\tau_b/\tau_a)$ at the same points of two maps,
-  [study_tuning.py:470-476](computations/study_tuning.py#L470-L476).
+  [study_tuning.py:478-484](computations/study_tuning.py#L478-L484).
   - Golden-rule expectation **[follows from source]**:
     - Flensberg **Eq. (9)** gives $\Gamma=2\pi\sum_{k\sigma}|V_{k\sigma}|^2\delta(\omega-\varepsilon_{k\sigma})$, with
       $V_{k\sigma}=\int dx\,f_\sigma(x)\,t_k(x)$ (Majorana wavefunction times tunnel amplitude, his Eq. (3) and the
@@ -563,9 +563,9 @@ $2\Gamma_F$. His coupling $\Gamma_F$ (**Eq. (9)**) is normalised differently: $\
     - Nilsson's $\Gamma_i=2\pi w_i^2$ is the same statement.
   - Measured: $p\approx2.6$. Why it differs from 2 has **not** been established.
 - **Plateau point [model choice]:**
-  - $|\kappa-\tfrac12|<0.03$ and $|G|<0.1\kappa$: [study_tuning.py:394-396](computations/study_tuning.py#L394-L396);
+  - $|\kappa-\tfrac12|<0.03$ and $|G|<0.1\kappa$: [study_tuning.py:402-404](computations/study_tuning.py#L402-L404);
   - the stricter version, which also requires $Q=-1$ and $|\kappa-\tfrac12(1-\det r^2)|<0.01$:
-    [study_mixed.py:266-269](computations/study_mixed.py#L266-L269).
+    [study_mixed.py:285-288](computations/study_mixed.py#L285-L288).
   - It marks an $\varepsilon\approx\Gamma$ region, never a protected plateau.
 
 ---
@@ -584,7 +584,7 @@ $$
 It is built from the same blocks as the transport code ([tools.py:97-120](computations/tools.py#L97-L120)).
 - Topological gap (Scharf's $\Delta_\mathrm{top}$): $\min_k|E(k)|$.
 - The gap dip is about $1/\xi_M$ wide, so the grid minimum is refined by a 1D minimisation:
-  [tools.py:187-220](computations/tools.py#L187-L220).
+  [tools.py:187-226](computations/tools.py#L187-L226).
 
 ### 6.2 The invariant $Q$
 **[source, verified]** Kitaev, Phys.-Usp. 44, 131 (2001), arXiv:cond-mat/0010440, **Eq. (26)**:
@@ -646,7 +646,7 @@ The code's lead fallback [leads.py:123-135](my_functions/leads.py#L123-L135) use
 - the block extraction: [study_oscillation.py:61-66](computations/study_oscillation.py#L61-L66);
 - the eigenproblem: [:69-77](computations/study_oscillation.py#L69-L77);
 - $\xi_M$, $k_\mathrm{osc}$: [:80-87](computations/study_oscillation.py#L80-L87);
-- mixed SOC, 3 slowest modes: [study_mixed.py:62](computations/study_mixed.py#L62).
+- mixed SOC, 3 slowest modes: [study_mixed.py:65](computations/study_mixed.py#L65).
 
 **Physics.** The tail is a superposition of a few complex-$k$ modes. The slowest one dominates at large distance;
 its $\mathrm{Re}\,k$ follows the outer Fermi point (CLAUDE.md, oscillation section).
@@ -661,7 +661,7 @@ its $\mathrm{Re}\,k$ follows the outer Fermi point (CLAUDE.md, oscillation secti
 4. Beyond the hyperbola, $E^2$ is fitted by a degree-6 polynomial over $k_0\pm2/\xi_\mathrm{hyp}$ and continued to
    its nearest complex zero ($\xi_\mathrm{poly}$).
 
-**Code:** [study_oscillation.py:90-115](computations/study_oscillation.py#L90-L115).
+**Code:** [study_oscillation.py:90-118](computations/study_oscillation.py#L90-L118).
 
 **Physics.** $\xi_M$ is a property of the narrow dip alone: a slow Andreev band (small $v_A$) plus a small gap at
 $k_0$. That is why $\hbar v_F/\Delta_\mathrm{top}$ fails (CLAUDE.md).
@@ -676,9 +676,9 @@ $$
 
 $\varepsilon$ is the smallest $|E|$, from sparse shift-invert at $\sigma=0$. It is the splitting $E_M$ of
 Nilsson's Eq. (1); the BdG levels come as $\pm E_M$.
-- **Code:** [study_oscillation.py:118-127](computations/study_oscillation.py#L118-L127).
+- **Code:** [study_oscillation.py:121-130](computations/study_oscillation.py#L121-L130).
 - Cross-check: the lowest end-LDOS peak in the transport geometry, `splitting`
-  [tools.py:548-553](computations/tools.py#L548-L553), gives 4.0 µeV vs the box's 4.09 µeV (CLAUDE.md).
+  [tools.py:702-707](computations/tools.py#L702-L707), gives 4.0 µeV vs the box's 4.09 µeV (CLAUDE.md).
 
 ### 7.4 The overlap law $\varepsilon\approx A\Delta e^{-L/\xi_M}|\cos(k_\mathrm{osc}L+\varphi_0)|$
 **[source, verified]** Das Sarma, Sau & Stanescu, PRB 86, 220506(R) (2012), arXiv:1211.0539:
@@ -690,7 +690,7 @@ Nilsson's Eq. (1); the BdG levels come as $\pm E_M$.
 (§7.1), and the two ends are a distance $L$ apart. The overlap of Eq. (1) then scales as $e^{-L/\xi_M}$ and
 oscillates as $\cos(k_\mathrm{osc}L+\varphi_0)$.
 - The prefactor is not derived. $A$ and $\varphi_0$ are fitted, two parameters for all fields:
-  [study_oscillation.py:254-263](computations/study_oscillation.py#L254-L263).
+  [study_oscillation.py:257-266](computations/study_oscillation.py#L257-L266).
 - The fit is a **test**: zeros spaced by $\pi$ in $k_\mathrm{osc}L$, a constant $A$.
 - For the mixed SOC the phase holds but $A$ drifts (CLAUDE.md, "THE PHASE HOLDS, THE AMPLITUDE DOES NOT").
 
@@ -708,10 +708,10 @@ oscillates as $\cos(k_\mathrm{osc}L+\varphi_0)$.
    $$\sum_{m\ge1}\Big|\sum_jc_j\varphi_jz_j^m\Big|^2=\sum_{jk}c_j^*c_k(\varphi_j^\dagger\varphi_k)\frac{z_j^*z_k}{1-z_j^*z_k}.$$
 
 **Code**
-- end modes: [study_mixed.py:477-490](computations/study_mixed.py#L477-L490);
-- $\psi_L$, $\psi_R$: [:493-507](computations/study_mixed.py#L493-L507);
-- norms: [:510-516](computations/study_mixed.py#L510-L516);
-- RR and boundary term: [:525](computations/study_mixed.py#L525).
+- end modes: [study_mixed.py:657-670](computations/study_mixed.py#L657-L670);
+- $\psi_L$, $\psi_R$: [:673-687](computations/study_mixed.py#L673-L687);
+- norms: [:690-696](computations/study_mixed.py#L690-L696);
+- RR and boundary term: [:705](computations/study_mixed.py#L705).
 
 **Result:** $\varepsilon_\mathrm{RR}/\varepsilon_\mathrm{box}=0.9999$ wherever $L/\xi_M\ge3$. The lobe heights are
 the overlap of the two end Majoranas.
@@ -725,7 +725,75 @@ the overlap of the two end Majoranas.
   with $K$ as in §2.2.
   - $(g_0^2)$ is the off-diagonal block of $\begin{pmatrix}A&-1\\0&A\end{pmatrix}^{-1}$, which is still
     block-tridiagonal.
-  - Code: [tools.py:478-539](computations/tools.py#L478-L539).
+  - Code: [tools.py:489-551](computations/tools.py#L489-L551).
+  - The probes enter through $A=z-H_C-\Sigma_L-\Sigma_R$ with the probe bond $\tau$ (`tau=`); $\tau=0$ detaches
+    them (then only the ribbons are attached).
+
+### 7.7 Poles of the open junction and exceptional points (study_tuning [ep], [ep2], [ep3])
+**Poles [derived here].** The poles of $G^r(E)=(E-H_C-\Sigma(E))^{-1}$ (§2.2) solve $\det[E-H_C-\Sigma(E)]=0$, a
+nonlinear eigenproblem. The probe self-energies are taken at $E=0$: normal leads, flat on the $\mu$eV scale, and
+their anti-Hermitian part is the loss. The ribbon self-energy varies on the scale $\Delta$, so it is linearised,
+$\Sigma_\mathrm{rib}(E)\approx\Sigma_\mathrm{rib}(0)+E\,\Sigma_\mathrm{rib}'(0)$. This gives the generalised problem
+
+$$
+\big(H_C+\Sigma_\mathrm{rib}(0)+\Sigma_L(0)+\Sigma_R(0)\big)\psi=E\,M\psi,\qquad
+M=1-\Sigma_\mathrm{rib}'(0)\ \ (\text{Hermitian part}).
+$$
+
+- $\Sigma'_\mathrm{rib}=-V^\dagger g^2V\le0$ below the gap, so $M\ge1$; $M$ counts the part of the state inside the
+  ribbons.
+- The error is $O((E/\Delta)^2)$. Checked against the closed box (§7.3): the lossless pair is $\pm0.407$ $\mu$eV
+  against $0.40717$. Freezing $\Sigma$ at $E=0$ ($M=1$) puts every energy 1.64 times too high.
+- The left and right probes take separate bonds $\tau_L$, $\tau_R$. The top ribbon at phase $\phi$ is the gauge
+  rotation of phase 0, as in §7.6.
+- Code: [tools.py:574-623](computations/tools.py#L574-L623) (`_probe_sigmas`, `_nh_setup`, `_nh_pencil`),
+  [tools.py:666-693](computations/tools.py#L666-L693) (`nh_spectrum`; the $k$ poles nearest 0, ordered by
+  $\lvert\mathrm{Re}\,E\rvert$).
+
+**Two-Majorana poles [follows from source].** Nilsson et al. Eqs. (4)–(6) (§5.1): the poles are the zeros of $Z$,
+
+$$
+E_\pm=-\tfrac i2(\Gamma_1+\Gamma_2)\pm\sqrt{E_M^2-\tfrac14(\Gamma_1-\Gamma_2)^2}.
+$$
+
+- **[derived here]** Each probe also reaches the other Majorana's tail. The loss on the pair is then
+  $\begin{pmatrix}\Gamma_L&c\\c^*&\Gamma_R\end{pmatrix}$, and in the $(\gamma_L,\gamma_R)$ basis
+  $H_\mathrm{eff}=-i\bar\Gamma+\begin{pmatrix}-i\delta&i\varepsilon-ic\\-i\varepsilon-ic^*&i\delta\end{pmatrix}$,
+  with $\bar\Gamma=\tfrac12(\Gamma_L+\Gamma_R)$ and $\delta=\tfrac12(\Gamma_L-\Gamma_R)$. For real $c$:
+
+$$
+E_\pm=-i\bar\Gamma\pm\sqrt{\varepsilon^2-\delta^2-c^2}.
+$$
+
+- **Exceptional points [derived here]:** they sit at $\lvert\varepsilon\rvert=\delta_\mathrm{eff}=\sqrt{\delta^2+c^2}$.
+  - For $\lvert\varepsilon\rvert<\delta_\mathrm{eff}$ both poles are purely imaginary: $\mathrm{Re}\,E=0$, one pole
+    narrow and one broad.
+  - The overlap of the two right eigenvectors is $\lvert\varepsilon\rvert/\delta_\mathrm{eff}$ between the EPs and
+    $\delta_\mathrm{eff}/\lvert\varepsilon\rvert$ outside them. It is 1 at the EPs and 0 at $\varepsilon=0$, where
+    the two states are pure $\gamma_L$ and pure $\gamma_R$.
+- **Equal bonds:** $\delta=0$. The junction is exactly left/right symmetric (swapping $\tau_L$ and $\tau_R$ gives
+  identical poles), so EPs at equal bonds come from $c$ alone.
+- **det r is a different condition.** $\det r=(\varepsilon^2-\Gamma_L\Gamma_R)/(\varepsilon^2+\Gamma_L\Gamma_R)$
+  (§5.1) depends on the product, the EPs on the difference. In the diagonal model ($c=0$) the EP segment lies inside
+  $\det r<0$ iff $\Gamma_L/\Gamma_R<3+2\sqrt2$.
+- Code: the EP test [study_tuning.py:1797](computations/study_tuning.py#L1797) (`ep_between`: both poles at
+  $\lvert\mathrm{Re}\,E\rvert<10^{-3}$ $\mu$eV with different $\mathrm{Im}\,E$); one phase,
+  [study_tuning.py:1709](computations/study_tuning.py#L1709).
+- Context: Li & Trauzettel, arXiv:2507.23022, have this structure for a p-wave junction with a loss
+  $-iV\delta(x)$, for $Z\ll1$. They were read through the arXiv HTML, not checked against the LaTeX source.
+
+**Two-Majorana reduction from the full model [derived here].** Project the probe self-energies onto the lossless
+pair, with no fitting:
+- the pair from $(\tau_L,\tau_R)=(0,0)$, made $M$-orthonormal;
+- $\gamma_L$, $\gamma_R$ = its combinations with the largest and smallest weight on the left half of the strip;
+- then $H_2=V^\dagger(H_C+\Sigma)V$ and $\Gamma_2=\tfrac i2(H_2-H_2^\dagger)=\begin{pmatrix}\Gamma_L&c\\c^*&\Gamma_R\end{pmatrix}$.
+
+This is first order in the probes, and quantitative only for $\tau_L\lesssim0.3$ (see CLAUDE.md).
+Code: [tools.py:626-663](computations/tools.py#L626-L663).
+
+**Asymmetric probes in transport.** `transport_phis(..., tau_R=)` replaces the right lead before the RGF set-up,
+which reads $\Sigma_L$ and $\Sigma_R$ once (§2.2). $\tau_R=\tau_L$ reproduces the symmetric result exactly.
+Code: [tools.py:300](computations/tools.py#L300).
 
 ---
 
@@ -739,19 +807,22 @@ the overlap of the two end Majoranas.
 | $g_s$ (lead surface) | $\varepsilon_s=H_0+V(z-\varepsilon_s)^{-1}V^\dagger$, decimation | [leads.py:48](my_functions/leads.py#L48) | LM Eqs. (60)–(61), (86)–(93) (typo in (91)) |
 | $G^r$ (centre) | RGF plus ribbon Dyson step | [rgf.py:115](my_functions/rgf.py#L115), [:342](my_functions/rgf.py#L342) | LM Eqs. (19)–(20), (32), (35), (38)–(39); Dyson step follows from LM Eq. (19) |
 | channels | $\mathrm{Tr}[\Gamma G^r\Gamma G^a]$ projected on e/h | [rgf.py:373](my_functions/rgf.py#L373) | Gresta Eq. (7) |
-| $G$ | $\mathcal T^{ee}-\mathcal T^{he}$ | [tools.py:290](computations/tools.py#L290) | Gresta Eqs. (3), (5) |
-| $\kappa$ | $\mathcal T^{ee}+\mathcal T^{he}$; kernel $\frac{3}{\pi^2}x^2W_\mathrm{el}$ | [tools.py:290](computations/tools.py#L290), [transport.py:118](my_functions/transport.py#L118) | Gresta Eqs. (4), (6); Klees Sec. IV and App. C |
-| local Andreev | $R_{eh}+R_{he}$ | [tools.py:290](computations/tools.py#L290) | follows from Klees App. C; Flensberg Eq. (13); Law–Lee–Ng |
-| $\det r$ | $-1+i\Gamma^{1/2}G_{LL}\Gamma^{1/2}$ | [tools.py:266](computations/tools.py#L266) | LM Eqs. (5), (8); Fulga Table I; Akhmerov Eq. (3) |
-| two-Majorana $\kappa$, $\det r$ | $\frac{2x^2}{(1+x^2)^2}$, $\frac{x^2-1}{x^2+1}$ | [study_tuning.py:458](computations/study_tuning.py#L458) | follows from Nilsson Eqs. (1)–(6) (limit stated after their Eq. (8)); $\kappa(\det r)$ also from Akhmerov Eq. (3) |
-| $\Gamma$ (direct) | HWHM of $R_{he}(E)$ | [study_mixed.py:88](computations/study_mixed.py#L88) | follows from Nilsson Eqs. (4)–(6); Flensberg Eq. (13) |
+| $G$ | $\mathcal T^{ee}-\mathcal T^{he}$ | [tools.py:296](computations/tools.py#L296) | Gresta Eqs. (3), (5) |
+| $\kappa$ | $\mathcal T^{ee}+\mathcal T^{he}$; kernel $\frac{3}{\pi^2}x^2W_\mathrm{el}$ | [tools.py:296](computations/tools.py#L296), [transport.py:118](my_functions/transport.py#L118) | Gresta Eqs. (4), (6); Klees Sec. IV and App. C |
+| local Andreev | $R_{eh}+R_{he}$ | [tools.py:296](computations/tools.py#L296) | follows from Klees App. C; Flensberg Eq. (13); Law–Lee–Ng |
+| $\det r$ | $-1+i\Gamma^{1/2}G_{LL}\Gamma^{1/2}$ | [tools.py:272](computations/tools.py#L272) | LM Eqs. (5), (8); Fulga Table I; Akhmerov Eq. (3) |
+| two-Majorana $\kappa$, $\det r$ | $\frac{2x^2}{(1+x^2)^2}$, $\frac{x^2-1}{x^2+1}$ | [study_tuning.py:466](computations/study_tuning.py#L466) | follows from Nilsson Eqs. (1)–(6) (limit stated after their Eq. (8)); $\kappa(\det r)$ also from Akhmerov Eq. (3) |
+| $\Gamma$ (direct) | HWHM of $R_{he}(E)$ | [study_mixed.py:91](computations/study_mixed.py#L91) | follows from Nilsson Eqs. (4)–(6); Flensberg Eq. (13) |
 | $Q$ | $\mathrm{sgn\,Pf}\tilde B(0)\,\mathrm{sgn\,Pf}\tilde B(\pi)$ | [tools.py:177](computations/tools.py#L177) | Kitaev Eq. (26); Wimmer (Parlett–Reid) |
 | $\xi_M$, $k_\mathrm{osc}$ | $-a/\ln\lvert\lambda\rvert$, $\lvert\arg\lambda\rvert/a$ | [study_oscillation.py:69](computations/study_oscillation.py#L69) | modes: Kwant Eqs. (5)–(6); $\xi_M$, $k_\mathrm{osc}$ derived here |
 | $\xi_\mathrm{hyp}$ | $\hbar v_A/\Delta_\mathrm{out}$ | [study_oscillation.py:90](computations/study_oscillation.py#L90) | derived here |
-| $\varepsilon$ | lowest $\lvert E\rvert$ of the closed box | [study_oscillation.py:118](computations/study_oscillation.py#L118) | (= Nilsson's $E_M$) |
-| overlap law | $A\Delta e^{-L/\xi_M}\lvert\cos(kL+\varphi_0)\rvert$ | [study_oscillation.py:254](computations/study_oscillation.py#L254) | Das Sarma et al. Eqs. (1)–(3); exponent convention derived here |
-| $\varepsilon_\mathrm{RR}$ | Rayleigh–Ritz in $\{\psi_L,\psi_R\}$ | [study_mixed.py:525](computations/study_mixed.py#L525) | derived here |
+| $\varepsilon$ | lowest $\lvert E\rvert$ of the closed box | [study_oscillation.py:121](computations/study_oscillation.py#L121) | (= Nilsson's $E_M$) |
+| overlap law | $A\Delta e^{-L/\xi_M}\lvert\cos(kL+\varphi_0)\rvert$ | [study_oscillation.py:257](computations/study_oscillation.py#L257) | Das Sarma et al. Eqs. (1)–(3); exponent convention derived here |
+| $\varepsilon_\mathrm{RR}$ | Rayleigh–Ritz in $\{\psi_L,\psi_R\}$ | [study_mixed.py:705](computations/study_mixed.py#L705) | derived here |
 | LDOS | $-\frac1\pi\mathrm{Im\,Tr}\,G^r$ | [spectra.py:149](my_functions/spectra.py#L149) | Gresta Eq. (8); LM Eq. (12) |
+| poles of the open junction | $(H_C+\Sigma(0))\psi=EM\psi$, $M=1-\Sigma_\mathrm{rib}'(0)$ | [tools.py:666](computations/tools.py#L666) | derived here |
+| EPs, eigenvector overlap | $\lvert\varepsilon\rvert=\sqrt{\delta^2+c^2}$; $\lvert\varepsilon\rvert/\delta_\mathrm{eff}$ | [study_tuning.py:1797](computations/study_tuning.py#L1797) | poles follow from Nilsson Eqs. (4)–(6); $c$, overlap derived here |
+| two-Majorana reduction | $\Gamma_2=\tfrac i2(H_2-H_2^\dagger)$ on the lossless pair | [tools.py:626](computations/tools.py#L626) | derived here |
 
 ## 9. Sources
 All papers were checked against their arXiv LaTeX source; equation numbers were checked against the printed PDF.

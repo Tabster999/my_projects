@@ -46,7 +46,7 @@ earlier one, and superseded statements are marked SUPERSEDED / LATER in place.  
 * Never let a failed lead solve pass silently (NaN is intended). Report `myf.leads.N_UNRELIABLE` in scans.
 * Computation returns arrays; plotting stays in the scripts.
 
-## FORMULAS: see DERIVATIONS.md (2026-11-06)
+## FORMULAS: see DERIVATIONS.md (2026-11-06; 2026-11-18: section 7.7 poles / EPs added, all code links re-synced -- each link checked to hit the code it named; DERIVATIONS.pdf NOT rebuilt: no pandoc on this machine)
 Every computed quantity (model, leads, RGF, channels, kappa, G, Andreev, det r, two-Majorana relations, Gamma, Q,
 xi_M, eps, overlap law, end modes, LDOS): equation, derivation, physics, verified literature source (equation
 numbers checked against the arXiv LaTeX/PDF) and the code lines.  Keep it in sync when a formula changes, and when
@@ -66,7 +66,7 @@ correct recursion.  Tags (2026-11-06): [source, verified] / [follows from source
 | `study_rashba.py` | W, wbands, delta, tc, checks, T, transition, soc_shift, fermi (check_fermi), a -- pure Rashba, mostly a = 20 (wbands: mixed vs Rashba bands over W) |
 | `study_oscillation.py` | oscillation, branches, fingerprint -- eps(E_Z), pure Rashba a = 20 |
 | `study_tuning.py` | topology, coupling, tuning, maps, leads, spectrum, ep, ep2, ep3, ep4 -- a = 10 couplings / topology / survey maps; a = 5 (E_Z, phi) maps; mixed SOC vs tc and tau (+ checks: tc > 1, tau 1 charge); DOS(E, phi) vs probe bond; exceptional points of the open junction (tools.nh_spectrum) |
-| `study_mixed.py` | oscillation, plateau, amplitude -- the mixed SOC (thesis case) |
+| `study_mixed.py` | oscillation, plateau, amplitude, deck, combine, angle -- the mixed SOC (thesis case): eps(E_Z), the best plateau, the end-mode amplitude, the advisor-deck runs, the Gresta + Scharf combination checks, the SOC angle (cell 4 not run) |
 | `slides_nov.py`, `figures.py`, `disorder.py` | advisor-deck figures, Scharf paper figures (own parameters), disorder -- CAUTION: disorder.py takes ldos.PP, now an a = 10 sandbox, NOT its documented junction |
 * `python study_mixed.py plateau` runs one part (several: list them; none: all, in order).  `run_part('part')`
   replaced the `if __name__ == "__main__":` guard; cells are tagged `# %% [part]`.  References below read
@@ -408,7 +408,10 @@ it lives only in archive/scharf_abs.py.  (The mixed SOC came back as tools.mixed
   (det r inside: max +0.16 -> eps_max/Gamma ~ 1.17).  Widest neutral window if
   Gamma ~ (0.72-1) eps_max; parity-crossing dips (eps = 0, det r -> -1) cannot be removed at T = 0.
   Asymmetric Gamma_L != Gamma_R does not help: kappa(E=0) depends only on Gamma_L Gamma_R
-  (two-Majorana model scan, symmetric is always optimal at finite T too).
+  (two-Majorana model scan, symmetric is always optimal at finite T too).  [CONFIRMED in the full model 2026-11-16,
+  study_tuning [ep4]: the plateau follows G_L G_R along phi and E_Z.  Strong asymmetry DOES fill the parity-crossing dip
+  partly (kappa one maximum 0.47 / 0.42 instead of 1/2 - 0 - 1/2; the far Majorana's tail gives a path at eps = 0) but
+  below 1/2, charged and with kappa ~0.05 elsewhere -- no plateau gain.  See the EXCEPTIONAL POINTS section.]
 * PREDICTION (cached, scharf_absO_evanescent_W100): complex-k E = 0 solution of the cross-section,
   W 100, a 20, phi pi, E_Z 0.50-1.30 step 0.005 (Q = -1 throughout):
   k_osc = k of the gap minimum (0.0348 -> 0.0439 1/nm), predicted zero spacing pi/(L dk/dE_Z) ~ 0.15 meV;
@@ -912,12 +915,56 @@ plots/plateau_mixed_best.png; caches scharf_absPlat_*.  Plateau point = |kappa-1
   7.03.  The deck summary first printed xi_M 0.26 um for tc 0.5/0.75 = the [leads] TRAP (257 nm bulk mode at gapless
   points); now masked in the printout and in slides_nov.slide9 (GAPLESS_UEV = 0.01; orange = Q -1 but gapless).
   OPEN: the (phi, E_Z) Q maps (e.g. 45.6 % at a 5) count gapless points as topological -- gap not checked there.
+  [2026-11-12: study_tuning [maps] cell 3 checks Delta_top on every Q = -1 point of the a = 5 map (cache
+  scharf_absMap_gap_mixed_a5, figure plots/maps_mixed_a5_gap.png); PAUSED at 168 / 579 points.  At a = 10, tc 1 the [angle]
+  map gives a gapless share of Q = -1 of 11.2 % at theta 0.15.]
 * TEMPERATURE (a 20, L 2, phi pi): best neutral kappa at 0/10/20/50 mK, tau 0.7: 0 at every T (no neutral peak).
   Best region (a 10, tau 0.5, L 2): along phi at E_Z 0.93, kappa = 1/2 +- 0.03 with |G| < 0.1 kappa over 1.37 / 1.07 /
   0 / 0 pi (max kappa 0.542 / 0.499 / 0.446 / 0.212); along E_Z at phi 1.742 pi: 55 / 30 / 0 / 0 ueV.
 
-## SCHARF: DOS(E, phi) vs probe bond, and EXCEPTIONAL POINTS of the open junction (2026-11-13, `study_tuning.py` [spectrum], [ep])
-Thesis junction a 10 (mixed SOC, mu_C 0.7, tc 1, W 100, L 2 um).  Figures plots/spectrum_mixed_a10.png,
+## SCHARF: the SOC ANGLE theta -- why the mixed SOC is gapless inside Q = -1, protection and plateau vs theta (2026-11-12/13, `study_mixed.py` [angle])
+alpha = 16 cos(theta pi), beta = 16 sin(theta pi) meV nm (theta 0 = Rashba 16; thesis 0.15); W 100, L 2 um, mu_C 0.7, a 10;
+transport tau 0.5.  Figures plots/angle_mechanism.png, angle_bulk.png, angle_maps.png, angle_transport.png,
+angle_summary.png; caches scharf_absAngle_*; logs/study_mixed_angle.log (cells 1-3, complete), study_mixed_angle2.log
+(cells 1b, 3b partial).  Cell 4 (field rotation) is written but NOT RUN.
+* MECHANISM (cell 1, phi pi, E_Z 0.6): the middle BdG pair along k is e_+- = t +- g (t: tilt, g: half gap).  max |t| ~
+  sin 4 theta (t / t(0.1 pi) 0.62-0.66 / 1 / 0.93-1.00 / 0.55-0.62 at theta 0.05 / 0.1 / 0.15 / 0.2; sin ratio 0.618 / 1 / 1 /
+  0.618); g ~ cos 2 theta at tc 1 (g / g(0) 0.955 / 0.812 / 0.594 / 0.315 vs 0.951 / 0.809 / 0.588 / 0.309), faster at tc 0.5
+  (0.926 / 0.731 / 0.480 / 0.233).  |t| > g = gapless at finite k with Q still -1: min (g - |t|) at tc 0.5 +11.9 / +5.6 /
+  -0.09 / -3.1 / -2.7 ueV for theta 0 / 0.05 / 0.1 / 0.15 / 0.2; tc 1 stays gapped (+66.6 / +59.3 / +48.6 / +35.4 / +19.3).
+  theta 0.25 (alpha = beta): t = 0 but g ~ 0 (node).  theta <-> pi/2 - theta is exact (0.35 = 0.15 to every digit).
+* REFINED IN k (cell 1b: 401 k within +-4e-4 /nm of the minimum; the crossings can be ~1e-4 /nm wide): the coarse k grid
+  got the sign wrong in 4 of 51 cases -- theta 0.15, tc 0.75 is GAPLESS at E_Z 1.2 (-0.47 ueV) and 1.4 (-5.1), not
+  +4.4 / +0.9; alpha = beta gapless at tc 0.5 and 1.  theta 0.15, tc 0.75 vs E_Z: +3.5 (0.2), +9.8 (0.6), +2.0 (1.1),
+  -0.5 (1.2), -2.9 (1.3), -5.1 (1.4) ueV.
+* FIELD ROTATION (cell 1b, single points: theta 0.15, E_Z 0.6, phi pi; field d [pi] off theta_z,opt): tc 1: Delta_top
+  +35.2 (d 0) -> +38.5 (-0.005), +36.0 (-0.010), +32.5 (-0.015), +22.1 (-0.03), +1.4 (-0.06), gapless at -0.1; +31.9 at
+  +0.005.  tc 0.5: gapless at d 0 (-3.65) but GAPPED at -0.010 (+4.16) and -0.005 (+1.27), gapless from -0.015.  So a
+  small rotation (~0.005-0.01 pi) helps a little; whether over the (phi, E_Z) map is cell 4 (not run).
+* BULK vs theta (cell 2, phi pi, tc 1): max Delta_top 66.5 / 60.1 / 50.5 / 37.5 / 20.0 ueV for theta 0 ... 0.2; tc 0.5
+  gapless from theta 0.10 on; tc 0.75 gapped to E_Z 1.30 / 1.15 / 1.10 (theta 0.10 / 0.15 / 0.20); theta 0.25 gapless at
+  every tc.  (phi, E_Z) map (tc 1, E_Z 0-2 step 0.1 x 15 phases): Q = -1 47.9 / 46.7 / 46.7 / 45.4 / 43.5 %, gapped 47.6 /
+  43.2 / 41.3 / 40.3 / 40.6 %, gapless share of Q = -1 0.7 / 7.5 / 11.6 / 11.2 / 6.6 %; max Delta_top 101 / 94 / 87 / 81 / 74
+  ueV, always at (1.33 pi, 0.6) -- the maps are asymmetric in phi even for Rashba.  xi_M (phi pi, gapped): max L/xi_M 7.83 /
+  7.79 / 7.63 / 7.03 / 4.00; L/xi_M >= 3 at E_Z 0.10-0.70 (theta <= 0.15), 0.20-0.50 (0.2).  theta 0.15 = the [oscillation]
+  cache exactly.
+* TRANSPORT vs theta (cell 3, coarse E_Z 0.05 x 30 phases): kappa > 0.25 on 16.2 / 18.7 / 22.7 / 27.8 / 29.5 % (neutral
+  share 0.61 / 0.65 / 0.80 / 0.83 / 0.86); plateau in gapped Q = -1 4.1 / 3.7 / 2.8 / 2.5 / 2.3 %.  Fine lines (E_Z +-0.1 step
+  0.01, 240 phases; Q, Delta_top every 4th phase): best run in gapped Q = -1 1.125 (E_Z 0.910) / 1.100 (0.910) / 0.667
+  (1.050) / 1.367 (0.930) / 0.908 (1.060) pi; on the runs kappa 0.471-0.500, |G| <= 0.048, 2M residual <= 7.3e-4.  The best
+  lines look alike at every theta (kappa ~ 1/2 over phi ~ 1-2 pi, dips near 0.25 and 0.75 pi).  Cell 3b (E_Z refined to
+  0.0025; partial): theta 0 -> 1.225 pi at 0.9150 (gapped Q = -1); theta 0.05 -> 1.250 pi at 0.9175 WITHOUT the Q check (its
+  Q line 48 / 61 phases when paused; Q = -1 on all done phases, gapless at 0.50-0.60 pi); 0.10-0.20 not refined.  The 0.15
+  winner is itself field-sensitive (1.23 / 1.37 / 1.15 pi at 0.9225 / 0.930 / 0.935).
+* READING: Rashba-like (theta -> 0) has the most protection (Delta_top 66.5 vs 37.5 ueV at 0.15, no gapless strip) but the
+  plateau does not improve with it: the plateau % falls only slightly with theta and the best single line (1.1-1.37 pi for
+  all theta but 0.10) is set by fine-tuning the field.  theta is a lever for protection, not for kappa = 1/2.
+* OPEN: cell 4 (field-rotation lines and maps, rotated transport; installed in study_mixed.py, run ~1-1.5 h); 3b for theta
+  0.10-0.20 and the theta 0.05 Q line; whether the mixed-SOC xi_poly / xi_M != 1 (dip redo) comes from the tilt.
+
+## SCHARF: DOS(E, phi) vs probe bond, and EXCEPTIONAL POINTS of the open junction (2026-11-13/18, `study_tuning.py` [spectrum], [ep], [ep2]-[ep4])
+Thesis junction a 10 (mixed SOC, mu_C 0.7, tc 1, W 100, L 2 um).  Formulas (poles, EP condition, overlap, 2x2
+reduction): DERIVATIONS.md section 7.7.  Figures plots/spectrum_mixed_a10.png,
 ep_mixed_tauL<t>[_tauR0.5].png, ep_fine_mixed_tauL<t>.png; caches scharf_absSpec_*, scharf_absEP_*.
 * [spectrum] DOS(E = 0) survey at tau 0.5 (E_Z 0.30-1.30 step 0.025, eta 1e-4 meV, probes ATTACHED): brightest spot inside
   (eroded) Q = -1 at E_Z 0.325, phi 0.85 pi (370 /meV, median 41).  There Delta_top = 0 (Q = -1 but gapless at phi
@@ -962,8 +1009,17 @@ ep_mixed_tauL<t>[_tauR0.5].png, ep_fine_mixed_tauL<t>.png; caches scharf_absSpec
     reading 'Gamma_L / Gamma_R ~ 1.4, junction not symmetric' was WRONG.]  The 'delta' read off the overlap is delta_eff.
   - STRONG ASYMMETRY (tau_L >= 0.6 at tau_R 0.1): delta_eff exceeds eps also where eps has no zero -> loss-driven segment
     1.6145-1.9595 pi (overlap 1.000 at both EPs); at 0.7 / 0.8 the segments merge and a real splitting survives only around
-    the eps maximum (damped-oscillator picture: overdamped wherever eps < delta_eff).  NOT in the paper (Z << 1 only;
-    their closed form has 1/(1 - Z^2)); other literature not checked.  The broad pole reaches 24 / 45 ueV (tau_L 0.7 / 0.8)
+    the eps maximum (damped-oscillator picture: overdamped wherever eps < delta_eff).  Not in Li & Trauzettel (Z << 1
+    only; their closed form has 1/(1 - Z^2)), but KNOWN in open Majorana systems (literature check 2026-11-18, abstracts
+    only): EP bifurcation from asymmetric coupling of the Majorana components to the reservoir (Avila, Penaranda, Prada,
+    San-Jose, Aguado, Commun. Phys. 2, 133 (2019)); zero-energy pinning above a threshold coupling, one mode non-decaying
+    (San-Jose, Cayao, Prada, Aguado, Sci. Rep. 2016); the transition becomes 'a flattened zero energy line bounded by
+    exceptional points', very strong non-Hermiticity harmful (Cayao, PRB 110, 085414 (2024)); EPs vs phase and zero
+    real-energy lines in JJs with normal leads, inner vs outer Majoranas (Cayao & Sato, arXiv 2307.15472, 2408.17260,
+    JPSJ 95, 014705 (2026)); infinite-system vs S-matrix-pole transitions differ in finite wires (Pikulin & Nazarov,
+    PRB 87, 235421 (2013); cf. det r = 0 vs EPs here).  Possibly specific here (full texts not read): the 2D planar
+    junction with exact NEGF probes; equal-bond EPs from the cross term c alone in an exactly mirror-symmetric junction;
+    det r (G_L G_R) vs EPs (difference) quantitatively; asymmetry does not improve the plateau.  The broad pole reaches 24 / 45 ueV (tau_L 0.7 / 0.8)
     > Delta_top 19 ueV at pi: the two-Majorana reading is at its limit there (the poles themselves are exact).
   - tau_R 0.5 sweep (coarse grid), range with Re E = 0: tau_L 0.1 / 0.2 / 0.3 / 0.4: 0.165 / 0.149 / 0.132 / 0.066 pi;
     0.6 / 0.7 / 0.8: 0.116 / 1.058 / 1.851 pi.  Shrinks towards tau_L = tau_R and reappears above, faster above (Gamma(tau)
@@ -1021,7 +1077,8 @@ ep_mixed_tauL<t>[_tauR0.5].png, ep_fine_mixed_tauL<t>.png; caches scharf_absSpec
     at E_Z 0.70 the bulk levels sit at |Re E| 25-40 ueV, so at tau_L 0.8 the broad Majorana pole (Im ~ -48) was not among
     the k = 8 poles closest to 0 and a bulk pole was taken as 'pole 2' (fake EPs at 0.142 / 1.775 pi); fixed by k = 16,
     keeping the 8 with the smallest |Re E| (ep_point k=).  Check any new strong-loss run for this.
-  - NOT DONE: literature on the strong-loss regime; DOS(E) line shapes across an EP.
+  - NOT DONE: full-text read of Cayao & Sato / Pikulin & Nazarov against the 'possibly specific' points above; DOS(E)
+    line shapes across an EP.
 
 ## Numerics — measured on the GRESTA point unless stated
 (eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,
