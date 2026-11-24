@@ -1160,6 +1160,157 @@ ep_mixed_tauL<t>[_tauR0.5].png, ep_fine_mixed_tauL<t>.png; caches scharf_absSpec
           [ep7] a 2 ueV carrier is the T-fragile kind (k_B x 20 mK = 1.7 ueV) -- finite T along E_Z NOT yet computed.
       Too weak (SigmaGamma < 5 ueV): <= 10 ueV.  Too strong (0.8 / 0.6, 0.8 / 0.8): kappa max 0.45 / 0.25, no plateau.
       The tol-0.03 windows are threshold-sensitive (the domes peak at 0.497-0.499): (0.6, 0.3) 100 -> 35 -> 20 ueV.
+  - [ep9] (kappa(E, E_Z) for four pairs) STOPPED by the user 2026-11-19 at 12 / 61 energies (all < 0.05 ueV; resumable
+    cache scharf_absEP9_ch_*).  Real cost ~42 min per energy on 6 one-thread workers (~7.5 h), not the 1.5 h estimated.
+  - DOES THE ASYMMETRY (EP PINNING) PROTECT kappa? (2026-11-19, [nh], PLOTS ONLY from the [ep7] / [ep8] / study_mixed
+    [deck] 3 caches; plots/nh_phi_mixed.png, nh_field_mixed.png, logs/study_tuning_nh.log).  NO:
+      (1) T = 0 plateau along E_Z (phi 1.7417 pi, 26 two-probe pairs): the |kappa - 1/2| < 0.02 window follows
+          sqrt(G_L G_R) (one-probe widths on the window) whether it lies between EPs or not; optimum ~6-6.5 ueV:
+          (0.5, 0.4) 85 ueV outside segments = (0.8, 0.2) 85 ueV all between EPs; (0.8, 0.3) between 20 = (0.6, 0.5)
+          outside 20; (0.8, 0.4) 35 vs (0.6, 0.6) 40.  Only (0.8, 0.2) is flatter at tol 0.01 (80 vs 30) -- one case.
+      (2) Along phi (E_Z 0.93): the narrower pole between EPs has median width 0.5-2.8 ueV vs 3.3-7.4 outside (k_B T =
+          0.86 / 1.72 ueV at 10 / 20 mK); kappa(20 mK) / kappa(0) median 0.02-0.35 between vs 0.71-0.84 outside;
+          (0.8, 0.1) is 91 % between EPs and has kappa max 0.28 / 0.03 at 0 / 20 mK.
+      (3) The probes leave the ribbons (Q, Delta_top) unchanged; Re lambda = 0 also where eps has no zero ((0.6, 0.1)
+          1.61-1.96 pi) -> the pinning is set by the coupling asymmetry, not by topology.
+    EQUAL bonds 0.5 / 0.5 along E_Z 0.85-1.05 meV at 1.7417 pi (deck cache = [ep8] at T = 0 to 1.2e-14): kappa max
+    0.496 / 0.486 / 0.411 / 0.189 at 0 / 10 / 20 / 50 mK; |kappa - 1/2| < 0.02 window 38 / 3 / 0 / 0 ueV; kappa > 0.45
+    run 63 / 50 / 0 / 0 ueV -> the E_Z plateau at this phase is NOT 20 mK robust even for balanced probes (along phi at
+    E_Z 0.93 kappa max is 0.449 at 20 mK).  Not cached: kappa(E_Z, phi) and finite T along E_Z for unequal bonds; mu_C
+    only for equal bonds (plots/tuning_kappa_tau0.5.png).
+  - WHY (2026-11-19, [nh] cells 3-4, plots/nh_why_poles_mixed.png, nh_detr_types_mixed.png; all full-model tests, no
+    model assumed).  Particle-hole symmetry puts the pair poles at +-E0 - i gamma (outside the EPs) or at -i w+, -i w-
+    (between them).  (1) E = 0 sees only their PRODUCT: det r_L = 1 - 2q, q = Gamma_L Gamma_R / |l1 l2| (Gamma = one-
+    probe pair width), to <= 0.04 for all [ep8] pairs except 0.6-0.8 equal-strong (0.8/0.6 0.066; 0.8/0.8 FAILS,
+    |l1 l2| < Gamma_L Gamma_R there); kappa = (1 - det r^2)/2 to 0.019.  The product is smooth through an EP -> kappa(E = 0)
+    cannot see the EPs.  (2) kappa(E)/kappa(0) = |l1 l2|^2 / |(E - l1)(E - l2)|^2 (two nearest poles) to median 1e-4
+    ([ep7], E <= 20 ueV; max 0.25 at a few balanced-pair phases).  (3) k_B T_half = 0.35 x min|lambda| (p10-p90
+    0.28-0.49, 5 pairs x 121 phases).  Outside the EPs min|lambda| = sqrt|l1 l2|; between them it is w- = |l1 l2| / w+,
+    pushed toward 0 as the strong probe's broad pole takes the loss.  At kappa = 1/2 (|l1 l2| ~ 2 Gamma_L Gamma_R):
+    route A (0.5, 0.4) poles +-6.93 - 6.42i, route B (0.8, 0.2) -2.13i / -44.5i ueV at E_Z 945 -> same product, nearest
+    pole 9.4 vs 2.1 ueV -> kappa halved near 38 vs 9 mK (RULE, not computed).
+    TWO kappa = 1/2 TYPES (det r crossing 0 vs det r peaking below 0): ONE rule, det r = tanh(ln x), x = eps_eff /
+    sqrt(Gamma_L Gamma_R), eps_eff^2 = |l1 l2| - Gamma_L Gamma_R (probe-shifted splitting; the lossless eps fails near the
+    crossings).  |kappa - 1/2| < 0.02 <=> |det r| < 0.2 <=> x in 0.82-1.22.  det r peaks where eps_eff peaks (the lobe top
+    between the crossings).  Windows along E_Z: lobe flank, det r crosses 0 once: 46, median 10 ueV (max 40); lobe top
+    below 0: 5, max 40 ((0.5,0.5), (0.6,0.4), top -0.14 / -0.12); lobe top just above, crosses twice inside one window: 2,
+    85 ((0.5,0.4) +0.17, (0.8,0.2) +0.12).  Longest window vs det r at the lobe top peaks at det r_top ~ 0 to +0.17,
+    35 at +0.23, <= 25 beyond +0.45, 0 below -0.3.
+    Inside vs outside: kappa = 1/2 at eps = sqrt(G_L G_R), EP at eps = |G_L - G_R|/2 -> the resonance lies inside a
+    segment iff G_L / G_R > 3 + 2 sqrt 2 ~ 5.8; the [ep8] windows follow it except within ~15 % of the threshold
+    ((0.8, 0.5) r 5.5 already inside -- the cross term c raises the EP threshold).  Clean one-message figures of all of
+    this: study_tuning [clean], plots/clean/c1-c8.
+  - LONG JUNCTIONS AT THE TRANSITION (2026-11-19, [trans], plots/trans_mixed.png; phi = pi, E = 0, L 2 / 4 um; L 8 um
+    postponed by the user).  Bulk: E_c = 1.3613 meV (Q flips 1.3600 -> 1.3625; gap 1.24 -> 0.27 ueV, xi_M 10 -> 15.5 um
+    over 1.335-1.360); the trivial side is GAPLESS.  Tunnel probes (tau 0.3387): kappa <= 0.02 within 0.1 meV of E_c and
+    ~0.003 on the trivial side; the last kappa ~ 1/2 peaks sit 40-130 ueV below E_c and are charged (G/kappa 0.43).
+    Transparent probes (tau 1): a sharp peak AT E_c, 0.84 (L 2) / 0.63 (L 4), charged (G/kappa 0.92 / 0.78); the gapless
+    trivial side conducts (kappa 0.45-0.72, |G| 0.3-0.5); (1/2) sech^2(L/xi_M) with the bulk xi_M does NOT describe it.
+    => no neutral universal kappa_0/2 at this transition: it opens into a gapless phase, so ordinary channels carry
+    charge and heat there (Akhmerov's kappa_0/2 needs gapped phases on both sides).
+  - BARRIER vs BOND PROBES (2026-11-19, [barr], plots/barr_mixed.png; equal probes, one-site lam_barr 260/220/180/150/120
+    meV nm with tc_barr 1 = Gamma_1 3.1 / 4.2 / 6.2 / 8.6 / 12.7 ueV, phi 1.7417 pi along E_Z).  det r = 1 - 2q holds to
+    <= 0.042 (bonds 0.066 w/o 0.8/0.8); Gamma_1(E_Z) drifts like the bonds'; plateau windows 15 / 20 / 75 / 15 / 30 ueV --
+    on the bond curve (optimum sqrt(G G) ~ 6.2 -> 75 vs bonds 85), except lam 150 (15 vs bond 0.5/0.5's 40: its dome peaks
+    at 0.47 < 0.48, the threshold sensitivity).  Level shift: kappa minima (crossings) 820-825 / 1005-1015 ueV vs
+    825-840 / 1010-1025 for bonds of similar Gamma: a barrier shifts ~5-15 ueV more at equal Gamma.  => the contact model
+    changes positions, not the relations or the plateau physics.
+  - CHERN RIBBONS: A REAL PLATEAU (2026-11-19, [chern], plots/chern_maps_mixed.png; a 20, L 2 um, in-plane E_Z 0, out-of-
+    plane Vz in the SC ribbons only, ribbon Chern transition 0.969 meV).  tau 1, phi = 0: neutral |kappa - 1/2| < 0.03 for
+    EVERY Vz from 0.98 to 2.0 meV (10 grid points) at mu_C -0.4 ... 0.0, 1.0-1.75 at +0.1, 1.02-1.75 at +0.2; it starts at
+    the Chern transition and fades by 2.5 meV (Chern gap 43 -> 37 ueV).  phi = pi: no plateau (kappa 0.5-0.98, scattered
+    hits); tau 0.5: the phi = 0 plateau is GONE (kappa(0) ~ 0.05-0.4).  => a kappa = 1/2 plateau over a 1 meV range of a
+    non-phase knob, tied to the ribbons' Chern phase -- but only with transparent probes, a depleted centre, phi near 0, and
+    Vz ~ 1-2 meV out of plane in the SCs (3.5-7 T at g 10, or an exchange field).  NOT yet checked: a = 10, L-independence,
+    temperature, the probe-transparency threshold, why phi = pi differs (mechanism not analysed).
+    CORRECTION (same day, scratch kappa(phi) scan, 41 phases, tau 1, mu_C -0.2, a 20): NOT phi = 0 only -- kappa = 0.48-0.49
+    with G = 0 at EVERY phase except a window narrower than +-0.05 pi around pi (kappa(pi) 0.89 at Vz 1.5, 0.68 at 1.05);
+    Vz 0.9 (below the Chern transition): kappa = 0 at all phases.  The map only sampled phi = 0 and pi.  Reading (untested):
+    with no in-plane field the strip's Andreev states reach E = 0 at phi = pi and add channels; elsewhere they are gapped and
+    only the ribbons' chiral Majorana carries heat.
+  - DARK STATES? (2026-11-19, [dark], plots/dark_mixed.png, logs/study_tuning_dark.log; San-Jose, Cayao, Prada &
+    Aguado, Sci. Rep. 6, 21427 (2016), arXiv:1409.7306, read in full).  Their Gamma_0 -> 0 needs a single-mode helical
+    reservoir, a transparent contact, the Andreev limit, and both Majoranas of a TRIVIAL pair at ONE contact; their poles
+    are eig(H_S + Sigma_N(0)) = our probe treatment.  Here: phi 1.7417 pi, one probe (tau_R 0) or tau_R 0.1, standard probe
+    (mu_N 3, no field: 4 open BdG channels) vs 'helical' probe (tools lead= hook: mu = mu_C 0.7 + the strip's in-plane
+    field -> 2 open BdG channels = one spin-polarised mode; field-free mu 0.7 is closed).  tau_L >= 0.9: PAIR-SELECTION
+    failure (broad pole outside k = 16) -- discarded.  Results (tau_L <= 0.8):
+      lobe top (955 ueV, eps 7.49): pinned from tau 0.6 (std) / 0.7 (hel); narrow 6.32 -> 2.18 -> 1.16 (std), 4.85 ->
+        3.18 -> 1.28 (hel) with |l1 l2| / eps^2 = 0.76-0.93 ~ 1 -> narrow ~ eps^2 / broad: the paper's law holds.
+      crossings (840 / 1025, eps 0.10 / 0.34): narrow falls to a minimum at tau 0.3 (0.002 / 0.015 std, 0.002 / 0.009 hel),
+        then RISES ~ the broad width (narrow / broad 6e-4 / 9e-3 std, 1.4e-3 / 1.7e-2 hel); |l1 l2| / eps^2 up to 137 (std) /
+        171 (hel) -> a second loss channel on the pair, the far Majorana's tail at the probe (std 840: 6e-4 vs e^{-2L/xi_M}
+        ~ 7e-4).  The helical probe does NOT remove it (at the exact zeros its floor / broad equals the standard one; the
+        "~2x larger" at 840 / 1025 was the residual eps^2 / broad off the zero, larger for the smaller helical broad width).
+      two probes: narrow -> Gamma_R of the second probe (0.23 std, 0.13-0.18 hel at 840) at every tau_L.
+      one probe, crossings: local Andreev at E = 0 peaks (1.0-1.3 e^2/h at tau 0.3) and falls to ~0 at strong coupling --
+        consistent with the paper's zero-bias DIP of width Gamma_0 on a 2e^2/h background (E = 0 inside the narrow pole).
+      ENERGY-RESOLVED (cell 4, plots/dark_L_dip_mixed.png (b); E_Z 840, one probe, eta_rel 1e-7 = 2.5e-5 ueV, no failed
+        solves): local Andreev = 2.00 e^2/h from ~0.1-1 ueV up to ~the broad width, dropping to A(0) = 0.000-0.009 at
+        E = 0.  Half-max energy 0.0013 / 0.0074 / 0.031 ueV (std tau 0.3 / 0.5 / 0.8), 0.0007 / 0.013 / 0.055 (hel) vs the
+        narrow pole width 0.002 / 0.008 / 0.030 (std), 0.002 / 0.013 / 0.050 (hel): dip width = narrow pole width
+        (tau 0.3 a factor ~2 off: near the eps^2 regime, |l1 l2| / eps^2 ~ 0.2-0.5, and a 0.12-decade E grid).  = the
+        paper's Fig. 4h.  A(0) ~ 0 means the probe sees BOTH Majoranas at E = 0; as e^{-2L/xi_M} -> 0 the dip closes and the
+        single-Majorana 2e^2/h zero-bias value remains.
+      FLOOR vs L (cell 3, plots/dark_L_dip_mixed.png (a); one probe, zero of each L tracked over 31 E_Z points, 1.5 ueV
+        steps; parabola fits to the 5 nearest points give the same minimum within 2% -> NOT grid-limited):
+        floor / broad vs e^{-2L/xi_M} (bulk xi_M at that zero, no fit) for L 1.5 / 2 / 2.5 / 3 um:
+          ratio std tau 0.8: 0.53 / 0.50 / 0.69 / 1.10;  hel tau 0.8: 0.49 / 0.47 / 0.66 / 1.17;  std tau 0.5: 0.68 / 0.79 /
+          0.97 / 2.99.  Two decades, INCLUDING the non-monotonic step at 2.5 um (its zero has the longer xi_M 695 vs 547
+          nm), followed by all three series.  Open: tau 0.5 drifts up with L (x3 at 3 um) -- an extra contribution that
+          falls slower than e^{-2L/xi_M} and matters more at weak coupling; not resolved.
+    => the paper's mechanism is present (eps^2 / broad suppression at the lobe tops) but our junction is topological with
+    the two Majoranas at OPPOSITE ends: at the splitting zeros the far Majorana's own tail at the probe gives it a direct
+    width ~ broad x e^{-2L/xi_M} (confirmed vs L, no fit, tau 0.8), which GROWS with coupling -- that is why Im E does not
+    climb to 0.  A single-mode (helical) lead does not remove it.  For two-probe kappa it is irrelevant as long as
+    Gamma_R >> floor (0.13-0.23 vs ~0.003-0.02 ueV at L 2 um).
+  - det r ~ 0 AND THE kappa PLATEAU ALONG phi (2026-11-23, [detphi], plots/detphi_mixed.png, logs/study_tuning_detphi.log;
+    PLOTS ONLY: 321 deduplicated phase lines = study_mixed [plateau] caches scharf_absPlat_tr_mu0.7_* (equal bonds 0.4-0.7,
+    L 1.5-3) + [ep4] lines (25 pairs x 3 fields); decomposition from the [ep] poles at E_Z 0.93).  Windows |kappa - 1/2| <
+    0.02 with |G| < 0.1 kappa: 430, ALL obey kappa = (1 - det r^2)/2 to 0.001 -> along phi too, kappa ~ 1/2 <=> |det r| <
+    0.2.  By what det r does in the window: crosses 0 once 313 (median 0.058 pi), turns just below 0 45 (0.26), turns just
+    above 0 (two crossings) 30 (0.67), stays above 0 35 (0.08), wanders around 0 (3+ crossings) 7 (1.13 pi, max 1.175) --
+    the E_Z rule (a single crossing is short; long needs det r stationary near 0) holds.  The 'det r at the lobe top'
+    scalar does NOT predict the phi windows (lobes defined by det r >= -0.5 merge a flat near-0 stretch with a tall bump:
+    tops > 0.45 still carry windows up to 1.1 pi; the longest has its top at +0.22, poking just out of the band).
+    MECHANISM of the longest (E_Z 0.93, 0.5 / 0.5, 1.250 -> 2 pi -> 0.417 pi; also (0.4, 0.6), (0.3, 0.7) = the [ep4]
+    anti-diagonal): the lossless splitting lobe between the zeros at ~0.99 and ~0.47 pi (through phi = 0) is FLAT, 6.5-7.2
+    ueV over ~1.2 pi, and the one-probe width Gamma(phi) = 4.3-8.4 ueV matches it -> x = eps_eff / Gamma 0.78-1.21 across the
+    window; near the 0.47 pi zero the probes also lift the splitting (lossless 1.7 -> eps_eff 3.3 ueV), stretching the window
+    toward it.  The other lobe (0.5-0.95 pi): eps up to 9.2 vs Gamma 2.2-2.6 -> x 2.8, kappa 0.11.  Pole det r = 1 - 2
+    Gamma^2/|l1 l2| vs transport: median 0.015, <= 0.058 in the window, but 0.3-0.4 AT the two zeros (0.53, 0.92 pi; tau 0.5
+    / 0.5 -- worse than the <= 0.04 along E_Z; not analysed).  => the phi plateau is the same matching condition eps_eff ~
+    sqrt(Gamma_L Gamma_R) as along E_Z, long only because this lobe is flat in phi; no protection involved.
+  - EP SPECTRUM ALONG THE FIELD + TRANSPORT CHECKS (2026-11-23, [epfield], plots/epfield_mixed.png,
+    epfield_kappaT_mixed.png, epfield_checks_mixed.png, logs/study_tuning_epfield3.log; user: 'EP spectrum vs Zeeman
+    field first', before the Li & Trauzettel reproduction).  phi 1.7417 pi, E_Z 0.45-1.30 meV step 5 ueV (Q = -1 for
+    ~0.53-1.2375), pair poles for (0, 0) and the Li-Trauzettel-like set-up 'one strong lossy probe + weak detector'
+    (tau_L 0.3 / 0.5 / 0.7 / 1.0, tau_R 0.1) + E = 0 transport.  POLE SEARCH: the tau 1.0 broad pole (-163.5i ueV at 0.93)
+    is beyond MANY bulk poles (|Re| 47-51) -> not among even the 32 closest to 0; tools.nh_spectrum / ep_point got an
+    optional shift-invert target sigma (ueV; default 0 = unchanged); tau 0.7 / 1.0 searched around -40i / -150i, k 24.
+    PAIR VALIDITY: next to the transitions a gap-closing bulk state (width 0.005-0.07, decoupled from the probes) has the
+    smallest |Re E| and is taken as 'the pair' (tau 0.3 at 1220: 4.41 - 0.009i, Majorana pair at +-6.9 - 1.02i) ->
+    masked: within 10 / 25 ueV of the lower / upper transition or two-pole kappa(E) > 1 (555, 560, 1215-1235 ueV).
+    Lossless zeros 550.5, 643.1, 841.7, 1026.7, 1203.6 (1273.2 trivial side), |d eps/dE_Z| 0.017 / 0.006 / 0.056 / 0.193 /
+    0.276: small and slow near the lower transition (long xi).  Fraction of the topological range between EPs: 33 / 58 /
+    84 / 100 % for tau_L 0.3 / 0.5 / 0.7 / 1.0 -- segments merge from the slow low-field zeros upward; tau 1.0 has NO EP in
+    the whole range (the Li-Trauzettel Z >= 1 situation), broad pole 100-170 ueV.  Segment law 2 delta_eff ~ L_EP x slope
+    = 2.2 / 1.8 ueV (tau 0.3 at 842 / 1027) and 7.7 (tau 0.5 at 1027) ~ DeltaGamma ([ep8]).  Narrow width between EPs median
+    0.23-0.46 ueV (~ Gamma_R of the detector).
+    kappa(E), kappa(T) FROM THE POLES (cell 3): with the weak detector kappa is gone by 5 mK: max 0.19 / 0.16 / 0.15 / 0.14
+    at 5 mK, 0.07-0.04 at 20 mK; kappa(20)/kappa(0) median 0.006-0.04 between EPs vs 0.08-0.74 outside.  (kappa = 1/2 needs
+    eps_eff ~ sqrt(G_L G_R) with G_R ~ 0.2 ueV -> a ~0.2-1 ueV pole -> k_B T scale of a few mK: set by the coupling, not a
+    sign of 'no MZM'.)
+    FULL-TRANSPORT CHECKS (cell 4; 10 field / bond points, 49 energies 0-100 ueV, eta_rel 1e-7, 0 unreliable solves;
+    ~1.5 h on 6 workers, not the 25 min estimated): the two-pole kappa(E) matches the full model to <= 0.009 of kappa(0)
+    (0.024 at a kappa(0) = 0.009 point) for E <= 20 ueV outside, AT and between EPs, tau 0.3-1.0; kappa(T) full = poles to
+    3 decimals (0-50 mK).  AT THE EP (tau 0.3 at 816.04, poles +-0.03 - 1.31i; tau 0.5 at 999.32) kappa(E) is the squared
+    Lorentzian w^4/(E^2 + w^2)^2 to 0.000 / 0.004 of kappa(0).  Between EPs the peak half width ~ the narrow pole (0.25 vs
+    0.23; 0.32 vs 0.27 ueV).  NONLOCAL G = T_ECT - T_CAR <= 0.018 e^2/h at all energies and points (largest between EPs):
+    the transport stays neutral, G_nl shows no EP signature.  Deviations only beyond ~50 ueV (bulk levels) and next to the
+    lower transition (565 ueV: bulk states at 10-100 ueV, charged).  No kink anywhere at an EP (cf. Li & Trauzettel Fig.
+    2b).  Not done: tau 0.7 EP / outside (its resolved edges fell outside the selection window), the no-EP 'narrowest'
+    picks sit at 565 ueV next to the lower transition (kappa(0) ~0.001, uninformative).
   - NOT DONE: finite-bias local / nonlocal conductance with asymmetric probes; where EPs occur relative to Q and the gapless
     strip; the L test averaged over all zeros (removes the lobe scatter); DOS(E) line shapes across an EP.
 

@@ -271,9 +271,11 @@ def best_topological(line):
 # =============================================================================
 def det_r(rgf, phi):
     """
-    det r at E = 0, r = reflection matrix of the left lead (Fulga et al., PRB 83, 155429):
-    r = -1 + i Gamma^1/2 G_LL Gamma^1/2 on the propagating channels.  Real; its sign is the
-    topological invariant WITH the leads attached (-1: the lead sees an isolated Majorana).
+    det r at E = 0, r = reflection matrix of the left lead from the lattice Fisher-Lee relation (Lewenkopf &
+    Mucciolo, J. Comput. Electron. 12, 203 (2013), Eqs. (5), (8)) in the eigenbasis of Gamma_L on its open channels:
+    r = -1 + i Gamma^1/2 G_LL Gamma^1/2.  Real; its sign is the topological number WITH the leads attached
+    (Fulga et al., PRB 83, 155429, Table I; det is basis-independent, their Sec. III) -- -1: the lead sees an
+    isolated Majorana.  DERIVATIONS.md 4.5.
     """
     G_LL = rgf.green_blocks(phi)[0][0]
     w, U = np.linalg.eigh(rgf.Gamma_L[0])
@@ -297,14 +299,19 @@ def transport_point(q, E_Z, phi=np.pi):
                      det_r(rgf, float(phi)), myf.leads.N_UNRELIABLE - n0])
 
 
-def transport_phis(q, E_Z, phis, tau_R=None):
+def transport_phis(q, E_Z, phis, tau_R=None, lead=None):
     """transport_point for every phase in phis from ONE RGF set-up (the phase is cheap): (len(phis), 5).
     tau_R: a different bond for the RIGHT probe (the left keeps q.tc_barr_transport); the RGF reads both probes'
-    self-energies from the junction's lead objects at set-up, so the right lead is swapped in before it."""
+    self-energies from the junction's lead objects at set-up, so the right lead is swapped in before it.
+    lead: optional callable Params -> Params changing the PROBE-LEAD fields only (mu_n, Bxy_n, theta_z_n, ...), e.g. a
+    helical probe; None = the standard probes (unchanged behaviour)."""
     n0 = myf.leads.N_UNRELIABLE
-    J = myf.FourTerminalJunction(q.params_transport(E_Z=float(E_Z)))
+    p = q.params_transport(E_Z=float(E_Z))
+    if lead is not None:
+        p = lead(p)
+    J = myf.FourTerminalJunction(p)
     if tau_R is not None:
-        J.lead_R = myf.FourTerminalJunction(replace(q.params_transport(E_Z=float(E_Z)), tc_barr=float(tau_R))).lead_R
+        J.lead_R = myf.FourTerminalJunction(replace(p, tc_barr=float(tau_R))).lead_R
     rgf = myf.RGFFourTerminal(J, np.array([0.0]))
     rgf.green_blocks = lru_cache(maxsize=1)(rgf.green_blocks)       # channels and det r share one solve
     out = []
@@ -367,18 +374,81 @@ K_B = 0.0861733                                    # meV / K
 CHANNELS = ('ee', 'hh', 'eh_cross', 'he_cross', 'eh_local', 'he_local')
 
 
-def channel_point(q, E_Z, E, phis=(np.pi,), tau_R=None):
+def channel_point(q, E_Z, E, phis=(np.pi,), tau_R=None, lead=None):
     """The six channels at energy E (meV) for each phase in phis, concatenated (6 per phase).
-    tau_R: a different bond for the RIGHT probe (as transport_phis; the left keeps q.tc_barr_transport)."""
-    J = myf.FourTerminalJunction(q.params_transport(E_Z=float(E_Z)))
+    tau_R: a different bond for the RIGHT probe (as transport_phis; the left keeps q.tc_barr_transport).
+    lead: optional callable Params -> Params for the probe-lead fields (as transport_phis); None = unchanged."""
+    p = q.params_transport(E_Z=float(E_Z))
+    if lead is not None:
+        p = lead(p)
+    J = myf.FourTerminalJunction(p)
     if tau_R is not None:
-        J.lead_R = myf.FourTerminalJunction(replace(q.params_transport(E_Z=float(E_Z)), tc_barr=float(tau_R))).lead_R
+        J.lead_R = myf.FourTerminalJunction(replace(p, tc_barr=float(tau_R))).lead_R
     rgf = myf.RGFFourTerminal(J, np.array([float(E) / q.t]))
     out = []
     for ph in phis:
         c = rgf.channels_at_phi(ph, 'left')
         out += [float(np.asarray(c[k])[0]) for k in CHANNELS]
     return np.array(out)
+
+
+class _RibbonsFrom(myf.RGFFourTerminal):
+    """RGFFourTerminal that takes the SC-ribbon surfaces from `ref` (an RGFFourTerminal at the same energies) instead of
+    decimating them again -- ~70 % of a one-energy set-up at a = 10.  Raises unless the ribbon blocks, energies and eta
+    are identical, so it can never attach the wrong ribbons."""
+
+    def __init__(self, junction, E_sweep, ref):
+        self._ref = ref
+        super().__init__(junction, E_sweep, phi_ref=ref.phi_ref)
+
+    def _attach_ribbons(self):
+        r, J = self._ref, self.junction
+        ribs = lambda R: (R.junction._make_ribbon(R.phi_ref, R.p.tc_top, is_bot=False), R.junction.ribbon_bot)
+        same = (np.array_equal(r.E_sweep, self.E_sweep) and r.p.eta == self.p.eta
+                and all(np.array_equal(getattr(x, k), getattr(y, k))
+                        for x, y in zip(ribs(r), ribs(self)) for k in ('H_onsite', 'V_hop')))
+        if not same:
+            raise ValueError("_RibbonsFrom: ribbons, energies or eta differ from the reference solve")
+        self.gT_inv_ref, self.gB_inv = r.gT_inv_ref, r.gB_inv
+
+
+def channel_fields(q, E, EZs, pairs, phi):
+    """The six channels at ONE energy E (meV) and phase phi for every field in EZs and every probe pair (tau_L, tau_R):
+    (len(EZs), len(pairs), 6).  The SC ribbons see neither E_Z (the Zeeman field sits in the centre only) nor the probe
+    bonds, so they are decimated once and reused (_RibbonsFrom checks that on every solve); the central RGF runs per field
+    and pair.  Same channels as channel_point (left side)."""
+    Es, ref, out = np.array([float(E) / q.t]), None, []
+    for E_Z in EZs:
+        row = []
+        for tl, tr in pairs:
+            p = replace(q, tc_barr_transport=float(tl)).params_transport(E_Z=float(E_Z))
+            J = myf.FourTerminalJunction(p)
+            J.lead_R = myf.FourTerminalJunction(replace(p, tc_barr=float(tr))).lead_R
+            rgf = myf.RGFFourTerminal(J, Es) if ref is None else _RibbonsFrom(J, Es, ref)
+            if ref is None:
+                ref = rgf
+            c = rgf.channels_at_phi(float(phi), 'left')
+            row.append([float(np.asarray(c[k])[0]) for k in CHANNELS])
+        out.append(row)
+    return np.array(out)
+
+
+def channel_combos(q, E, combos, phi):
+    """The six channels at ONE energy E (meV) and phase phi for each (E_Z, tau_L, tau_R) of combos: (len(combos), 6), and
+    the number of unreliable lead solves.  As channel_fields (ribbons decimated once, reused via _RibbonsFrom), for an
+    arbitrary list of field / bond triples instead of a full fields x pairs product."""
+    n0 = myf.leads.N_UNRELIABLE
+    Es, ref, out = np.array([float(E) / q.t]), None, []
+    for E_Z, tl, tr in combos:
+        p = replace(q, tc_barr_transport=float(tl)).params_transport(E_Z=float(E_Z))
+        J = myf.FourTerminalJunction(p)
+        J.lead_R = myf.FourTerminalJunction(replace(p, tc_barr=float(tr))).lead_R
+        rgf = myf.RGFFourTerminal(J, Es) if ref is None else _RibbonsFrom(J, Es, ref)
+        if ref is None:
+            ref = rgf
+        c = rgf.channels_at_phi(float(phi), 'left')
+        out.append([float(np.asarray(c[k])[0]) for k in CHANNELS])
+    return np.array(out), myf.leads.N_UNRELIABLE - n0
 
 
 def thermal(ch, kT, E):
@@ -574,9 +644,12 @@ def _ribbon_sigmas(q, E_Z, dE):
     return _RIB_CACHE[key]
 
 
-def _probe_sigmas(q, E_Z, tau_L, tau_R):
-    """Left / right probe self-energies at E = 0 (4 ny x 4 ny, units of t) for separate bonds (0 = detached)."""
+def _probe_sigmas(q, E_Z, tau_L, tau_R, lead=None):
+    """Left / right probe self-energies at E = 0 (4 ny x 4 ny, units of t) for separate bonds (0 = detached).
+    lead: optional callable Params -> Params for the probe-lead fields (see transport_phis)."""
     p = q.params_transport(E_Z=float(E_Z))
+    if lead is not None:
+        p = lead(p)
     d = 4 * p.ny
     zN = np.array([1j * p.eta])[:, None, None] * np.eye(d)[None]
     S_L = (myf.FourTerminalJunction(replace(p, tc_barr=float(tau_L))).lead_L.self_energy(zN)[0] if tau_L > 0
@@ -586,7 +659,7 @@ def _probe_sigmas(q, E_Z, tau_L, tau_R):
     return S_L, S_R
 
 
-def _nh_setup(q, E_Z, tau_L, tau_R, dE=2e-3):
+def _nh_setup(q, E_Z, tau_L, tau_R, dE=2e-3, lead=None):
     """The phase-independent pieces of the open-junction pencil of nh_spectrum: H_C + probe self-energies (csr), the
     ribbon self-energies and E-derivatives at phase 0, and the edge-row index grid."""
     import scipy.sparse as sps
@@ -595,7 +668,7 @@ def _nh_setup(q, E_Z, tau_L, tau_R, dE=2e-3):
     d = 4 * ny
     J = myf.FourTerminalJunction(replace(p, phi=0.0))
     Hs, V = J.slice_blocks_x()
-    S_L, S_R = _probe_sigmas(q, E_Z, tau_L, tau_R)
+    S_L, S_R = _probe_sigmas(q, E_Z, tau_L, tau_R, lead)
     off = sps.diags(np.ones(nx - 1), 1)
     H0 = (sps.kron(sps.eye(nx), sps.csr_matrix(Hs)) + sps.kron(off, sps.csr_matrix(V))
           + sps.kron(off.T, sps.csr_matrix(V.conj().T))).tolil()
@@ -666,7 +739,7 @@ def nh_pair_2x2(q, E_Z, phi, tau_pairs, dE=2e-3):
     return np.array(out)
 
 
-def nh_spectrum(q, E_Z, phis, tau_L, tau_R, k=8, dE=2e-3):
+def nh_spectrum(q, E_Z, phis, tau_L, tau_R, k=8, dE=2e-3, lead=None, sigma=0.0):
     """
     Complex spectrum of the OPEN junction near E = 0: the k poles closest to zero of
         G(E) = [E - H_C - Sigma_top(E) - Sigma_bot(E) - Sigma_L(E) - Sigma_R(E)]^-1,
@@ -679,13 +752,15 @@ def nh_spectrum(q, E_Z, phis, tau_L, tau_R, k=8, dE=2e-3):
     Returns poles (len(phis), k) complex, ueV, sorted by |Re E| (rounded to 1e-3 ueV), then |E| -- the first two are the
     Majorana pair --, and the overlap |psi_1^dag psi_2| / (|psi_1| |psi_2|) of those two (len(phis),) -> 1 where two
     eigenvectors coalesce (exceptional point).
+    sigma: the shift-invert target in ueV (complex; default 0 = the k poles closest to E = 0).  An off-axis target, e.g.
+    -60j, reaches a strongly broadened pole that lies farther from 0 than many bulk poles (strong probes).
     """
     import scipy.sparse.linalg as spla
-    s = _nh_setup(q, E_Z, tau_L, tau_R, dE)
+    s = _nh_setup(q, E_Z, tau_L, tau_R, dE, lead)
     poles, ovl = [], []
     for ph in phis:
         A, M = _nh_pencil(s, ph)
-        w, vec = spla.eigs(A, k=k, M=M, sigma=0.0, which='LM')
+        w, vec = spla.eigs(A, k=k, M=M, sigma=complex(sigma) / (q.t * 1e3), which='LM')
         # order by |Re E| first: the Majorana pair has |Re E| <= eps (0 between EPs), the bulk poles sit at |Re E| ~ Delta_top;
         # ordering by |E| swapped in a bulk pole once the lossy pole's width exceeded it (tau_L 0.8: Im -45 vs Re 40 ueV)
         o = np.lexsort((np.abs(w), np.round(np.abs(w.real) * q.t * 1e3, 3)))
