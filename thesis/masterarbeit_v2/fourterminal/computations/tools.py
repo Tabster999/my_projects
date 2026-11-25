@@ -629,8 +629,10 @@ _RIB_CACHE = {}
 
 def _ribbon_sigmas(q, E_Z, dE):
     """Top (phase 0) and bottom ribbon self-energies on the centre edge rows (4 nx x 4 nx, units of t) at E = 0, and
-    their E-derivative (central difference over +-dE meV), transport parameters; cached per (q, E_Z, dE)."""
-    key = (repr(q), float(E_Z), float(dE))
+    their E-derivative (central difference over +-dE meV), transport parameters; cached per (q, E_Z, dE).  The ribbons are
+    clean leads, so the strip's disorder (disorder, disorder_seed) is left out of the key: all seeds share one solve."""
+    qk = replace(q, disorder=0.0, disorder_seed=0) if hasattr(q, 'disorder') else q
+    key = (repr(qk), float(E_Z), float(dE))
     if key not in _RIB_CACHE:
         p = replace(q.params_transport(E_Z=float(E_Z)), phi=0.0)
         J = myf.FourTerminalJunction(p)
@@ -672,6 +674,10 @@ def _nh_setup(q, E_Z, tau_L, tau_R, dE=2e-3, lead=None):
     off = sps.diags(np.ones(nx - 1), 1)
     H0 = (sps.kron(sps.eye(nx), sps.csr_matrix(Hs)) + sps.kron(off, sps.csr_matrix(V))
           + sps.kron(off.T, sps.csr_matrix(V.conj().T))).tolil()
+    cols = J.column_onsite()                  # onsite disorder of the strip (as RGF / LocalGreen see it); None = clean
+    if cols is not None:                      # (until 2026-11-25 the pencil used the clean slice: disorder was ignored)
+        for ix in range(nx):
+            H0[ix * d:(ix + 1) * d, ix * d:(ix + 1) * d] = cols[ix]
     H0[:d, :d] = H0[:d, :d].toarray() + S_L
     H0[-d:, -d:] = H0[-d:, -d:].toarray() + S_R
     sT0, sB, dT0, dB = _ribbon_sigmas(q, E_Z, dE)

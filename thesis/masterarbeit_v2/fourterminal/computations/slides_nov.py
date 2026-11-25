@@ -433,17 +433,16 @@ def collapse_mixed(EZ_PAIR=0.94, L=2000.0):
     """
     Mixed SOC (st.mixed_soc(16, 0.15 pi)), mu_C 0.7, W 100, L 2 um, a 10, phi pi; caches of study_oscillation_mixed.
     Left: NEGF kappa(E_Z) at two probe bonds -- the kappa = 1/2 points sit at DIFFERENT fields.
-    Right: the same points against x = eps_box / Gamma.  eps from the closed box (no leads), Gamma measured directly
-    (half width of the local Andreev Lorentzian at an eps zero, mean of two zeros per tau): nothing fitted.  Two
-    Majoranas: kappa = 2x^2/(1+x^2)^2, = 1/2 only at x = 1.  Constant Gamma: Gamma_eff rises ~1.1 -> 1.6 ueV over
-    E_Z 0.45-0.93 (CLAUDE.md), which spreads x by up to ~1.4.  E_Z > EZ_PAIR: L/xi_M small, no separated end pair
-    (two-Majorana points end at 0.94), shown grey.
+    Right: the same points against x = eps_eff / Gamma, both from the poles of the open junction at EVERY field
+    (pole_line; Gamma = -Im of the pole, Capecelatro et al.): nothing fitted.  Two Majoranas: kappa = 2x^2/(1+x^2)^2,
+    = 1/2 only at x = 1.  [Until 2026-11-24: x = eps_box / ONE constant Gamma per tau (Andreev half width at two eps
+    zeros); Gamma drifts 0.54-1.47 / 1.56-4.05 ueV along the line, which caused the old scatter (|kappa - model| max
+    0.17 -> 0.015 / 0.024 now).]  E_Z > EZ_PAIR: L/xi_M small, no separated end pair (two-Majorana points end at 0.94),
+    shown grey.
     """
     M, am = load('scharf_absOM_modes_mixed_a10')
     EZ, xi = am['E_Z'], M[:, 0]
-    eps = load('scharf_absOM_box_mixed_a10_L2')[0][:, 0]           # ueV
-    GD = load('scharf_absOM_gamma_mixed')[0][:, 0]                 # ueV, cases (0.3387, 0.5) x two eps zeros
-    TAU = {0.3387: GD[:2].mean(), 0.5: GD[2:].mean()}
+    TAU = {t: pole_line(t) for t in (0.3387, 0.5)}
     s_cut = L / np.interp(EZ_PAIR, EZ, xi)
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=FULL, layout='constrained', width_ratios=(1, 1.1))
@@ -451,13 +450,14 @@ def collapse_mixed(EZ_PAIR=0.94, L=2000.0):
     a2.plot(xx, 2 * xx**2 / (1 + xx**2) ** 2, color=INK, lw=2.6, zorder=2)
     a2.text(3.3, 0.43, 'two Majoranas\n' + r'$2x^2/(1+x^2)^2$', fontsize=13, color=INK)
     grey = []
-    for (t, g), c in zip(TAU.items(), (BLUE, ORANGE)):
+    for (t, (ezp, g, ee)), c in zip(TAU.items(), (BLUE, ORANGE)):
         V, at = load(f'scharf_absOM_line_mixed_tau{t:g}')
         ez = at['E_Z']
+        assert np.allclose(ez, ezp), 'pole line and transport line on different grids'
         k, G = V[:, 0], V[:, 1]
-        x = eps[np.searchsorted(EZ, ez)] / g
+        x = np.maximum(ee / g, 2.1e-3)                               # x = 0 (eps_eff clipped) at the left edge
         pair, neu = ez <= EZ_PAIR + 1e-9, np.abs(G) < 0.1 * np.maximum(k, 1e-12)
-        lab = rf'$\tau$ = {t:.2f}  ($\Gamma$ = {g:.1f} $\mu$eV)'
+        lab = rf'$\tau$ = {t:.2f}  ($\Gamma$ = {g[pair].min():.1f}-{g[pair].max():.1f} $\mu$eV)'
         a1.plot(ez, k, color=c, lw=2, label=lab)
         a2.plot(x[pair & neu], k[pair & neu], 'o', ms=7.5, color=c, mec='white', mew=0.7, zorder=3, label=lab)
         if (pair & ~neu).any():
@@ -466,7 +466,8 @@ def collapse_mixed(EZ_PAIR=0.94, L=2000.0):
         pred = 2 * x**2 / (1 + x**2) ** 2
         r = np.abs(k - pred)[pair]
         big = pair & (k > 0.3)
-        print(f'collapse tau {t}: Gamma {g:.2f} ueV, {pair.sum()} pts E_Z <= {EZ_PAIR}: |kappa - model| median '
+        print(f'collapse tau {t}: Gamma {g[pair].min():.2f}-{g[pair].max():.2f} ueV, {pair.sum()} pts E_Z <= {EZ_PAIR}: '
+              f'|kappa - model| median '
               f'{np.median(r):.3f}, 90 % {np.percentile(r, 90):.3f}; kappa > 0.3: {big.sum()} pts at x '
               f'{np.round(np.sort(x[big]), 2)}; max kappa {k[pair].max():.3f} (neutral {k[pair & neu].max():.3f}); '
               f'charged in pair range: {(pair & ~neu).sum()}')
@@ -481,7 +482,7 @@ def collapse_mixed(EZ_PAIR=0.94, L=2000.0):
     a1.set_xlabel(r'Zeeman energy $E_Z$ [meV]  ($\phi = \pi$)'); a1.set_ylabel(r'$\kappa/\kappa_0$  (NEGF)')
     a1.legend(loc='upper left', fontsize=13)
     a2.set_xscale('log'); a2.set_xlim(2e-3, 30); a2.set_ylim(0, 0.78); a2.set_yticks([0, 0.25, 0.5])
-    a2.set_xlabel(r'$x = \varepsilon_{box}/\Gamma$   (splitting / measured broadening)')
+    a2.set_xlabel(r'$x = \varepsilon/\Gamma$   (both from the poles, at each field)')
     a2.legend(loc='upper left', fontsize=12)
     save(fig, 'mixed_collapse')
 
@@ -538,6 +539,27 @@ HBAR_VF_2DEG = 52.98            # meV nm, hbar^2 k_mu/m at mu_C 0.7 (continuum; 
 def mixed_case(tau=0.3387, L=2000.0):
     from study_tuning import junction
     return junction('mixed', 0.7, tau, L=L)
+
+
+def pole_line(tau):
+    """
+    Gamma(E_Z) and eps_eff(E_Z) along the phi = pi transport line (E_Z 0.10-1.35 step 0.01) from the poles of the open
+    junction (study_tuning [gamma], cache scharf_absGM_poles_mixed_a10_pi; Gamma = -Im of the pole, Capecelatro et al.,
+    arXiv:2412.01702).  Gamma = sqrt(Gamma_L Gamma_R), Gamma_L = summed width of the left-probe-only pair minus the
+    ribbons' eta loss of one mode; eps_eff^2 = |l1 l2| - Gamma_L Gamma_R from the two-probe pair.  Returns E_Z, Gamma,
+    eps_eff (ueV).
+    """
+    from study_tuning import GM_CFG, GM_K
+    V, a = load('scharf_absGM_poles_mixed_a10_pi')
+    V = V.reshape(len(a['E_Z']), len(GM_CFG), 2, GM_K)
+    lam = V[:, :, 0, :2] + 1j * V[:, :, 1, :2]
+    ci = {c: i for i, c in enumerate(GM_CFG)}
+    eta0 = -lam[:, ci[(0.0, 0.0)]].imag.sum(axis=1) / 2
+    gL = -lam[:, ci[(tau, 0.0)]].imag.sum(axis=1) - eta0
+    gR = -lam[:, ci[(0.0, tau)]].imag.sum(axis=1) - eta0
+    l2 = lam[:, ci[(tau, tau)]]
+    ee = np.sqrt(np.clip(np.abs(l2[:, 0] * l2[:, 1]) - gL * gR, 0.0, None))
+    return a['E_Z'], np.sqrt(gL * gR), ee
 
 
 def om_modes():
@@ -623,20 +645,20 @@ def mixed_oscillation(tau=0.3387):
     eps = load('scharf_absOM_box_mixed_a10_L2')[0][:, 0]
     RR, aa = load('scharf_absAmp_mixed_a10_L2')
     ez_rr, eps_rr = aa['E_Z'], RR[:, 0]
-    GD = load('scharf_absOM_gamma_mixed')[0][:, 0]
-    Gam = {0.3387: GD[:2].mean(), 0.5: GD[2:].mean()}
+    Gam = {t: pole_line(t)[:2] for t in (0.3387, 0.5)}               # (E_Z, Gamma(E_Z)): pole width at every field
     ez_t, V = mixed_transport_line(tau=tau)
     z = zeros_of(EZ, eps, half=0.03)
     z = z[(z > 0.45) & (z < 1.3)]
     Phi = np.interp(z, EZ, m['k_osc']) * 2000.0 / np.pi
     print(f"mixed oscillation: zeros {np.round(z, 3)}; k_osc L/pi steps {np.round(np.diff(Phi), 2)}; transport grid "
-          f"step {ez_t[1] - ez_t[0]:.3f}; Gamma {Gam}")
+          f"step {ez_t[1] - ez_t[0]:.3f}; Gamma(E_Z <= 0.94) " + ', '.join(
+              f"tau {t}: {g[e <= 0.94].min():.2f}-{g[e <= 0.94].max():.2f} ueV" for t, (e, g) in Gam.items()))
 
     fig, (a1, a2) = plt.subplots(2, 1, figsize=FULL, sharex=True, layout='constrained', height_ratios=(1.25, 1))
     a1.semilogy(EZ[::2], eps[::2], 'o', ms=4.2, color=BLUE, mec='white', mew=0.4, label=r'splitting $\varepsilon$ (closed box)')
     a1.semilogy(ez_rr, eps_rr, color=ORANGE, lw=1.8, label=r'overlap of the two end Majoranas (no fit)')
-    for (t, g), ls in zip(Gam.items(), ('-', '--')):
-        a1.axhline(g, color=AQUA, lw=2, ls=ls, label=rf'probe broadening $\Gamma$ ($\tau$ = {t:.2f})')
+    for (t, (e, g)), ls in zip(Gam.items(), ('-', '--')):
+        a1.semilogy(e, g, color=AQUA, lw=2, ls=ls, label=rf'probe broadening $\Gamma$ (pole width, $\tau$ = {t:.2f})')
     a1.set_ylim(1e-3, 3e3); a1.set_ylabel(r'energy [$\mu$eV]')
     a1.legend(loc='upper left', ncol=2, fontsize=12.5)
     a2.plot(ez_t, V[:, 0], color=INK, lw=1.8, label=rf'$\kappa/\kappa_0$  ($\tau$ = {tau:.2f})')
@@ -659,13 +681,13 @@ def mixed_oscillation(tau=0.3387):
 def mixed_overlap(fields=(0.37, None, 1.15), tau=0.3387, EZ_PAIR=0.94):
     """
     The overlap picture in the mixed SOC.  Left: densities of the two end Majoranas of the closed box (L 2 um) at three
-    fields.  Right: NEGF kappa against x = eps_box/Gamma (Gamma measured, nothing fitted) for both probe bonds.
+    fields.  Right: NEGF kappa against x = eps/Gamma for both probe bonds, eps and Gamma from the poles of the open
+    junction at each field (pole_line; nothing fitted).  [Until 2026-11-24: eps_box / one constant Gamma per tau.]
     """
     EZ, m = om_modes()
-    eps = load('scharf_absOM_box_mixed_a10_L2')[0][:, 0]
-    GD = load('scharf_absOM_gamma_mixed')[0][:, 0]
-    Gam = {0.3387: GD[:2].mean(), 0.5: GD[2:].mean()}
-    lines = {t: load(f'scharf_absOM_line_mixed_tau{t:g}') for t in Gam}
+    PL = {t: pole_line(t) for t in (0.3387, 0.5)}                   # E_Z, Gamma(E_Z), eps_eff(E_Z) from the poles
+    x_at = lambda t, E_Z: (lambda e, g, ee: (ee / g)[int(np.argmin(np.abs(e - E_Z)))])(*PL[t])
+    lines = {t: load(f'scharf_absOM_line_mixed_tau{t:g}') for t in PL}
     ez_l = lines[tau][1]['E_Z']
     k_l = lines[tau][0][:, 0]
     fields = list(fields)
@@ -695,7 +717,7 @@ def mixed_overlap(fields=(0.37, None, 1.15), tau=0.3387, EZ_PAIR=0.94):
         ax.semilogy(xs / 1000, dL / dL.max(), color=BLUE, lw=1.6, label=r'$\gamma_L$')
         ax.semilogy(xs / 1000, dR / dR.max(), color=ORANGE, lw=1.6, label=r'$\gamma_R$')
         ax.set_ylim(1e-7, 300); ax.set_yticks([1e-6, 1e-3, 1])
-        x_r = ee[r] / Gam[tau]
+        x_r = x_at(tau, fields[r])
         ax.text(0.5, 0.97, f'({"i" * (r + 1)})  {tags[r]}   ' + rf'$E_Z$ = {fields[r]:.2f},  $\varepsilon/\Gamma$ = {x_r:.2g}',
                 transform=ax.transAxes, ha='center', va='top', fontsize=12.5,
                 bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='none', alpha=0.85))
@@ -709,18 +731,19 @@ def mixed_overlap(fields=(0.37, None, 1.15), tau=0.3387, EZ_PAIR=0.94):
     ax = right.subplots()
     xx = np.geomspace(1e-3, 1e2, 400)
     ax.semilogx(xx, 2 * xx ** 2 / (1 + xx ** 2) ** 2, color=INK, lw=2.4, label=r'two Majoranas: $2x^2/(1+x^2)^2$')
-    for (t, g), col in zip(Gam.items(), (BLUE, ORANGE)):
+    for (t, (ezp, g, eeff)), col in zip(PL.items(), (BLUE, ORANGE)):
         V, at = lines[t]
         ez = at['E_Z']
+        assert np.allclose(ez, ezp), 'pole line and transport line on different grids'
         k, G = V[:, 0], np.abs(V[:, 1])
-        x = eps[np.searchsorted(EZ, ez)] / g
+        x = np.maximum(eeff / g, 1.1e-3)
         pair, neu = ez <= EZ_PAIR + 1e-9, G < 0.1 * np.maximum(k, 1e-12)
         ax.semilogx(x[pair & neu], k[pair & neu], 'o', ms=6, color=col, mec='white', mew=0.6,
-                    label=rf'full model, $\tau$ = {t:.2f} ($\Gamma$ = {g:.1f} $\mu$eV)')
+                    label=rf'full model, $\tau$ = {t:.2f} ($\Gamma$ = {g[pair].min():.1f}-{g[pair].max():.1f} $\mu$eV)')
         ax.semilogx(x[pair & ~neu], k[pair & ~neu], 'o', ms=6, mfc='none', mec=col, mew=1.2)
     for r in range(3):
         i = int(np.argmin(np.abs(ez_l - fields[r])))
-        xr = eps[np.argmin(np.abs(EZ - fields[r]))] / Gam[tau]
+        xr = max(x_at(tau, fields[r]), 1.1e-3)
         ax.plot(xr, k_l[i], 'o', ms=13, mfc='white', mec=INK, mew=2, zorder=6)
         ax.text(xr, k_l[i], ('i', 'ii', 'iii')[r], ha='center', va='center', fontsize=10, zorder=7)
     half_line(ax)

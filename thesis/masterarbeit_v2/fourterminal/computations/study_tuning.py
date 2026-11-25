@@ -26,6 +26,10 @@ PARTS (one per former script; the cells of each part are tagged [part]):
   dark         (2026-11-19)  STUDY: San-Jose et al. 2016 Majorana dark states? narrow width vs coupling, helical vs standard probe
   detphi       (2026-11-23)  STUDY: does det r ~ 0 give the kappa = 1/2 plateau along phi too? (plots only, cached phase lines)
   epfield      (2026-11-23)  STUDY: the EP spectrum vs E_Z over the whole topological range, one strong probe 0.3-1.0 + a 0.1 detector
+  regimes      (2026-11-24)  PLOTS ONLY: which gate (mu_C) and probe bond (tau) values give different regimes? (cached maps)
+  gamma        (2026-11-24)  REDO: Gamma = pole width (Capecelatro et al.) per field along phi = pi; the constant-Gamma collapse
+  classes      (2026-11-24)  PLOTS ONLY: regime criteria (topology, L/xi_M, eps/Gamma, Gamma/E_next) tested on the phi = pi line
+  dis          (2026-11-25)  STUDY: uncorrelated onsite disorder (seeded) at four regime points: conductances, spectrum, LDOS
 
 Run one part:   python study_tuning.py topology      (several: list them; no argument: every part, in order)
 In the interactive window the cells run as usual.  run_part(part) replaces the old `if __name__ == "__main__":`
@@ -42,7 +46,8 @@ import tools as st
 from study_oscillation import slowest_mode
 
 PARTS = ('topology', 'coupling', 'tuning', 'maps', 'leads', 'spectrum', 'ep', 'ep2', 'ep3', 'ep4', 'ep5', 'ep6', 'ep7', 'ep8',
-         'ep9', 'nh', 'trans', 'barr', 'chern', 'clean', 'dark', 'detphi', 'epfield')
+         'ep9', 'nh', 'trans', 'barr', 'chern', 'clean', 'dark', 'detphi', 'epfield', 'regimes', 'gamma', 'classes',
+         'dis')
 _SELECTED = {a for a in sys.argv[1:] if a in PARTS}
 
 
@@ -5125,3 +5130,634 @@ if run_part('epfield'):
         st.save_fig(fig, 'epfield_checks_mixed', dpi=150)
         plt.close(fig)
     print("figure: plots/epfield_checks_mixed.png", flush=True)
+
+
+
+# ====================================================================================================================
+# PART 'regimes'  (2026-11-24)  PLOTS ONLY from caches: which gate (mu_C) and probe bond (tau) values show different regimes?
+# ====================================================================================================================
+# Thesis junction (mixed SOC, W 100, L 2 um, tc 1, a 10).  Sources, all full-model caches:
+#   phi = pi bulk Q and refined Delta_top on (mu_C 0-2.4, E_Z 0-2)   study_mixed [deck] 4   scharf_absDeck_topo_mixed_tc1
+#   Gamma(tau) = local-Andreev half width at the eps zeros E_Z 0.285 / 0.345, phi pi, mu_C 0.7   [leads] 3   scharf_absLeads_gamma
+#   coarse (E_Z, phi) transport maps per (mu_C, tau)   [tuning]   tr_name('mixed', mu, tau, 2000)
+# Gapless = Q = -1 with refined Delta_top < CLOSED_L ([leads]); values are either < 1e-3 or > 0.08 ueV, nothing between.
+REG_MU = {0.3: 'R1', 0.7: 'R2', 1.0: 'R3', 1.6: 'R4'}           # proposed gate picks (meV)
+REG_MU_TXT = {0.3: 'ends decoupled', 0.7: 'ends overlap (working point)', 1.0: 'gapped at low field only',
+              1.6: 'Q = -1 but gapless'}
+REG_TAU = {0.2: 'C1', 0.5: 'C2', 0.7: 'C3', 1.0: 'C4'}            # proposed probe-bond picks
+REG_TAU_TXT = {0.2: 'tunnel', 0.5: 'matched', 0.7: 'crossover', 1.0: 'transparent'}
+REG_COL = {0.3: '#2a78d6', 0.7: '#1baf7a', 1.0: '#eb6834', 1.6: '#8a7ee0', 1.2: '#6b6a66'}
+REG_TR = ((0.3, (0.3387, 0.5)), (0.7, (0.2, 0.3387, 0.5, 0.7, 1.0)), (1.2, (0.3387, 0.5)))   # cached coarse maps
+
+if run_part('regimes'):
+    from matplotlib.patches import Rectangle
+    _z = np.load(st.DATA / 'scharf_absDeck_topo_mixed_tc1.npz')
+    RMU, REZ, RV = _z['axis_mu_C'], _z['axis_E_Z'], _z['values']
+    RQ, RGAP = RV[..., 0], RV[..., 1] * 1e3                                    # Q, Delta_top (ueV; NaN where Q = +1)
+    topo_ = RQ < 0
+    gapless_ = topo_ & ~(RGAP >= CLOSED_L * 1e3)
+    gapped_ = topo_ & ~gapless_
+    _g = np.load(st.DATA / 'scharf_absLeads_gamma.npz')['values'][:, 0].reshape(len(TAU_LEADS), len(GAMMA_FIELDS))
+    GAM_R = dict(zip(TAU_LEADS, _g))                                           # ueV, at the two eps zeros
+    print(f"\n  [regimes] phi = pi bulk (tc 1, mixed SOC): Q = -1 on {topo_.mean() * 100:.0f} % of (mu_C 0-2.4, E_Z 0-2), "
+          f"gapless share of it {gapless_.sum() / topo_.sum() * 100:.0f} %", flush=True)
+    print("    gate pick   Q = -1 at E_Z (meV)   gapped at E_Z      max Delta_top (ueV, at E_Z)", flush=True)
+    for mu, lab in REG_MU.items():
+        i = int(np.argmin(np.abs(RMU - mu)))
+        t_, g_ = REZ[topo_[i]], REZ[gapped_[i]]
+        j = int(np.nanargmax(np.where(gapped_[i], RGAP[i], -1))) if gapped_[i].any() else None
+        print(f"    {lab} mu_C {mu:3.1f}   {t_.min():.1f}-{t_.max():.1f}" + (f"             {g_.min():.1f}-{g_.max():.1f}"
+              if len(g_) else "             none        ") + (f"         {RGAP[i, j]:.0f} ({REZ[j]:.1f})" if j is not None
+                                                             else "         0 (gapless)") + f"   {REG_MU_TXT[mu]}", flush=True)
+    print("    bond pick   Gamma (ueV) at the two zeros   Gamma / k_B (mK)   Gamma / Delta_top,max(mu_C 0.7)", flush=True)
+    d07 = np.nanmax(np.where(gapped_[int(np.argmin(np.abs(RMU - 0.7)))], RGAP[int(np.argmin(np.abs(RMU - 0.7)))], np.nan))
+    for t in TAU_LEADS:
+        g = GAM_R[t]
+        print(f"    {REG_TAU.get(t, '  ')} tau {t:<6g}  {g[0]:6.2f} / {g[1]:6.2f}                {g.mean() / st.K_B:6.0f}"
+              f"             {g.mean() / d07:.2f}   {REG_TAU_TXT.get(t, '(reference)')}", flush=True)
+    TRS = {}
+    print("    cached coarse maps (E_Z 0-2 x 31 phases, L 2 um): kappa > 0.25 share, neutral share of those "
+          "(|G| < 0.1 kappa)", flush=True)
+    for mu, taus in REG_TR:
+        for t in taus:
+            v = np.load(st.DATA / f'{tr_name("mixed", mu, t, 2000.0)}.npz')['values']
+            k_, G_ = v[..., 0], v[..., 1]
+            big = k_ > 0.25
+            TRS[mu, t] = (big.mean(), (big & (np.abs(G_) < 0.1 * k_)).sum() / max(big.sum(), 1))
+            print(f"      mu_C {mu:3.1f}  tau {t:<6g}  {TRS[mu, t][0] * 100:5.1f} %   neutral {TRS[mu, t][1]:.2f}", flush=True)
+
+    with plt.rc_context(CL_RC):
+        fig, axs = plt.subplots(1, 3, figsize=(16.5, 5.6), layout='constrained', gridspec_kw=dict(width_ratios=(1.25, 1, 1)))
+        a = axs[0]
+        dz, dm = REZ[1] - REZ[0], RMU[1] - RMU[0]
+        ez_e = np.r_[REZ - dz / 2, REZ[-1] + dz / 2]
+        mu_e = np.r_[RMU - dm / 2, RMU[-1] + dm / 2]
+        pm = a.pcolormesh(ez_e, mu_e, np.where(gapped_, RGAP, np.nan), cmap='Greys', vmin=0, vmax=80, shading='flat')
+        for i, j in zip(*np.nonzero(gapless_)):
+            a.add_patch(Rectangle((REZ[j] - dz / 2, RMU[i] - dm / 2), dz, dm, fill=False, hatch='////', edgecolor='#c0392b',
+                                  lw=0))
+        for mu, lab in REG_MU.items():
+            a.axhline(mu, color=REG_COL[mu], lw=2.2)
+            a.text(2.02, mu + 0.03, f'{lab}  $\\mu_C$ {mu:g}', color=CL_INK, va='bottom', ha='right', fontsize=10.5)
+        a.set_xlim(ez_e[0], ez_e[-1])
+        a.set_ylim(mu_e[0], mu_e[-1])
+        a.set_xlabel(r'Zeeman energy $E_Z$ (meV)')
+        a.set_ylabel(r'strip chemical potential $\mu_C$ (meV)')
+        a.set_title(r'(a) bulk at $\phi = \pi$: grey = gapped $Q = -1$ (shade $\Delta_{top}$),' '\n'
+                    r'red hatch = $Q = -1$ but gapless, white = trivial', loc='left', fontsize=9.5, color=CL_MUT)
+        cb = fig.colorbar(pm, ax=a, location='bottom', shrink=0.6, pad=0.02, aspect=30)
+        cb.set_label(r'$\Delta_{top}$ ($\mu$eV), gapped $Q = -1$ only', fontsize=10.5)
+        cb.set_ticks([0, 20, 40, 60, 80])
+
+        a = axs[1]
+        tt = np.array(TAU_LEADS)
+        gm = np.array([GAM_R[t].mean() for t in tt])
+        a.errorbar(tt, gm, yerr=[gm - [GAM_R[t].min() for t in tt], [GAM_R[t].max() for t in tt] - gm], fmt='o', ms=8,
+                   color=CL_INK, capsize=3, lw=1.2, zorder=3)
+        a.plot(tt, gm, color=CL_INK, lw=1.0, zorder=2)
+        for t in tt:
+            if t in REG_TAU:
+                a.annotate(f'{REG_TAU[t]} {REG_TAU_TXT[t]}', (t, GAM_R[t].mean()), xytext=(-10, -16) if t == 1.0 else (10, -14),
+                           textcoords='offset points', ha='right' if t == 1.0 else 'left', fontsize=10, color=CL_INK)
+        for T in (10, 20, 50):
+            a.axhline(st.K_B * T * 1e-3 * 1e3, color=CL_MUT, lw=0.9, ls='--')
+            a.text(0.19, st.K_B * T * 1e-3 * 1e3 * 1.08, f'$k_BT$ at {T} mK', fontsize=9, color=CL_MUT, ha='left')
+        for mu in REG_MU:
+            i = int(np.argmin(np.abs(RMU - mu)))
+            if gapped_[i].any():
+                d = np.nanmax(np.where(gapped_[i], RGAP[i], np.nan))
+                a.axhline(d, color=REG_COL[mu], lw=1.6)
+                a.text(1.02, d, rf'$\Delta_{{top}}$ max, {REG_MU[mu]}', fontsize=9, color=CL_INK, va='center', ha='left',
+                       transform=a.get_yaxis_transform(), clip_on=False)
+        a.set_yscale('log')
+        a.set_xlim(0.15, 1.05)
+        a.set_xlabel(r'probe bond $\tau$')
+        a.set_ylabel(r'probe width $\Gamma$ ($\mu$eV)')
+        a.grid(color=CL_GRID, lw=0.5, which='both')
+        a.set_title(r'(b) $\Gamma(\tau)$ (local Andreev half width, $\mu_C$ 0.7,' '\n'
+                    r'two $\epsilon$ zeros) vs the gap and $k_BT$', loc='left', fontsize=9.5, color=CL_MUT)
+
+        a = axs[2]
+        for mu, taus in (REG_TR[1], REG_TR[0], REG_TR[2]):                    # mu_C 0.3 drawn over 0.7 (nearly equal)
+            x = np.array(taus) + {0.3: -0.015, 0.7: 0.0, 1.2: 0.015}[mu]
+            ns = np.array([TRS[mu, t][1] for t in taus])
+            fr = np.array([TRS[mu, t][0] for t in taus])
+            lab = (rf'$\mu_C$ {mu:g} ({REG_MU[mu]})' if mu in REG_MU else rf'$\mu_C$ {mu:g} (cached, nearest to R3)')
+            a.plot(x, ns, color=REG_COL[mu], lw=2.0, zorder=2, label=lab)
+            a.scatter(x, ns, s=40 + 900 * fr, color=REG_COL[mu], edgecolor='white', lw=1.5, zorder=3)
+        a.set_xlim(0.15, 1.05)
+        a.set_ylim(-0.03, 1.05)
+        a.set_xlabel(r'probe bond $\tau$')
+        a.set_ylabel(r'neutral share of $\kappa > 0.25$ ($|G| < 0.1\,\kappa$)')
+        a.grid(color=CL_GRID, lw=0.5)
+        a.legend(frameon=False, fontsize=9.5, loc='lower left')
+        a.text(0.98, 0.98, r'marker area $\propto$ share of the map with $\kappa > 0.25$' '\n' r'R4 ($\mu_C$ 1.6): no transport yet',
+               transform=a.transAxes, ha='right', va='top', fontsize=9, color=CL_MUT)
+        a.set_title(r'(c) cached coarse maps ($E_Z$ 0-2 meV $\times$ 31 phases, L 2 $\mu$m;' '\n'
+                    r'$\mu_C$ 0.3 / 1.2 shifted by $\mp$0.015 in $\tau$ for visibility)', loc='left', fontsize=9.5, color=CL_MUT)
+        fig.suptitle(r'Choosing regimes: the gate sets protection (gap, gapless strip), the probe bond sets $\Gamma$ against '
+                     r'$\Delta_{top}$ and $k_BT$', x=0.01, ha='left', fontsize=13.5, fontweight='semibold')
+        st.save_fig(fig, 'regimes_mixed', dpi=150)
+        plt.close(fig)
+    print("figure: plots/regimes_mixed.png", flush=True)
+
+
+
+# ====================================================================================================================
+# PART 'gamma'  (2026-11-24)  Gamma = the POLE WIDTH along the phi = pi line; redo of the constant-Gamma advisor figures
+# ====================================================================================================================
+# Definition (Capecelatro, Marciani, Campagnano & Lucignano, arXiv:2412.01702, Eqs. 16-18): quasi-bound states are the
+# poles z of the junction's retarded Green's function (sub-gap sheet), Gamma = -Im z.  Computed with tools.nh_spectrum
+# (pencil (H_C + Sigma(0)) psi = lam M psi; M^-1 = their weight matrix Z, linearised; error ~ (lam / Delta)^2).
+# Per field of the study_mixed [oscillation] transport line (E_Z 0.10-1.35 step 0.01, phi pi, mu_C 0.7, L 2 um, a 10,
+# tc 1) seven probe configurations (tau_L, tau_R): (0, 0) closed; (t, 0), (0, t), (t, t) for t = 0.3387, 0.5.
+#   Gamma_L = -Im(l1 + l2) of the left-probe-only pair (the end-mode width at an eps zero, the summed pair width
+#   elsewhere), Gamma_R likewise; two-probe pair l1, l2 -> eps_eff^2 = |l1 l2| - Gamma_L Gamma_R ([nh]);
+#   x = eps_eff / sqrt(Gamma_L Gamma_R); det r_pole = 1 - 2 Gamma_L Gamma_R / |l1 l2|.
+# Compared with the cached NEGF line (scharf_absOM_line_mixed_tau*) and with the old collapse (ONE constant Gamma per
+# tau = local-Andreev HWHM at two eps zeros, scharf_absOM_gamma_mixed; slides_nov.collapse_mixed / mixed_overlap /
+# mixed_oscillation).  Cache scharf_absGM_poles_mixed_a10_pi; figure plots/gamma_line_mixed.png.
+GM_EZ = np.round(np.arange(0.10, 1.3501, 0.005), 3)[::2]          # = study_mixed EZ_T (the transport line)
+GM_TAUS = (0.3387, 0.5)
+GM_CFG = ((0.0, 0.0),) + tuple(c for t in GM_TAUS for c in ((t, 0.0), (0.0, t), (t, t)))
+GM_K = 8
+GM_PAIR = 0.94                                                    # meV: two-Majorana points end here (L / xi_M small)
+
+
+def gm_field(E_Z):
+    """Poles (GM_K Re, then GM_K Im; ueV) for every GM_CFG at one field, phi = pi, flattened.  One q for all configurations,
+    so the ribbon self-energies are computed once per field (tools._RIB_CACHE)."""
+    q = junction('mixed', 0.7, 0.5)                               # tau of q unused: nh_spectrum takes tau_L, tau_R
+    out = []
+    for tl, tr in GM_CFG:
+        P, _ = st.nh_spectrum(q, float(E_Z), [np.pi], tl, tr, k=GM_K)
+        out.append(np.r_[P[0].real, P[0].imag])
+    return np.array(out).ravel()
+
+
+# %% [gamma] --- 1. SCAN: the poles per field and probe configuration ---
+if run_part('gamma'):
+    GMV = st.run_scan(gm_field, {'E_Z': GM_EZ}, 'scharf_absGM_poles_mixed_a10_pi', n_workers=6, chunksize=1)
+    GMV = GMV.reshape(len(GM_EZ), len(GM_CFG), 2, GM_K)
+    print("gamma: scan done", flush=True)
+
+
+# %% [gamma] --- 2. Gamma(E_Z) from the poles; kappa vs x with the per-field pole Gamma vs the old constant Gamma ---
+if run_part('gamma'):
+    E = GM_EZ
+    lam = GMV[:, :, 0, :] + 1j * GMV[:, :, 1, :]                  # (n_EZ, n_cfg, K) ueV
+    CI = {c: i for i, c in enumerate(GM_CFG)}
+    gm_pair = lambda c: lam[:, CI[c], :2]
+    eps_box = np.load(st.DATA / 'scharf_absOM_box_mixed_a10_L2.npz')['values'][::2, 0]       # ueV, same grid
+    eps_cl = np.abs(gm_pair((0.0, 0.0)).real).mean(axis=1)
+    ok_cl = np.abs(eps_cl - eps_box) <= np.maximum(0.05 * eps_box, 0.01)
+    _gd = np.load(st.DATA / 'scharf_absOM_gamma_mixed.npz')['values'][:, 0]
+    G_OLD = {0.3387: _gd[:2].mean(), 0.5: _gd[2:].mean()}
+    inpair = E <= GM_PAIR + 1e-9
+    print(f"\n  [gamma] phi = pi, E_Z {E[0]:.2f}-{E[-1]:.2f} (step {E[1] - E[0]:.2f}); closed pair |Re| = eps_box (5 % or 0.01 ueV)"
+          f" on {ok_cl.sum()} / {len(E)} fields (fails at E_Z {np.round(E[~ok_cl], 2)})", flush=True)
+    k2m = lambda x: 2 * x ** 2 / (1 + x ** 2) ** 2
+    GR = {}
+    # eta: the ribbons' absorption gives each mode eta0 (closed pair: 2 eta0 in total, ~0.0025 ueV).  One-probe pair sum =
+    # Gamma_L + 2 eta0, two-probe product = eps^2 + (Gamma_L + eta0)(Gamma_R + eta0) -> subtract ONE eta0 so that eps_eff
+    # is exact (subtracting both left a spurious eps_eff ~ sqrt(2 Gamma eta0) ~ 0.05 ueV: |kappa - model| ~ 0.005 at low
+    # field; tested 0 / 0.5 / 1 x the closed loss: medians 0.0033 / 0.0003 / 0.0042 at tau 0.3387).
+    eta0 = -gm_pair((0.0, 0.0)).imag.sum(axis=1) / 2
+    print(f"    eta loss per closed-pair mode (subtracted once from Gamma_L, Gamma_R): {np.median(eta0):.5f} ueV", flush=True)
+    for t in GM_TAUS:
+        gL = -gm_pair((t, 0.0)).imag.sum(axis=1) - eta0
+        gR = -gm_pair((0.0, t)).imag.sum(axis=1) - eta0
+        l2 = gm_pair((t, t))
+        prod = np.abs(l2[:, 0] * l2[:, 1])
+        s = np.sqrt(gL * gR)
+        ee = np.sqrt(np.clip(prod - gL * gR, 0.0, None))
+        V = np.load(st.DATA / f'scharf_absOM_line_mixed_tau{t:g}.npz')['values']
+        k, G, d = V[:, 0], V[:, 1], V[:, 3]
+        neu = np.abs(G) < 0.1 * np.maximum(k, 1e-12)
+        sel = inpair & ok_cl & neu
+        x = dict(old=eps_box / G_OLD[t], box=eps_box / s, eff=ee / s)
+        res = {n: np.abs(k - k2m(v)) for n, v in x.items()}
+        dpole = 1 - 2 * gL * gR / prod
+        GR[t] = dict(gL=gL, gR=gR, s=s, ee=ee, k=k, G=G, neu=neu, sel=sel, x=x, res=res, dpole=dpole, d=d, l2=l2)
+        zi = [int(np.argmin(np.abs(E - z))) for z in (0.285, 0.345)]
+        big = sel & (k > 0.3)
+        print(f"    tau {t}: Gamma_L(E_Z) on the pair range {gL[inpair & ok_cl].min():.2f}-{gL[inpair & ok_cl].max():.2f} ueV "
+              f"(old constant {G_OLD[t]:.2f}); |Gamma_R / Gamma_L - 1| max {np.max(np.abs(gR / gL - 1)[inpair & ok_cl]):.1e}; "
+              f"at the eps zeros 0.285 / 0.345: pole {gL[zi[0]]:.3f} / {gL[zi[1]]:.3f} vs Lorentzian "
+              f"{_gd[0 if t < 0.4 else 2]:.3f} / {_gd[1 if t < 0.4 else 3]:.3f}", flush=True)
+        print(f"      |kappa - 2x^2/(1+x^2)^2| on {sel.sum()} neutral pair-range points (median / 90 % / max; kappa > 0.3: "
+              f"{big.sum()} pts):", flush=True)
+        for n, lab in (('old', 'x = eps_box / Gamma_const (old slides)'), ('box', 'x = eps_box / Gamma_pole(E_Z)'),
+                       ('eff', 'x = eps_eff / Gamma_pole(E_Z) (poles only)')):
+            r = res[n][sel]
+            print(f"        {lab:44s} {np.median(r):.4f} / {np.percentile(r, 90):.4f} / {r.max():.4f};  kappa > 0.3: "
+                  f"median {np.median(res[n][big]) if big.any() else np.nan:.4f}", flush=True)
+        print(f"      det r: NEGF vs 1 - 2 G_L G_R / |l1 l2| on the same points: median {np.median(np.abs(d - dpole)[sel]):.4f},"
+              f" max {np.max(np.abs(d - dpole)[sel]):.4f}", flush=True)
+
+    with plt.rc_context(CL_RC):
+        GCOL = {0.3387: CL_OUT, 0.5: CL_IN}
+        fig, axs = plt.subplots(2, 2, figsize=(14.5, 10.0), layout='constrained')
+        a = axs[0, 0]
+        a.semilogy(E, np.where(eps_box > 0, eps_box, np.nan), 'o', ms=3.2, color=CL_MUT, label=r'splitting $\varepsilon$ (closed box)')
+        for t in GM_TAUS:
+            g = GR[t]
+            a.semilogy(E, np.where(ok_cl, g['gL'], np.nan), color=GCOL[t], lw=2.0,
+                       label=rf'$\Gamma$ = pole width, $\tau$ = {t:.2f}')
+            a.axhline(G_OLD[t], color=GCOL[t], lw=1.2, ls='--')
+        a.plot([], [], color=CL_INK, lw=1.2, ls='--', label=r'old: one constant $\Gamma$ (Andreev half width at 2 zeros)')
+        a.axvspan(GM_PAIR, E[-1], color=CL_GRID, lw=0, zorder=0)
+        a.set_ylim(1e-3, 3e2)
+        a.set_xlabel(r'Zeeman energy $E_Z$ (meV)')
+        a.set_ylabel(r'energy ($\mu$eV)')
+        a.legend(frameon=False, fontsize=9.5, loc='upper left')
+        a.set_title(r'(a) the pole width drifts with the field; grey: $E_Z$ > 0.94 (no separated end pair)', loc='left',
+                    fontsize=10, color=CL_MUT)
+        a = axs[0, 1]
+        for t in GM_TAUS:
+            g = GR[t]
+            m = g['sel']
+            a.semilogy(E[m], np.maximum(g['res']['old'][m], 1e-5), 'o', ms=5, mfc='none', mec=GCOL[t], mew=1.2,
+                       label=rf'old constant $\Gamma$, $\tau$ = {t:.2f}')
+            a.semilogy(E[m], np.maximum(g['res']['eff'][m], 1e-5), 'o', ms=5, color=GCOL[t], mec='white', mew=0.5,
+                       label=rf'pole $\Gamma(E_Z)$ and $\varepsilon_{{eff}}$, $\tau$ = {t:.2f}')
+        a.set_xlabel(r'Zeeman energy $E_Z$ (meV)')
+        a.set_ylabel(r'$|\kappa_{NEGF} - 2x^2/(1+x^2)^2|$')
+        a.legend(frameon=False, fontsize=9.5, loc='upper left', ncol=2)
+        a.set_title('(b) deviation from the two-Majorana form, neutral points of the pair range', loc='left', fontsize=10,
+                    color=CL_MUT)
+        xx = np.geomspace(1e-3, 30, 400)
+        for a, n, ttl in ((axs[1, 0], 'old', r'(c) old: $x = \varepsilon_{box}/\Gamma_{const}$'),
+                          (axs[1, 1], 'eff', r'(d) new: $x = \varepsilon_{eff}/\Gamma_{pole}(E_Z)$, all from the poles')):
+            a.semilogx(xx, k2m(xx), color=CL_INK, lw=2.2, label=r'$2x^2/(1+x^2)^2$')
+            for t in GM_TAUS:
+                g = GR[t]
+                xv = np.maximum(g['x'][n], 1e-3)
+                m, c = g['sel'], inpair & ok_cl & ~g['neu']
+                a.semilogx(xv[m], g['k'][m], 'o', ms=6, color=GCOL[t], mec='white', mew=0.6, label=rf'$\tau$ = {t:.2f}')
+                a.semilogx(xv[c], g['k'][c], 'o', ms=6, mfc='none', mec=GCOL[t], mew=1.2)
+            a.plot([], [], 'o', ms=6, mfc='none', mec=CL_INK, mew=1.2, label=r'open: charged ($|G| > 0.1\,\kappa$)')
+            a.axhline(0.5, color=CL_MUT, lw=0.8, ls=':')
+            a.set_xlim(1e-3, 30)
+            a.set_ylim(0, 0.62)
+            a.set_xlabel('x')
+            a.set_ylabel(r'$\kappa/\kappa_0$ (NEGF)')
+            a.legend(frameon=False, fontsize=9.5, loc='upper left')
+            a.set_title(ttl, loc='left', fontsize=10, color=CL_MUT)
+        fig.suptitle(r'$\Gamma$ as the pole width (Capecelatro et al.) along $\phi = \pi$: the per-field $\Gamma$ '
+                     'replaces the constant one in the collapse', x=0.01, ha='left', fontsize=13, fontweight='semibold')
+        st.save_fig(fig, 'gamma_line_mixed', dpi=150)
+        plt.close(fig)
+    print("figure: plots/gamma_line_mixed.png", flush=True)
+
+
+
+# ====================================================================================================================
+# PART 'classes'  (2026-11-24)  PLOTS ONLY: criteria that sort a working point into regimes, tested on the phi = pi line
+# ====================================================================================================================
+# Each point (mu_C, E_Z, phi, L, tau) gets four labels, from quantities that need NO transport; transport then tests them.
+#   A  bulk topology (infinite junction; independent of L, tau):  Q (Pfaffian) and the refined gap Delta_top
+#        trivial (Q = +1) | gapped (Q = -1, Delta_top > CLS_GAP) | gapless (Q = -1, Delta_top <= CLS_GAP)
+#        CLS_GAP 0.01 ueV: Delta_top is bimodal (< 1e-3 or > 0.08 ueV, [deck] 4) -- the same cut as [leads] CLOSED_L.
+#   B  end separation (finite junction, independent of tau):  L / xi_M (bulk slowest E = 0 mode)
+#        separated (>= 4) | overlapping (1.5-4) | merged (< 1.5)
+#        4: neutral kappa > 0.45 switches on at L / xi_M 4.0-4.2 for L 2 / 3 / 4 um ([deck] LENGTH); 1.5: first charged
+#        peaks at L / xi_M 1.5-1.8, and the two-Majorana points end at 0.94 meV = L / xi_M 1.4 ([oscillation]).
+#   C  splitting vs probe width (needs tau):  x = eps_eff / sqrt(Gamma_L Gamma_R), all from the poles ([gamma] / [nh])
+#        decoupled (x < sqrt2 - 1) | resonant (sqrt2 - 1 .. sqrt2 + 1, core 0.82-1.22) | split (x > sqrt2 + 1)
+#        sqrt2 -+ 1 = the half-maximum points of kappa = 2x^2/(1+x^2)^2 (kappa >= 1/4); core = |kappa - 1/2| < 0.02
+#        <=> |det r| < 0.2 ([nh]).
+#   D  isolation of the pair (needs tau):  Gamma / E_next, E_next = the lowest NON-pair level of the closed junction
+#        (third pole of the (0, 0) pencil)  -- Capecelatro et al. Eq. 25: width << distance to other spectral weight
+#        isolated (< 1/3) | marginal (1/3-1) | overlapping (>= 1)   [PROVISIONAL cuts: HWHM = pole to 1.6 % at
+#        Gamma / E_next 0.36 (tau 0.7), fails at 2.0 (tau 1); to be tested with the pole-dominance check]
+# Tests (transport, scharf_absOM_line_mixed_tau*): kappa, neutrality |G| < 0.1 kappa, two-Majorana residual
+# |kappa - (1 - det r^2)/2|.  Data: [oscillation] bulk modes (scharf_absOM_modes_mixed_a10), [gamma] poles.
+# Figure plots/classes_line_mixed.png.
+CLS_GAP = 0.01                                                     # ueV
+CLS_SEP = (1.5, 4.0)                                               # L / xi_M
+CLS_X = (np.sqrt(2) - 1, np.sqrt(2) + 1)                           # half maximum of kappa(x)
+CLS_CORE = (0.82, 1.22)                                            # |det r| < 0.2
+CLS_ISO = (1 / 3, 1.0)                                             # Gamma / E_next (provisional)
+CLS_ROWS = {'topology': (('trivial', '#d8d6d0'), ('gapped', '#2a78d6'), ('gapless', '#c0392b')),
+            'separation': (('merged', '#a9cdf5'), ('overlapping', '#3987e5'), ('separated', '#0d366b')),
+            'x': (('decoupled', '#8a7ee0'), ('resonant', '#1baf7a'), ('split', '#eb6834')),
+            'isolation': (('isolated', '#b9e4d0'), ('marginal', '#f2c14e'), ('overlapping', '#c0392b'))}
+
+
+def cls_topology(Q, gap_ueV):
+    return np.where(Q > 0, 0, np.where(gap_ueV > CLS_GAP, 1, 2))
+
+
+def cls_separation(L_over_xi):
+    return np.digitize(L_over_xi, CLS_SEP)                        # 0 merged, 1 overlapping, 2 separated
+
+
+def cls_x(x):
+    return np.digitize(x, CLS_X)                                   # 0 decoupled, 1 resonant, 2 split
+
+
+def cls_isolation(ratio):
+    return np.digitize(ratio, CLS_ISO)                             # 0 isolated, 1 marginal, 2 overlapping
+
+
+def cls_runs(E, labels):
+    """Contiguous runs of equal labels along the grid E: [(start, end, label)] with edges half a step out."""
+    h = (E[1] - E[0]) / 2
+    cut = np.flatnonzero(np.diff(labels)) + 1
+    return [(E[a] - h, E[b - 1] + h, labels[a]) for a, b in zip(np.r_[0, cut], np.r_[cut, len(E)])]
+
+
+if run_part('classes'):
+    E = GM_EZ
+    _m = np.load(st.DATA / 'scharf_absOM_modes_mixed_a10.npz')
+    assert np.allclose(_m['axis_E_Z'][::2], E)
+    MV = _m['values'][::2]
+    xi_M, gap, Qb = MV[:, 0], MV[:, 6] * 1e3, MV[:, 7]
+    Ls = 2000.0 / xi_M
+    lam = np.load(st.DATA / 'scharf_absGM_poles_mixed_a10_pi.npz')['values'].reshape(len(E), len(GM_CFG), 2, GM_K)
+    lam = lam[:, :, 0, :] + 1j * lam[:, :, 1, :]
+    CI = {c: i for i, c in enumerate(GM_CFG)}
+    eps_cl = np.abs(lam[:, CI[(0.0, 0.0)], :2].real).mean(axis=1)
+    E_next = np.abs(lam[:, CI[(0.0, 0.0)], 2].real)
+    eta0 = -lam[:, CI[(0.0, 0.0)], :2].imag.sum(axis=1) / 2
+    LAB = {'topology': cls_topology(Qb, gap), 'separation': cls_separation(Ls)}
+    TRL, XS = {}, {}
+    for t in GM_TAUS:
+        gL = -lam[:, CI[(t, 0.0)], :2].imag.sum(axis=1) - eta0
+        gR = -lam[:, CI[(0.0, t)], :2].imag.sum(axis=1) - eta0
+        l2 = lam[:, CI[(t, t)], :2]
+        s = np.sqrt(gL * gR)
+        x = np.sqrt(np.clip(np.abs(l2[:, 0] * l2[:, 1]) - gL * gR, 0.0, None)) / s
+        XS[t] = dict(G=s, x=x, iso=s / E_next)
+        LAB[f'x{t}'] = cls_x(x)
+        LAB[f'iso{t}'] = cls_isolation(s / E_next)
+        TRL[t] = np.load(st.DATA / f'scharf_absOM_line_mixed_tau{t:g}.npz')['values']
+    print(f"\n  [classes] phi = pi, mu_C 0.7, L 2 um, E_Z {E[0]:.2f}-{E[-1]:.2f}: Q = -1 on all fields, gap "
+          f"{gap.min():.2f}-{gap.max():.2f} ueV; E_next {E_next.min():.1f}-{E_next.max():.1f} ueV", flush=True)
+    for name in ('topology', 'separation'):
+        names = [n for n, _ in CLS_ROWS[name]]
+        print(f"    {name:10s}: " + ', '.join(f"{names[l_]} {s_:.3f}-{e_:.3f}" for s_, e_, l_ in cls_runs(E, LAB[name])),
+              flush=True)
+    print("    TEST against transport (all fields; neutral = |G| < 0.1 kappa among kappa > 0.02; 2M = |kappa - (1 - det r^2)/2|):",
+          flush=True)
+    print("      tau     separation   x class      n   kappa median  kappa > 1/4  neutral  2M residual median", flush=True)
+    for t in GM_TAUS:
+        k, G, d = TRL[t][:, 0], TRL[t][:, 1], TRL[t][:, 3]
+        res = np.abs(k - (1 - d ** 2) / 2)
+        for sp in (2, 1, 0):
+            for xc in (0, 1, 2):
+                m = (LAB['separation'] == sp) & (LAB[f'x{t}'] == xc)
+                if not m.any():
+                    continue
+                hot = m & (k > 0.02)
+                neu = np.mean(np.abs(G[hot]) < 0.1 * k[hot]) if hot.any() else np.nan
+                print(f"      {t:<7g} {CLS_ROWS['separation'][sp][0]:12s} {CLS_ROWS['x'][xc][0]:10s} {m.sum():4d}   "
+                      f"{np.median(k[m]):10.3f}   {np.mean(k[m] > 0.25):9.2f}   {neu:6.2f}   {np.median(res[m]):.4f}", flush=True)
+        core = (XS[t]['x'] > CLS_CORE[0]) & (XS[t]['x'] < CLS_CORE[1])
+        print(f"      {t:<7g} x in the core 0.82-1.22: {core.sum()} fields, kappa {k[core].min() if core.any() else np.nan:.3f}-"
+              f"{k[core].max() if core.any() else np.nan:.3f}; isolation Gamma / E_next {XS[t]['iso'].min():.3f}-"
+              f"{XS[t]['iso'].max():.3f} (classes present: {sorted(set(LAB[f'iso{t}']))})", flush=True)
+
+    with plt.rc_context(CL_RC):
+        fig, axs = plt.subplots(3, 1, figsize=(13.5, 10.5), sharex=True, layout='constrained',
+                                gridspec_kw=dict(height_ratios=(1.25, 1.0, 1.0)))
+        a = axs[0]
+        a.semilogy(E, np.maximum(eps_cl, 1e-3), 'o', ms=3, color=CL_MUT, label=r'splitting $\varepsilon$ (closed junction)')
+        a.semilogy(E, gap, color=CL_INK, lw=1.6, ls='--', label=r'bulk gap $\Delta_{top}$')
+        a.semilogy(E, E_next, color=CL_INK, lw=1.6, label=r'next level $E_{next}$ (closed junction)')
+        for t, c in zip(GM_TAUS, (CL_OUT, CL_IN)):
+            a.semilogy(E, XS[t]['G'], color=c, lw=2.0, label=rf'probe width $\Gamma$ (pole), $\tau$ = {t:.2f}')
+        a.set_ylim(1e-3, 2e2)
+        a.set_ylabel(r'energy ($\mu$eV)')
+        a.legend(frameon=False, fontsize=9.5, ncol=3, loc='lower right')
+        a.set_title(r'(a) the four energies that set the regime', loc='left', fontsize=10.5, color=CL_MUT)
+        ax2 = a.twiny()
+        ax2.set_xlim(E[0], E[-1])
+        tk = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2]
+        ax2.set_xticks(tk)
+        ax2.set_xticklabels([f'{np.interp(v, E, Ls):.1f}' for v in tk])
+        ax2.set_xlabel(r'$L/\xi_M$', fontsize=11)
+        a = axs[1]
+        rows = [('topology', 'topology', 'A  bulk topology'), ('separation', 'separation', r'B  separation $L/\xi_M$')]
+        for t in GM_TAUS:
+            rows += [(f'x{t}', 'x', rf'C  $x = \varepsilon/\Gamma$, $\tau$ {t:.2f}'),
+                     (f'iso{t}', 'isolation', rf'D  $\Gamma/E_{{next}}$, $\tau$ {t:.2f}')]
+        for r, (key, kind, lab) in enumerate(rows):
+            y = len(rows) - 1 - r
+            for s_, e_, l_ in cls_runs(E, LAB[key]):
+                a.broken_barh([(s_, e_ - s_)], (y + 0.12, 0.76), color=CLS_ROWS[kind][l_][1], lw=0)
+            a.text(E[0] - 0.012, y + 0.5, lab, ha='right', va='center', fontsize=10)
+        a.set_ylim(0, len(rows))
+        a.set_yticks([])
+        handles = [plt.Rectangle((0, 0), 1, 1, color=c) for kind in ('separation', 'x', 'isolation') for _, c in CLS_ROWS[kind]]
+        names = [n for kind in ('separation', 'x', 'isolation') for n, _ in CLS_ROWS[kind]]
+        handles.insert(0, plt.Rectangle((0, 0), 1, 1, color=CLS_ROWS['topology'][1][1]))
+        names.insert(0, 'gapped Q = -1')
+        a.legend(handles, names, frameon=False, fontsize=9, ncol=5, loc='upper center', bbox_to_anchor=(0.5, -0.02))
+        a.set_title('(b) the labels (no transport used)', loc='left', fontsize=10.5, color=CL_MUT)
+        a = axs[2]
+        for t, c in zip(GM_TAUS, (CL_OUT, CL_IN)):
+            k, G = TRL[t][:, 0], TRL[t][:, 1]
+            a.plot(E, k, color=c, lw=1.8, label=rf'$\kappa/\kappa_0$, $\tau$ = {t:.2f}')
+            a.plot(E, np.abs(G), color=c, lw=1.0, ls=':', label=rf'$|G|/G_0$, $\tau$ = {t:.2f}')
+        a.axhline(0.5, color=CL_MUT, lw=0.8, ls='--')
+        a.axhline(0.25, color=CL_MUT, lw=0.6, ls=':')
+        a.set_ylim(0, 0.65)
+        a.set_ylabel('NEGF')
+        a.set_xlabel(r'Zeeman energy $E_Z$ (meV)   ($\phi = \pi$, $\mu_C$ 0.7, L 2 $\mu$m)')
+        a.legend(frameon=False, fontsize=9.5, ncol=4, loc='upper left')
+        a.set_title('(c) the test: transport', loc='left', fontsize=10.5, color=CL_MUT)
+        for a in axs:
+            a.set_xlim(E[0], E[-1])
+        fig.suptitle('Regime criteria on one line: bulk topology, end separation, splitting vs probe width, isolation of the pair',
+                     x=0.01, ha='left', fontsize=13, fontweight='semibold')
+        st.save_fig(fig, 'classes_line_mixed', dpi=150)
+        plt.close(fig)
+    print("figure: plots/classes_line_mixed.png", flush=True)
+
+
+
+# ====================================================================================================================
+# PART 'dis'  (2026-11-25)  ONSITE DISORDER, uncorrelated (seeded), in the thesis junction: conductances, spectrum, LDOS
+# ====================================================================================================================
+# Model (my_functions.junction.column_onsite, unchanged): every site of the NORMAL strip (nx x ny = 200 x 10 at a 10)
+# gets V_i uniform in [-W/2, W/2] meV (rms W / sqrt 12), entering as V_i tau_z; default_rng(seed) -> the same seed gives
+# the same pattern at every W (scaled).  Ribbons (semi-infinite leads) and probes stay clean.  tools._nh_setup now
+# includes the disorder (fixed 2026-11-25; checked: pole det r = 1 - 2 G_L G_R / |l1 l2| vs RGF det r 0.550 / 0.577,
+# 0.405 / 0.422, -1.02 / -0.97 at W 2 / 2 / 6 meV).  Old disorder results (CLAUDE.md "Disorder") are OLD bonds / a 20.
+# Thesis junction: mixed SOC, mu_C 0.7, L 2 um, a 10, tc 1; probe tau 0.5 (+ tau 1 for the strong-probe Andreev / det r).
+# Working points = one per regime class of [classes] (tau 0.5 clean line) + a trivial one:
+#   sep    (E_Z 0.30, pi)  separated + decoupled: kappa 0.0004, local Andreev 1.996, det r -0.998
+#   res    (0.72, pi)      overlapping + resonant: kappa 0.499 neutral
+#   merged (1.06, pi)      merged: kappa 0.523, G 0.214 (charged false positive)
+#   triv   (0.30, 0)       trivial (Q = +1 below the V of the Q map)
+# Cell 1: per (point, W, seed): transport at tau 0.5 and tau 1 + poles (0,0), (t,0), (0,t), (t,t) (k 8).  ~25 s each.
+# Cell 2: LDOS (probes attached at tau 0.5, transport eta): E = 0 map on all 200 x 10 sites, and LDOS(E) -40..40 ueV on
+#         the end / middle columns; seed 0 (~7 min per task).
+# Cell 3: numbers + figures plots/dis_points_mixed.png, dis_ldos_mixed.png.
+DIS_TAU = 0.5
+DIS_W = (0.0, 0.5, 1.0, 2.0, 4.0, 8.0)                            # meV (box width)
+DIS_SEEDS = np.arange(16)
+DIS_PTS = (('sep', 0.30, np.pi), ('res', 0.72, np.pi), ('merged', 1.06, np.pi), ('triv', 0.30, 0.0))
+DIS_CFG = ((0.0, 0.0), (DIS_TAU, 0.0), (0.0, DIS_TAU), (DIS_TAU, DIS_TAU))
+DIS_K = 8
+DIS_LW = (0.0, 1.0, 2.0, 4.0, 8.0)                                # LDOS strengths
+DIS_LSEEDS = (0,)                                                 # one LDOS task ~7 min on one thread (41 energies)
+DIS_E = np.round(np.arange(-40.0, 40.001, 2.0), 3)                # ueV, energy-resolved LDOS
+DIS_LCOLS = tuple(range(0, 10)) + tuple(range(95, 105)) + tuple(range(190, 200))   # left end, middle, right end
+
+
+def dis_q(W, seed, tau=DIS_TAU):
+    """The thesis junction with onsite disorder W (meV, box width) of realisation seed."""
+    return st.replace(junction('mixed', 0.7, tau), disorder=float(W), disorder_seed=int(seed))
+
+
+def dis_point(i, W, seed):
+    """[transport tau 0.5 (kappa, G, andreev, det r, n_bad), transport tau 1 (same), poles for DIS_CFG (DIS_K Re then
+    DIS_K Im each, ueV)] at DIS_PTS[i]."""
+    _, E_Z, phi = DIS_PTS[int(i)]
+    q = dis_q(W, seed)
+    tr = st.transport_point(q, E_Z, phi)
+    trs = st.transport_point(st.replace(q, tc_barr_transport=1.0), E_Z, phi)
+    P = [st.nh_spectrum(q, E_Z, [phi], tl, tr_, k=DIS_K)[0][0] for tl, tr_ in DIS_CFG]
+    return np.r_[tr, trs, np.concatenate([np.r_[p.real, p.imag] for p in P])]
+
+
+def dis_ldos(i, W, seed):
+    """LDOS (e + h, summed over spin; 1/meV per site) with the probes attached: E = 0 on all nx x ny sites (flattened),
+    then LDOS(E) on DIS_E for DIS_LCOLS summed over y (len(DIS_E) x len(DIS_LCOLS), flattened)."""
+    _, E_Z, phi = DIS_PTS[int(i)]
+    q = dis_q(W, seed)
+    J = st.myf.FourTerminalJunction(q.params_transport(E_Z=E_Z))
+    e0, h0 = st.myf.LocalGreen(J, np.array([0.0]), cols=list(range(J.p.nx))).ldos(phi)
+    eE, hE = st.myf.LocalGreen(J, DIS_E / (q.t * 1e3), cols=list(DIS_LCOLS)).ldos(phi)
+    return np.r_[((e0 + h0)[0] / q.t).ravel(), ((eE + hE).sum(axis=2) / q.t).ravel()]
+
+
+# %% [dis] --- 1. SCAN: transport + poles per (point, W, seed) ---
+if run_part('dis'):
+    DSV = st.run_scan(dis_point, {'i': np.arange(len(DIS_PTS)), 'W': np.array(DIS_W), 'seed': DIS_SEEDS},
+                      'scharf_absDIS_points_mixed_tau0.5', n_workers=6, chunksize=1)
+    print("dis: points done", flush=True)
+
+
+# %% [dis] --- 2. SCAN: LDOS for two seeds ---
+if run_part('dis'):
+    DSL = st.run_scan(dis_ldos, {'i': np.arange(len(DIS_PTS)), 'W': np.array(DIS_LW), 'seed': np.array(DIS_LSEEDS)},
+                      'scharf_absDIS_ldos_mixed_tau0.5', n_workers=6, chunksize=1)
+    print("dis: LDOS done", flush=True)
+
+
+# %% [dis] --- 3. numbers and figures ---
+if run_part('dis'):
+    nP, nW, nS = len(DIS_PTS), len(DIS_W), len(DIS_SEEDS)
+    tr, trs = DSV[..., :5], DSV[..., 5:10]
+    lam = DSV[..., 10:].reshape(nP, nW, nS, len(DIS_CFG), 2, DIS_K)
+    lam = lam[..., 0, :] + 1j * lam[..., 1, :]                     # (P, W, S, cfg, K) ueV
+    eps = np.abs(lam[..., 0, :2].real).mean(axis=-1)
+    E_next = np.abs(lam[..., 0, 2].real)
+    eta0 = -lam[..., 0, :2].imag.sum(axis=-1) / 2
+    gL = -lam[..., 1, :2].imag.sum(axis=-1) - eta0
+    gR = -lam[..., 2, :2].imag.sum(axis=-1) - eta0
+    prod = np.abs(lam[..., 3, 0] * lam[..., 3, 1])
+    x_eff = np.sqrt(np.clip(prod - gL * gR, 0.0, None) / np.maximum(gL * gR, 1e-12))
+    k, G, AND, det_s, AND_s = tr[..., 0], tr[..., 1], tr[..., 2], trs[..., 3], trs[..., 2]
+    nbad = int(np.nansum(tr[..., 4]) + np.nansum(trs[..., 4]))
+    print(f"\n  [dis] uncorrelated box disorder in the strip, tau {DIS_TAU} (+ tau 1), {nS} seeds; failed lead solves {nbad}",
+          flush=True)
+    for p_, (name, E_Z, phi) in enumerate(DIS_PTS):
+        print(f"    {name} (E_Z {E_Z}, phi {phi / np.pi:g} pi):", flush=True)
+        print("      W [meV]  rms   kappa med [min-max]       neutral  Q=-1 (det r_tau1<0)  Andreev_tau1 ~2  eps med  "
+              "E_next med  Gamma_L med  x in resonant", flush=True)
+        for w_, W in enumerate(DIS_W):
+            kk, gg = k[p_, w_], G[p_, w_]
+            hot = kk > 0.02
+            neu = np.mean(np.abs(gg[hot]) < 0.1 * kk[hot]) if hot.any() else np.nan
+            xr = np.mean((x_eff[p_, w_] > CLS_X[0]) & (x_eff[p_, w_] < CLS_X[1]))
+            print(f"      {W:5.2f}   {W / np.sqrt(12):5.2f}   {np.median(kk):.3f} [{kk.min():.3f}-{kk.max():.3f}]   "
+                  f"{neu:5.2f}    {np.mean(det_s[p_, w_] < 0):5.2f}               {np.mean(np.abs(AND_s[p_, w_] - 2) < 0.05):5.2f}"
+                  f"          {np.median(eps[p_, w_]):7.3f}  {np.median(E_next[p_, w_]):7.2f}     "
+                  f"{np.median(gL[p_, w_]):6.2f}       {xr:5.2f}", flush=True)
+    nE, nC = len(DIS_E), len(DIS_LCOLS)
+    LW = np.array(DIS_LW)
+    p0 = junction('mixed', 0.7).params_transport(E_Z=0.3)
+    nx, ny = p0.nx, p0.ny
+    Lmap = DSL[..., :nx * ny].reshape(nP, len(LW), len(DIS_LSEEDS), nx, ny)
+    LE = DSL[..., nx * ny:].reshape(nP, len(LW), len(DIS_LSEEDS), nE, nC)
+    with plt.rc_context(CL_RC):
+        WCOL = ('#1b1b1b', '#2a78d6', '#1baf7a', '#eb6834', '#c0392b', '#8a7ee0')
+        xpos = np.arange(nW)
+        fig, axs = plt.subplots(4, nP, figsize=(4.0 * nP + 1.2, 12.5), sharex=True, layout='constrained')
+        for p_, (name, E_Z, phi) in enumerate(DIS_PTS):
+            jit = (DIS_SEEDS - DIS_SEEDS.mean()) / len(DIS_SEEDS) * 0.5
+            a = axs[0, p_]
+            for w_ in range(nW):
+                a.plot(xpos[w_] + jit, k[p_, w_], 'o', ms=3.5, color=CL_MUT, alpha=0.7)
+            a.plot(xpos, np.median(k[p_], axis=1), 'o-', color=CL_INK, lw=1.8, ms=6)
+            a.axhline(0.5, color=CL_MUT, lw=0.8, ls='--')
+            a.set_ylim(-0.02, 1.0)
+            a.set_title(f'{name}: $E_Z$ {E_Z} meV, $\\phi$ = {phi / np.pi:g}$\\pi$', loc='left', fontsize=11)
+            a = axs[1, p_]
+            for w_ in range(nW):
+                hot = k[p_, w_] > 0.02
+                a.semilogy(xpos[w_] + jit[hot], np.maximum(np.abs(G[p_, w_, hot]) / k[p_, w_, hot], 1e-5), 'o', ms=3.5,
+                           color=CL_MUT, alpha=0.7)
+            a.axhline(0.1, color=CL_IN, lw=1.0, ls='--')
+            a.set_ylim(1e-5, 3)
+            a = axs[2, p_]
+            for w_ in range(nW):
+                a.plot(xpos[w_] + jit, AND_s[p_, w_], 'o', ms=3.5, color=CL_MUT, alpha=0.7)
+                a.plot(xpos[w_] + jit, np.where(det_s[p_, w_] < 0, AND_s[p_, w_], np.nan), 'o', ms=3.5, mfc='none',
+                       mec=CL_OUT, mew=1.0)
+            a.axhline(2.0, color=CL_MUT, lw=0.8, ls='--')
+            a.set_ylim(-0.05, 2.6)
+            a = axs[3, p_]
+            for w_ in range(nW):
+                a.semilogy(xpos[w_] + jit - 0.12, np.maximum(eps[p_, w_], 1e-4), 'o', ms=3.5, color=CL_INK, alpha=0.7)
+                a.semilogy(xpos[w_] + jit + 0.12, E_next[p_, w_], 'D', ms=3.5, color=CL_OUT, alpha=0.7)
+                a.semilogy(xpos[w_] + jit, np.sqrt(gL[p_, w_] * gR[p_, w_]), '_', ms=7, color=CL_IN, mew=1.6)
+            a.set_ylim(1e-4, 3e2)
+            a.set_xticks(xpos)
+            a.set_xticklabels([f'{w:g}' for w in DIS_W])
+            a.set_xlabel('W (meV, box width)')
+        axs[0, 0].set_ylabel(r'$\kappa/\kappa_0$ ($\tau$ 0.5)')
+        axs[1, 0].set_ylabel(r'$|G|/\kappa$ ($\kappa$ > 0.02)')
+        axs[2, 0].set_ylabel(r'local Andreev ($\tau$ 1), $e^2/h$')
+        axs[3, 0].set_ylabel(r'energy ($\mu$eV)')
+        axs[0, -1].plot([], [], 'o', color=CL_MUT, ms=4, label='one seed')
+        axs[0, -1].plot([], [], 'o-', color=CL_INK, label='median')
+        axs[0, -1].legend(frameon=False, fontsize=9, loc='upper right')
+        axs[2, -1].plot([], [], 'o', ms=4, mfc='none', mec=CL_OUT, label=r'det $r$ < 0 at $\tau$ 1')
+        axs[2, -1].legend(frameon=False, fontsize=9, loc='upper right')
+        axs[3, -1].plot([], [], 'o', color=CL_INK, ms=4, label=r'splitting $\varepsilon$')
+        axs[3, -1].plot([], [], 'D', color=CL_OUT, ms=4, label=r'next level $E_{next}$')
+        axs[3, -1].plot([], [], '_', color=CL_IN, ms=8, mew=1.6, label=r'$\Gamma$ (pole, $\tau$ 0.5)')
+        axs[3, -1].legend(frameon=False, fontsize=9, loc='lower left')
+        fig.suptitle(f'Uncorrelated onsite disorder in the strip ({nS} seeds per W): conductances and the closed-junction '
+                     'spectrum at four working points', x=0.01, ha='left', fontsize=13, fontweight='semibold')
+        st.save_fig(fig, 'dis_points_mixed', dpi=140)
+        plt.close(fig)
+
+        xs = (np.arange(nx) + 0.5) * 2000.0 / nx / 1000.0          # um
+        fig, axs = plt.subplots(nP, 2, figsize=(14.5, 3.0 * nP + 1.0), layout='constrained',
+                                gridspec_kw=dict(width_ratios=(1.6, 1)))
+        for p_, (name, E_Z, phi) in enumerate(DIS_PTS):
+            a, b = axs[p_]
+            for w_, W in enumerate(LW):
+                a.semilogy(xs, np.maximum(Lmap[p_, w_, 0].sum(axis=1), 1e-6), color=WCOL[w_], lw=1.3, label=f'W {W:g}')
+                b.semilogy(DIS_E, np.maximum(LE[p_, w_, 0, :, :10].sum(axis=1), 1e-6), color=WCOL[w_], lw=1.6)
+                b.semilogy(DIS_E, np.maximum(LE[p_, w_, 0, :, 10:20].sum(axis=1), 1e-6), color=WCOL[w_], lw=1.0, ls=':')
+            a.set_title(f'{name}: $E_Z$ {E_Z} meV, $\\phi$ = {phi / np.pi:g}$\\pi$ -- LDOS at E = 0 along the junction '
+                        '(summed across, seed 0)', loc='left', fontsize=10)
+            b.set_title('LDOS(E): first 10 columns (solid), middle 10 (dotted)', loc='left', fontsize=10)
+            a.set_ylabel('LDOS (1/meV per column)')
+            a.set_xlim(0, 2)
+        axs[0, 0].legend(frameon=False, fontsize=9, ncol=5, loc='upper center', title='disorder (meV)')
+        axs[-1, 0].set_xlabel(r'position along the junction ($\mu$m; probes at 0 and 2)')
+        axs[-1, 1].set_xlabel(r'energy $E$ ($\mu$eV)')
+        fig.suptitle('LDOS with the probes attached: where the zero-energy weight sits, and how disorder fills the gap',
+                     x=0.01, ha='left', fontsize=13, fontweight='semibold')
+        st.save_fig(fig, 'dis_ldos_mixed', dpi=140)
+        plt.close(fig)
+    print("figures: plots/dis_points_mixed.png, plots/dis_ldos_mixed.png", flush=True)

@@ -19,6 +19,60 @@ $t$, lengths in units of $a$). The conversion to meV and nm is §1.3.
 
 ---
 
+## Read first: what is ASSUMED, what is APPROXIMATED, which CONVENTIONS hold
+(2026-11-25; every item checked against the code line given.  "Size" = a measured effect, CLAUDE.md has the run.)
+
+**A. Model assumptions** -- physics chosen, not errors that a finer grid would remove.
+1. **Geometry.** A planar junction: normal (N) strip $L\times W$ = 2 µm × 100 nm, superconductors (S) on both long
+   sides, semi-infinite ACROSS the junction but exactly as long as the strip, with hard walls at both ends
+   ($x=0,L$) of strip and S regions. Probes at the two strip ends. [junction.py:14-58](my_functions/junction.py#L14-L58).
+2. **Superconductors** are proximitized 2DEG (same $m^*=0.038$, same SOC as the strip, $\mu_S=1$ meV) with an
+   induced s-wave gap $\Delta=0.25$ meV that is uniform, real, NOT self-consistent and independent of the field
+   (no Zeeman term and no pair breaking in S). The junction is phase-biased: $\phi$ on the top S, 0 on the bottom.
+   [hamiltonians.py:174-176](my_functions/hamiltonians.py#L174-L176), [junction.py:56-57](my_functions/junction.py#L56-L57).
+3. **Field.** In-plane Zeeman $E_Z\,\mathbf n\cdot\boldsymbol\sigma$ ($E_Z=g\mu_BB/2$, $g=10$, spin splitting
+   $2E_Z$) in the N strip ONLY; none in S or in the probes; NO orbital effect anywhere (no vector potential in any
+   hop). Direction perpendicular to the SOC field of $k_x$, plus $\pi$ ([tools.py:68](computations/tools.py#L68)).
+4. **SOC.** Rashba + Dresselhaus ('100'), the thesis case $16(\cos0.15\pi,\sin0.15\pi)$ meV nm, the SAME in strip,
+   S and probes; $\mu$ is measured from the SOC-shifted band bottom (§1.2).
+5. **Single particle, equilibrium, electrons only.** BdG mean field without interactions or charging; linear
+   response around equilibrium (Landauer-Büttiker with ideal reservoirs); heat carried by electrons only (no
+   phonons, no inelastic scattering, no Wiedemann-Franz assumed -- $\kappa$ is computed from its own kernel, §4).
+6. **Probes** are semi-infinite normal leads as wide as the strip (100 nm) at $\mu_N=3$ meV: ONE open transverse
+   channel (×spin ×e/h), with SOC, without field or pairing; attached across the whole strip end by one bond
+   $\tau$ (`tc_barr_transport`) that scales the whole hop, SOC included (§1.2 Interfaces), or by a one-site
+   barrier. [junction.py:39-55](my_functions/junction.py#L39-L55).
+7. **S/N interface:** a bulk bond, $t_c=1$ (the only reflectionless bond on the lattice; CLAUDE.md [leads] CHECKS).
+8. **Disorder (optional):** onsite $V_i\tau_z$ on the strip sites only, uncorrelated, uniform in $[-W/2,W/2]$;
+   S regions and probes clean. [junction.py:81-102](my_functions/junction.py#L81-L102).
+
+**B. Numerical approximations** -- with their measured size.
+1. **Lattice** $a=10$ nm ($k_Fa\approx0.27$ at $\mu_C=0.7$ meV). Gap within 3 % of $a=5$ nm (W 100); resonance
+   POSITIONS shift by 0.02-0.03 meV between lattice constants, heights do not. A fixed bond $\tau$ is a different
+   transparency at another $a$ (compare $a$ only at equal transparency).
+2. **Broadening $\eta$** in every Green's function. Transport: $\eta=10^{-5}\Delta$; $\kappa$ moves by
+   $\le7.7\cdot10^{-4}$ (×0.1 / ×10 test, linear). Near $\det r=-1$ at weak coupling $1+\det r$ is $\eta$-limited.
+   LDOS / DOS maps use larger $\eta$ (0.05 $\Delta$ or $10^{-4}$ meV): quote $\eta$ with every DOS value.
+3. **Lead self-energies** (Sancho-Rubio): residual $\le10^{-13}$, branch checked; every run counts failed solves
+   (`N_UNRELIABLE`), 0 in all thesis runs.
+4. **Bulk quantities** ($Q$, $\Delta_\mathrm{top}$, $\xi_M$) come from the infinitely long junction with S slabs of
+   finite width $W_S=900$ nm per side (hard walls outside), not the semi-infinite S of the transport geometry;
+   $\Delta_\mathrm{top}$ = grid minimum refined in $k$ (4 digits vs brute force). [tools.py:87-232](computations/tools.py#L87-L232).
+   Gapless points ($\Delta_\mathrm{top}<0.01$ µeV) have no $\xi_M$ (the solver would return a 257 nm bulk mode).
+5. **Poles** (`nh_spectrum`): the S self-energy linearised in $E$ (weight $M$), error $\sim(\lambda/\Delta)^2$
+   (closed box ±0.407 vs 0.40717 µeV); probes frozen at $E=0$ (wide band); the Majorana pair is picked by $|\mathrm{Re}\,E|$
+   and can be a bulk state next to a transition or for strong probes.
+6. **$\kappa$ at $T=0$** uses the electron channels at $E=0$ ($T_{ee}+T_{he}$); equal to the symmetric
+   $\frac12(T_{ee}+T_{hh}+T_{eh}+T_{he})$ only because of particle-hole symmetry at $E=0$. Finite $T$: kernels
+   integrated to $16k_BT$ on a finite $E$ grid (a 35 µeV grid is good to ~50 mK).
+7. **$\Gamma$** = pole width (§5.2, Capecelatro et al.); the Andreev half width equals it only for an isolated pole at
+   an $\varepsilon$ zero (≤1.6 % up to $\tau=0.7$; fails at $\tau=1$).
+
+**C. Conventions.** Basis $(c_\uparrow,c_\downarrow,c_\downarrow^\dagger,-c_\uparrow^\dagger)$; lattice units $t$, $a$
+(§1.3); package $x$ = along the junction (the axis swap, §1.1); $\kappa$ in units of $\kappa_0$ (a resonant Majorana
+pair gives ½), $G$ in $e^2/h$; $\Gamma$ = HWHM = $-\mathrm{Im}$ of the pole (Datta's level broadening is $2\Gamma$,
+Flensberg's $\Gamma_F=\Gamma/2$); $1\,\mu\mathrm{eV}/k_B=11.6$ mK.
+
 ## 0. The pipeline at a glance
 
 ```
@@ -561,7 +615,11 @@ $2\Gamma_F$. His coupling $\Gamma_F$ (**Eq. (9)**) is normalised differently: $\
       text after it).
     - The probe bond makes $t_k\propto\tau$, so at fixed wavefunctions $\Gamma\propto\tau^2$, i.e. $p=2$.
     - Nilsson's $\Gamma_i=2\pi w_i^2$ is the same statement.
-  - Measured: $p\approx2.6$. Why it differs from 2 has **not** been established.
+  - Measured: $p\approx2.6$. **[computed, 2026-11-24, CLAUDE.md "GAMMA THREE WAYS"]** The golden rule with the
+    closed-junction wavefunction is $\propto\tau^2$ exactly ($\Sigma_L\propto\tau^2$ for one bond). The excess comes from
+    the Hermitian part of $\Sigma_L$, which pulls the end mode onto the contact column: the golden rule with the mode
+    reshaped by $\tfrac12(\Sigma_L+\Sigma_L^\dagger)$ reproduces the exact pole width to $\le1.2\,\%$ for $\tau\le0.5$
+    (5.7 % at 0.7, 31 % high at 1).
 - **Plateau point [model choice]:**
   - $|\kappa-\tfrac12|<0.03$ and $|G|<0.1\kappa$: [study_tuning.py:403-405](computations/study_tuning.py#L403-L405);
   - the stricter version, which also requires $Q=-1$ and $|\kappa-\tfrac12(1-\det r^2)|<0.01$:

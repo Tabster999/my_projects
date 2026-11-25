@@ -681,7 +681,10 @@ plots/plateau_mixed_best.png; caches scharf_absPlat_*.  Plateau point = |kappa-1
 * Along E_Z at the plateau centre (phi 1.74 pi): plateau only 0.925-0.970 meV = 50 ueV (~0.17 T).  It is the
   eps = Gamma maximum of kappa = 2x^2/(1+x^2)^2 held over a phase range (det r ~ 0 throughout), NOT a protected
   quantisation: kappa <= 1/2 on two-Majorana points, = 1/2 only at x = 1.  E = 0 (T -> 0); Gamma ~ 3.8 ueV ~ 44 mK
-  sets the temperature scale (finite T not computed).
+  sets the temperature scale (finite T not computed).  [CORRECTED 2026-11-24 from the [ep8] poles (pole = the Gamma
+  definition, Capecelatro et al.): at the winner Gamma_1 (one probe) = 8.36 ueV, pair poles +-6.80 - 8.36i ueV; the 3.8
+  ueV was the phi = pi Gamma_eff, not this point.  k_B T_half ~ 0.35 min|lambda| = 3.77 ueV = 44 mK -- the same 44 mK by
+  coincidence, and the computed kappa(T) agrees ([nh]: 0.496 / 0.486 / 0.411 / 0.189 at 0 / 10 / 20 / 50 mK).]
 * phi = pi at 0.930 is NOT part of it: kappa 0.469 but G 0.107 (0.23 kappa), box eps 0.41 ueV vs det-r x 0.76 ->
   not two-Majorana (box zero 0.93; the NEGF det r minimum sits ~0.01 meV lower).
 * L 3 um, tau 0.5, phi = pi (2026-11-10, [plateau] cell 5, plots/plateau_mixed_L3.png): the coarse column (step 0.05)
@@ -733,6 +736,9 @@ plots/plateau_mixed_best.png; caches scharf_absPlat_*.  Plateau point = |kappa-1
   E_Z <= 0.94 (separated pair): |kappa - 2x^2/(1+x^2)^2| median 0.013 / 0.006, 90 % 0.085 / 0.112; max kappa 0.501 /
   0.499; the visible outliers are the charged points (7 / 19 of 85, |G| > 0.1 kappa) and the slow Gamma drift.  The
   two taus put their kappa = 1/2 points at different fields but on one curve in x.
+  [REDONE 2026-11-24 with the pole Gamma at every field (study_tuning [gamma]): collapse_mixed / mixed_overlap /
+  mixed_oscillation now use slides_nov.pole_line (x = eps_eff / Gamma, both from the poles); median 0.000 / 0.001,
+  90 % 0.006 / 0.020 -- the 'slow Gamma drift' scatter is gone.  See "GAMMA ALONG phi = pi" under [regimes].]
 * length_detr_mixed (plots/slides/mixed_length_detr.png; study_tuning cell 7 coarse maps, tau 0.5, phi = pi column):
   det r < -0.9 with kappa <= 0.07 up to E_Z 0.40 / 0.50 / 0.55 / 0.80 meV for L 1 / 1.5 / 2 / 3 um; first neutral
   kappa > 0.3 at 0.15 / 0.55 / 0.70 / 0.85.  Better-separated Majoranas kill kappa and pin det r = -1 (= Q) -- the
@@ -863,6 +869,8 @@ plots/plateau_mixed_best.png; caches scharf_absPlat_*.  Plateau point = |kappa-1
       0.5      3.2           2.6 %             0.83            2, 0.06
       0.7      10.0          0.5 %             0.14            1, 0.02
       1        37.4          0.1 %             0.01            0
+  [2026-11-24: these are local-Andreev HWHMs; = the exact pole width to <= 1.6 % for tau <= 0.7, but at tau 1 the pole is
+  52.1 ueV (the line overlaps bulk poles) -- see "GAMMA THREE WAYS" under [regimes].  Gamma = exact pole from now on.]
 * Gamma(tau) is NOT one power law: local d ln Gamma / d ln tau = 2.2 / 2.6 / 3.4 / 3.7 between neighbouring tau
   (global fit 2.88 over 0.2-1; over 0.2-0.7 it is 2.64, matching the earlier p 2.56-2.71).  The weak-coupling end follows the golden-rule tau^2.
   Why it steepens: not worked out.
@@ -1313,6 +1321,99 @@ ep_mixed_tauL<t>[_tauR0.5].png, ep_fine_mixed_tauL<t>.png; caches scharf_absSpec
     picks sit at 565 ueV next to the lower transition (kappa(0) ~0.001, uninformative).
   - NOT DONE: finite-bias local / nonlocal conductance with asymmetric probes; where EPs occur relative to Q and the gapless
     strip; the L test averaged over all zeros (removes the lobe scatter); DOS(E) line shapes across an EP.
+  - 2026-11-23: user judged the EP topic NOT thesis-relevant; Li & Trauzettel reproduction dropped.
+
+## SCHARF: choosing REGIMES -- gate mu_C and probe bond tau (2026-11-24, `study_tuning.py` [regimes], plots/regimes_mixed.png)
+* Plots only, from caches (study_mixed [deck] 4 Q / Delta_top on (mu_C 0-2.4, E_Z 0-2) at phi pi, tc 1; [leads] Gamma(tau);
+  [tuning] coarse maps).  phi = pi, tc 1: Q = -1 on 68 % of (mu_C, E_Z), 56 % of that GAPLESS (all of mu_C >= 1.4).
+  Proposed gate picks (Q = -1 / gapped E_Z, max Delta_top): R1 mu_C 0.3 (0.3-1.5 / 0.3-1.5, 48 ueV at 0.9: ends decoupled,
+  short xi_M); R2 0.7 (0.1-1.3 / 0.1-1.3, 37 at 0.5: working point, ends overlap); R3 1.0 (0.1-1.3 / 0.1-0.9, 16 at 0.3:
+  gapped only at low field); R4 1.6 (0.1-1.5 / none: Q = -1 but gapless, NO transport computed yet).  Bond picks (Gamma at
+  mu_C 0.7): C1 0.2 (0.35 ueV, 4 mK, tunnel), C2 0.5 (3.2, 37 mK, matched), C3 0.7 (10, = 0.27 Delta_top, neutral share
+  0.83 -> 0.14), C4 1 (37 ~ Delta_top, transparent).  Neutral share of kappa > 0.25: mu_C 0.3 0.91 / 0.84 (tau 0.3387 / 0.5)
+  ~ mu_C 0.7; mu_C 1.2 0.65 / 0.60.  Gamma(tau) is measured at mu_C 0.7 only (Rashba mu_C 0.3 had ~3.5x larger Gamma at
+  tau 0.3387) -> re-measure per gate pick.  Q / Delta_top over phi exist only at mu_C 0.7.  Picks NOT yet agreed with the user.
+* GAMMA THREE WAYS AT ONE POINT (2026-11-24, scratch gamma_check.py, no study part; phi pi, mu_C 0.7, tc 1, eps zero E_Z
+  0.285): local-Andreev HWHM ([leads] cache) / full pole -Im lambda (nh_spectrum) / first-order projection G_L (nh_pair_2x2):
+      tau 0.2   0.340 / 0.339 / 0.317        tau 0.3387   1.099 / 1.097 / 0.907        tau 0.5   3.043 / 3.036 / 1.975
+      (E_Z 0.345, tau 0.5: 3.311 / 3.302)    tau 1   37.2 / 52.06 / 7.90 ueV  (tau 0.7 pole not computed)
+  HWHM = pole width to 0.1-0.3 % for tau <= 0.5 (one or both probes attached: same pole, the ends are decoupled at an eps
+  zero; right Majorana width 0.001 ueV).  tau 1 FAILS: HWHM 29 % below the pole, bulk poles at +-26-51 ueV (widths up to
+  7.6) lie inside the line -> no single-pole Gamma at tau 1.  First order is tau^2 EXACTLY (Sigma_L ~ tau^2 for one bond)
+  and is 7 / 17 / 35 % low at tau 0.2 / 0.3387 / 0.5, x6.6 at tau 1 -> the measured Gamma ~ tau^2.6 is a beyond-first-order
+  effect of the probe on the end mode (not the bare wavefunction).  Gamma at the operating points differs (one-probe
+  pole at phi 1.7417 pi, eps crossings E_Z 0.84 / 1.03, [ep8]: tau 0.2 0.97, 0.4 4.72, 0.5 8.64 / 7.77 ueV -- ~2.8x the
+  phi = pi, E_Z 0.285 values) -> use the pole per point.  [An earlier line said 4.72 for tau 0.5: wrong, that is tau 0.4.]
+  WHY (scratch gamma_why.py, one probe, same point): Sigma_L = H_S - i Gamma_S / 2 on the contact column, max |H_S| 0.18 /
+  0.51 / 1.11 / 2.18 / 4.46 meV and max Gamma_S / 2 0.03 / 0.09 / 0.21 / 0.40 / 0.82 meV for tau 0.2 / 0.3387 / 0.5 / 0.7 / 1
+  (t = 10.03 meV; max |matrix element|; by EIGENVALUES max |H_S| / max (Gamma_S/2) = 1.96 for every tau, since
+  Sigma_L ~ tau^2) -- the real part is ~2x the loss and >> Delta, mu_C.  Golden rule with the end mode RESHAPED by H_S
+  (left Majorana of H_C + Sigma_rib + H_S, then <g|Gamma_S/2|g>) vs the exact pole: 0.080 / 0.081 (tau 0.1), 0.337 / 0.338,
+  1.098 / 1.097, 3.073 / 3.036, 10.06 / 9.48, 68.0 / 52.1 ueV -> exact / reshaped 1.015 / 1.004 / 0.999 / 0.988 / 0.943 /
+  0.766.  The end mode's weight on the contact column rises 1.88e-3 -> 2.26e-3 / 2.87e-3 / 4.71e-3 / 1.55e-2 (tau 0.3387 /
+  0.5 / 0.7 / 1), the same factor as exact / first order (1.21 / 1.54 / 2.45).  => the probe's real self-energy pulls the
+  end mode onto the contact; that, not Gamma vs the level spacing (3 vs 26 ueV), is why Gamma grows faster than tau^2.
+  At tau 1 the loss itself is non-perturbative too (reshaped golden rule 31 % high).  tau 0.7: HWHM 9.633 vs pole 9.479
+  (1.6 %).  tau 1: HWHM 37.2 vs pole 52.1 -- the line (52 ueV) overlaps the bulk poles at +-26-34 ueV (overlapping
+  resonances), so no single Lorentzian.
+  THE MATRIX i(Sigma_L - Sigma_L^dag) (scratch gamma_matrix.py): 4 open channels (e/h x spin), eigenvalue 0.370 / 2.314 /
+  9.256 meV each at tau 0.2 / 0.5 / 1 (exactly tau^2; ~1000x the end-mode width).  Exact identity for the pencil A psi =
+  lam M psi: -Im lam = <psi|Gamma_S|psi> / (2 <psi|M|psi>) with the EXACT right eigenvector -> 0.3370 + 0.0015 (ribbon eta
+  loss) = 0.3385, 3.0356, 52.0559 ueV = the poles to every printed digit.  So golden rule / reshaped / pole are the same
+  projection with the closed / H_S-reshaped / exact psi.  Factor 1/2: <psi|Gamma|psi> is the FWHM (Datta's level
+  broadening); our Gamma (pole, HWHM) is half of it.
+  PHYSICAL BARRIERS (scratch gamma_barr.py; one-site lam_barr, bulk bonds, folded into Sigma_L as [barr]; same point):
+      lam (meV nm)   600    400    300    240    180    120    80     40     0 (= bond tau 1)
+      |H_S|/(G_S/2)  14.9   10.6   8.4    7.1    5.8    4.5    3.7    2.8    1.96   (eigenvalue maxima)
+      exact pole     0.224  0.498  0.874  1.345  2.313  4.769  9.149  22.56  52.06 ueV
+      exact/first    1.33   1.50   1.68   1.86   2.16   2.74   3.53   5.33   6.59
+      exact/reshp    1.006  1.003  1.001  0.999  0.996  0.989  0.981  1.000  0.766
+  A barrier site of height V_b = lam / a, integrated out, leaves a real potential ~ -t^2 / V_b on the contact column but a
+  loss ~ 1 / V_b^2 -> the bare golden rule is WORSE for barriers (33 % off already at Gamma 0.22 ueV), the H_S-dressed one
+  BETTER (<= 1.9 % up to Gamma 22.6 ueV; bonds 5.7 % at 9.5 ueV).  Contact weight 2.5e-3 -> 9.5e-3 (closed 1.88e-3).
+  EQUAL Gamma, cached [ep8] / [barr] lines (phi 1.7417 pi, E_Z 0.80-1.10, equal probes): |G|/kappa median (90 %) bond
+  0.4 / lam 220 (Gamma_1 4.5 / 4.3): 0.012 (0.032) / 0.012 (0.030); bond 0.5 / lam 150 (8.3 / 8.7): 0.025 (0.072) / 0.026
+  (0.064); bond 0.6 / lam 120 (14.6 / 12.7): 0.044 (0.12) / 0.036 (0.11); bond 0.8 (45.6): 0.20 (0.34).  -> charge grows
+  with Gamma, not with the contact type: a barrier does not extend the usable coupling range.
+  WHERE H_S COMES FROM (scratch sigma_closed.py, tau 1): Sigma_L projected on the probe's transverse modes n = 1..10 (ny 10,
+  mu_N 3, t 10.03 meV) = the semi-infinite-chain closed form tau^2 t^2 g(x), x = mu_N - E_n - 2t (Capecelatro et al.
+  arXiv:2412.01702 App. A Eqs. A4/A7/A8; their A7 = the level shift): n = 1 OPEN (E_1 0.812): -8.932 - 4.554i closed form vs
+  -8.931 - 4.506i code; n = 2..10 CLOSED (evanescent, real only): -8.76 / -5.42 / ... / -1.84 vs -8.87 / -5.51 / ... / -1.85
+  (<= 1.2 %); weak inter-mode coupling <= 0.76 meV not in the closed form.  Electron / hole blocks have opposite real
+  parts (-U tau_z): the probe acts as a LOCAL CHEMICAL-POTENTIAL RISE of tau^2 x (1.8-8.9) meV on the contact column
+  (one open channel near its subband bottom, Re/Im = 1.96, plus nine evanescent channels) -> the end mode is pulled onto
+  the contact.  Broad-band at band centre would make Re Sigma = 0; the probe here is 2.2 meV above its subband bottom.
+  Capecelatro et al. also give: quasi-bound states = poles of the retarded GF on the sub-gap sheet, G_pol = Z (z -
+  H_eff)^-1 (Eq. 18; Z = weight matrix -- our pencil's M^-1 is its linearised, symmetrised form), polar vs branch-cut
+  split (Eq. 16, C5), Fano line with complex residues (Eq. 23), validity: width << distance to other spectral weight
+  (Eq. 25).  PHS (their C6) makes the residue of a pole on the imaginary axis REAL -> pure Lorentzian at an eps zero.
+* GAMMA ALONG phi = pi (2026-11-24, `study_tuning.py` [gamma], plots/gamma_line_mixed.png, logs/study_tuning_gamma.log;
+  cache scharf_absGM_poles_mixed_a10_pi).  Gamma = pole width (Capecelatro et al.) at every field of the [oscillation]
+  transport line (E_Z 0.10-1.35 step 0.01), configurations (tau_L, tau_R) = (0,0), (t,0), (0,t), (t,t), t 0.3387 / 0.5;
+  ~70 s per field (one ribbon set-up, 7 pencils), 6 workers ~25 min.  Closed pair |Re| = eps_box on 126 / 126 fields;
+  Gamma_R = Gamma_L to 5e-10 (mirror).  Gamma(E_Z) over the pair range (E_Z <= 0.94): 0.55-1.48 / 1.56-4.05 ueV (old
+  constant 1.15 / 3.18); drops above ~1.25 (transition).  eta: each mode carries eta0 = 0.00123 ueV from the ribbons ->
+  subtract it ONCE from the one-probe pair sum (twice left eps_eff ~ sqrt(2 Gamma eta0), a 0.005 floor at low field).
+  |kappa - 2x^2/(1+x^2)^2| on the neutral pair-range points (median / 90 % / max), tau 0.3387 | 0.5:
+      x = eps_box / Gamma_const (old slides)     0.0124 / 0.074 / 0.168  |  0.0048 / 0.077 / 0.155
+      x = eps_box / Gamma_pole(E_Z)              0.0031 / 0.035 / 0.177  |  0.0021 / 0.051 / 0.108
+      x = eps_eff / Gamma_pole(E_Z) (poles)      0.0003 / 0.005 / 0.015  |  0.0006 / 0.011 / 0.024
+  -> the per-field width removes the drift scatter; the remaining eps_box error is the probe's level shift near the eps
+  crossings (eps_eff^2 = |l1 l2| - Gamma_L Gamma_R corrects it).  det r: NEGF vs 1 - 2 G_L G_R / |l1 l2| median 0.004 /
+  0.003, max 0.03 / 0.06.  Fields with |l1 l2| < G_L G_R (eps_eff undefined): kappa = 0 at low field (eps << Gamma) and two
+  CHARGED points at the eps zeros 0.79 / 0.92 (tau 0.5: kappa 0.036 / 0.163, G 0.035 / 0.141 = electron transport through
+  bulk states, outside the two-pole form).  Slides redrawn: collapse_mixed, mixed_overlap, mixed_oscillation.
+* REGIME CRITERIA (2026-11-24, `study_tuning.py` [classes], plots/classes_line_mixed.png; plots only, [oscillation] bulk
+  modes + [gamma] poles; definitions and threshold sources in the part header).  Labels need NO transport:
+  A topology (Q, Delta_top; gapless <= 0.01 ueV), B separation L/xi_M (merged < 1.5 <= overlapping < 4 <= separated),
+  C x = eps_eff/Gamma (decoupled < sqrt2-1 <= resonant <= sqrt2+1 < split; core 0.82-1.22 = |det r| < 0.2),
+  D Gamma/E_next (E_next = lowest non-pair closed-junction level; isolated < 1/3 <= marginal < 1 <= overlapping, PROVISIONAL).
+  TEST on phi = pi, mu_C 0.7 (all Q = -1 gapped; separated 0.10-0.60, overlapping 0.61-0.91, merged 0.92-1.35 meV):
+  B predicts CHARGE -- merged: neutral share 0.00-0.08 at both tau, also where kappa ~ 1/2 (merged + resonant: kappa median
+  0.49 / 0.38, neutral 0.00 = the false-positive class); separated / overlapping: neutral 0.9-1.0.  C predicts kappa --
+  resonant: kappa > 1/4 on 80-100 %; decoupled, split: 0 % (separated + decoupled: median kappa 0.006 / 0.001); core: 7 / 6
+  fields, kappa 0.480-0.501 / 0.486-0.499.  D: all isolated here (Gamma/E_next <= 0.06 / 0.17) -> untested; needs tau 0.7-1
+  or other gates.  A: only 'gapped' on this line -> trivial / gapless need other gates (R1-R4 of [regimes]).
 
 ## Numerics — measured on the GRESTA point unless stated
 (eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,
