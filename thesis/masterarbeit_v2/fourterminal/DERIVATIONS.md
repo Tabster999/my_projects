@@ -51,7 +51,9 @@ $t$, lengths in units of $a$). The conversion to meV and nm is §1.3.
    POSITIONS shift by 0.02-0.03 meV between lattice constants, heights do not. A fixed bond $\tau$ is a different
    transparency at another $a$ (compare $a$ only at equal transparency).
 2. **Broadening $\eta$** in every Green's function. Transport: $\eta=10^{-5}\Delta$; $\kappa$ moves by
-   $\le7.7\cdot10^{-4}$ (×0.1 / ×10 test, linear). Near $\det r=-1$ at weak coupling $1+\det r$ is $\eta$-limited.
+   $\le7.7\cdot10^{-4}$ (×0.1 / ×10 test, linear). $\eta$ is a loss: the probe-to-probe S matrix is unitary only up
+   to $|SS^\dagger-1|\approx4\cdot10^{-4}$ at a resonance ($6\cdot10^{-6}$ off resonance), vanishing with $\eta$
+   (tests/test_physics.py). Near $\det r=-1$ at weak coupling $1+\det r$ is $\eta$-limited.
    LDOS / DOS maps use larger $\eta$ (0.05 $\Delta$ or $10^{-4}$ meV): quote $\eta$ with every DOS value.
 3. **Lead self-energies** (Sancho-Rubio): residual $\le10^{-13}$, branch checked; every run counts failed solves
    (`N_UNRELIABLE`), 0 in all thesis runs.

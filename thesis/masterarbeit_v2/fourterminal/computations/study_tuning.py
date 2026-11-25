@@ -5594,7 +5594,7 @@ if run_part('classes'):
 #   triv   (0.30, 0)       trivial (Q = +1 below the V of the Q map)
 # Cell 1: per (point, W, seed): transport at tau 0.5 and tau 1 + poles (0,0), (t,0), (0,t), (t,t) (k 8).  ~25 s each.
 # Cell 2: LDOS (probes attached at tau 0.5, transport eta): E = 0 map on all 200 x 10 sites, and LDOS(E) -40..40 ueV on
-#         the end / middle columns; seed 0 (~7 min per task).
+#         the end / middle columns; seed 0 (~3.5 min per task).
 # Cell 3: numbers + figures plots/dis_points_mixed.png, dis_ldos_mixed.png.
 DIS_TAU = 0.5
 DIS_W = (0.0, 0.5, 1.0, 2.0, 4.0, 8.0)                            # meV (box width)
@@ -5603,8 +5603,8 @@ DIS_PTS = (('sep', 0.30, np.pi), ('res', 0.72, np.pi), ('merged', 1.06, np.pi), 
 DIS_CFG = ((0.0, 0.0), (DIS_TAU, 0.0), (0.0, DIS_TAU), (DIS_TAU, DIS_TAU))
 DIS_K = 8
 DIS_LW = (0.0, 1.0, 2.0, 4.0, 8.0)                                # LDOS strengths
-DIS_LSEEDS = (0,)                                                 # one LDOS task ~7 min on one thread (41 energies)
-DIS_E = np.round(np.arange(-40.0, 40.001, 2.0), 3)                # ueV, energy-resolved LDOS
+DIS_LSEEDS = (0,)                                                 # one LDOS task ~3.5 min on one thread (21 energies)
+DIS_E = np.round(np.arange(-40.0, 40.001, 4.0), 3)                # ueV, energy-resolved LDOS (21 energies: ~3.5 min/task)
 DIS_LCOLS = tuple(range(0, 10)) + tuple(range(95, 105)) + tuple(range(190, 200))   # left end, middle, right end
 
 

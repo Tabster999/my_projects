@@ -1414,6 +1414,20 @@ ep_mixed_tauL<t>[_tauR0.5].png, ep_fine_mixed_tauL<t>.png; caches scharf_absSpec
   resonant: kappa > 1/4 on 80-100 %; decoupled, split: 0 % (separated + decoupled: median kappa 0.006 / 0.001); core: 7 / 6
   fields, kappa 0.480-0.501 / 0.486-0.499.  D: all isolated here (Gamma/E_next <= 0.06 / 0.17) -> untested; needs tau 0.7-1
   or other gates.  A: only 'gapped' on this line -> trivial / gapless need other gates (R1-R4 of [regimes]).
+* UNCORRELATED DISORDER, THESIS JUNCTION (2026-11-25, `study_tuning.py` [dis], plots/dis_points_mixed.png,
+  dis_ldos_mixed.png, logs/study_tuning_dis.log; box W 0-8 meV = rms 0-2.3 meV, 16 seeds, tau 0.5 (+ tau 1), fixed E_Z;
+  0 failed solves; tools._nh_setup fixed the same day to include disorder).  Medians (min-max) of kappa, and spectrum:
+    sep (0.30, pi): kappa 0 up to W 8; strong-probe Andreev = 2 and det r_tau1 < 0 for ALL seeds up to W 4; E_next
+      27.6 -> 23.0 (W 2) -> 13.9 (W 4) -> 2.9 ueV (W 8, gap filled: Q=-1 2/16, Andreev 0.1-1.8).  Robust to W 4.
+    res (0.72, pi): kappa 0.499 / 0.495 / 0.481 / 0.455 / 0.295 / 0.157 at W 0 / 0.5 / 1 / 2 / 4 / 8, but the per-seed MAX
+      stays 0.496-0.499 at every W (disorder DETUNES eps off Gamma, as in the old study); neutral 0.88-1.0 throughout;
+      Andreev_tau1 ~2 falls 1.00 -> 0.44 (W 2) -> 0.12 (W 8).
+    merged (1.06, pi): charged at every W <= 4 (neutral 0.00); kappa 0.523 -> 0.058 (W 4).
+    triv (0.30, 0): kappa 0 at every W; strong-probe Andreev 1.7 clean, 0.4-2.5 with disorder, 1 / 16 seeds within 0.05
+      of 2 at W 1 and at W 4 (a trivial zero-bias look-alike; local Andreev can exceed 2 here: two spin channels).
+  LDOS (seed 0, E_Z fixed): sep keeps its end weight and zero-energy peak up to W 4, at W 8 the end weight collapses;
+  res: end peaks shrink with W; triv: no zero-energy end state.  OPEN: per-seed E_Z sweeps (does every seed still reach
+  kappa = 1/2 somewhere?), the Gaussian-correlated disorder (lambda 10 / 30 / 100 / 300 nm, agreed 2026-11-25).
 
 ## Numerics — measured on the GRESTA point unless stated
 (eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,
