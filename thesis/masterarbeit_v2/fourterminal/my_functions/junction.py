@@ -11,6 +11,38 @@ from .leads import Lead
 _TAU_Z = np.diag([1.0, 1.0, -1.0, -1.0])     # BdG basis (c_up, c_dn, c_dn^dag, -c_up^dag)
 
 
+def disorder_potential(p):
+    """
+    Onsite disorder of the central strip, (nx, ny) in units of t, realisation p.disorder_seed; None without disorder.
+      'box'   (default, unchanged since 2026-10): independent sites, uniform in [-W/2, W/2], rms W / sqrt(12).
+      'gauss' (2026-11-25): a Gaussian random field with the SAME rms W / sqrt(12) and
+              <V(r) V(r')> = rms^2 exp(-|r - r'|^2 / (2 lc^2)),  lc = p.disorder_corr (units of a);
+              lc = 0: independent Gaussian sites.  Built by convolving white noise with the separable kernel
+              k(r) ~ exp(-r^2 / lc^2) per axis (k * k ~ exp(-r^2 / 2 lc^2)), normalised to sum k^2 = 1 per axis so the
+              variance is exactly rms^2 -- no per-realisation rescaling.  The noise lives on a grid padded by 4 lc on
+              every side and the 'valid' convolution keeps exactly nx x ny, so the strip edges are not special.
+    """
+    if not p.disorder_W:
+        return None
+    rng = np.random.default_rng(p.disorder_seed)
+    if p.disorder_dist == 'box':
+        return rng.uniform(-p.disorder_W / 2, p.disorder_W / 2, size=(p.nx, p.ny))
+    if p.disorder_dist != 'gauss':
+        raise ValueError(f"disorder_dist must be 'box' or 'gauss', got {p.disorder_dist!r}")
+    rms = p.disorder_W / np.sqrt(12.0)
+    lc = float(p.disorder_corr)
+    if lc <= 0:
+        return rms * rng.standard_normal((p.nx, p.ny))
+    pad = int(np.ceil(4 * lc))
+    w = rng.standard_normal((p.nx + 2 * pad, p.ny + 2 * pad))
+    r = np.arange(-pad, pad + 1)
+    k = np.exp(-r ** 2 / lc ** 2)
+    k /= np.sqrt((k ** 2).sum())
+    w = np.apply_along_axis(lambda v: np.convolve(v, k, mode='valid'), 0, w)
+    w = np.apply_along_axis(lambda v: np.convolve(v, k, mode='valid'), 1, w)
+    return rms * w
+
+
 class FourTerminalJunction:
     """
     Geometry: central nx*ny normal region, with SC ribbons (width nx) attached
@@ -81,16 +113,16 @@ class FourTerminalJunction:
     def column_onsite(self):
         """
         Onsite Hamiltonian of every column, (nx, 4 ny, 4 ny).  Without disorder all columns are
-        equal to make_row_hamiltonian(...); with p.disorder_W > 0 each site gets a random potential
-        V_i uniform in [-W/2, W/2], entering the BdG basis as V_i * diag(1, 1, -1, -1) (tau_z).
+        equal to make_row_hamiltonian(...); with p.disorder_W > 0 each site gets the random potential V_i of
+        disorder_potential(p) (box or Gaussian-correlated), entering the BdG basis as V_i * diag(1, 1, -1, -1) (tau_z).
         With barrier_where = 'junction', the first and last barrier_n columns get +barrier_V tau_z.
         """
         p = self.p
         H1 = make_row_hamiltonian(p.ny, self.onsite_C, self.Vy_C)
         V = np.zeros((p.nx, p.ny))
-        if p.disorder_W:
-            rng = np.random.default_rng(p.disorder_seed)
-            V += rng.uniform(-p.disorder_W / 2, p.disorder_W / 2, size=(p.nx, p.ny))
+        D = disorder_potential(p)
+        if D is not None:
+            V += D
         if p.barrier_where == 'junction' and p.barrier_n and p.barrier_V:
             V[:p.barrier_n] += p.barrier_V
             V[p.nx - p.barrier_n:] += p.barrier_V

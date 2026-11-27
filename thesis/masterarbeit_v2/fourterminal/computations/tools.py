@@ -22,7 +22,7 @@ delete them (or use a new name) when you change parameters.
 """
 # %% --- IMPORTS ---
 import sys
-from dataclasses import replace
+from dataclasses import dataclass, fields, replace
 from functools import lru_cache, partial
 from pathlib import Path
 
@@ -42,6 +42,30 @@ from my_functions.transport import _kernels        # noqa: E402
 
 
 # 1. PARAMETERS
+@dataclass
+class PhysParamsD(PhysParams):
+    """
+    PhysParams + the disorder DISTRIBUTION and CORRELATION LENGTH (my_functions.junction.disorder_potential):
+      disorder_dist  'box' (uniform in [-disorder/2, disorder/2]) or 'gauss' (Gaussian field, same rms disorder/sqrt 12)
+      disorder_corr  correlation length in nm ('gauss'; 0 = independent sites)
+    Lives here until PhysParams moves out of ldos.py (reorganisation, 2026-11-25).  Use disordered() to build one.
+    """
+    disorder_dist: str = 'box'
+    disorder_corr: float = 0.0
+
+    def params(self, E_Z=None, phi=np.pi):
+        return replace(super().params(E_Z, phi), disorder_dist=self.disorder_dist,
+                       disorder_corr=self.disorder_corr / self.a)
+
+
+def disordered(q, rms, seed, corr=0.0, dist='gauss'):
+    """q with onsite disorder of rms `rms` (meV) in the strip, realisation `seed`; Gaussian-correlated over `corr` nm
+    (dist 'gauss') or uniform box (dist 'box', corr ignored).  The strength is passed on as the box width sqrt(12) rms."""
+    base = {f.name: getattr(q, f.name) for f in fields(PhysParams)}
+    return PhysParamsD(**{**base, 'disorder': float(rms) * np.sqrt(12.0), 'disorder_seed': int(seed),
+                          'disorder_dist': dist, 'disorder_corr': float(corr)})
+
+
 def base_params():
     """
     The parameter set of all ABS studies (pure Rashba).  Every cached result in plot_npz/scharf_abs*
@@ -631,7 +655,9 @@ def _ribbon_sigmas(q, E_Z, dE):
     """Top (phase 0) and bottom ribbon self-energies on the centre edge rows (4 nx x 4 nx, units of t) at E = 0, and
     their E-derivative (central difference over +-dE meV), transport parameters; cached per (q, E_Z, dE).  The ribbons are
     clean leads, so the strip's disorder (disorder, disorder_seed) is left out of the key: all seeds share one solve."""
-    qk = replace(q, disorder=0.0, disorder_seed=0) if hasattr(q, 'disorder') else q
+    clean = {k: v for k, v in (('disorder', 0.0), ('disorder_seed', 0), ('disorder_dist', 'box'),
+                                ('disorder_corr', 0.0)) if hasattr(q, k)}
+    qk = replace(q, **clean)
     key = (repr(qk), float(E_Z), float(dE))
     if key not in _RIB_CACHE:
         p = replace(q.params_transport(E_Z=float(E_Z)), phi=0.0)

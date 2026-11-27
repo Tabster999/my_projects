@@ -67,7 +67,7 @@ correct recursion.  Tags (2026-11-06): [source, verified] / [follows from source
 | `study_oscillation.py` | oscillation, branches, fingerprint -- eps(E_Z), pure Rashba a = 20 |
 | `study_tuning.py` | topology, coupling, tuning, maps, leads, spectrum, ep, ep2, ep3, ep4 -- a = 10 couplings / topology / survey maps; a = 5 (E_Z, phi) maps; mixed SOC vs tc and tau (+ checks: tc > 1, tau 1 charge); DOS(E, phi) vs probe bond; exceptional points of the open junction (tools.nh_spectrum) |
 | `study_mixed.py` | oscillation, plateau, amplitude, deck, combine, angle -- the mixed SOC (thesis case): eps(E_Z), the best plateau, the end-mode amplitude, the advisor-deck runs, the Gresta + Scharf combination checks, the SOC angle and field rotation |
-| `slides_nov.py`, `figures.py`, `disorder.py` | advisor-deck figures, Scharf paper figures (own parameters), disorder -- CAUTION: disorder.py takes ldos.PP, now an a = 10 sandbox, NOT its documented junction |
+| `slides_nov.py`, `figures.py` | advisor-deck figures, Scharf paper figures (own parameters).  Disorder: study_tuning [dis] / [cdis] (disorder.py, which took the ldos.PP sandbox, was DELETED 2026-11-25) |
 * `python study_mixed.py plateau` runs one part (several: list them; none: all, in order).  `run_part('part')`
   replaced the `if __name__ == "__main__":` guard; cells are tagged `# %% [part]`.  References below read
   "file [part] cell N".  NEVER bind run_part / PARTS / _SELECTED / sys inside a part: the first version called the
@@ -79,7 +79,7 @@ correct recursion.  Tags (2026-11-06): [source, verified] / [follows from source
   `study_tuning.junction` and every cache name are unchanged.  Verified: per-part AST identical to the originals
   with these renames, every module-level object and every global a function reads identical, no header name rebound;
   a cache-only smoke run of every part (run_scan refuses to compute) passes, and the mixed parts reprint
-  oscillation_ / plateau_ / amplitude_mixed.log line for line (every line of logs/study_oscillation, study_T, study_a,
+  logs/oscillation_ / plateau_ / amplitude_mixed.log line for line (every line of logs/study_oscillation, study_T, study_a,
   study_transition reappears too).  rashba [checks] computes end-LDOS splittings directly (uncached, ~8 min/point, as
   the original study_checks.py did) -- slow, not broken.
 * NEW WORK GOES INTO THE MATCHING FILE AS A NEW PART OR CELL, not into a new study_*.py.  Watch module-level name
@@ -143,6 +143,7 @@ correct recursion.  Tags (2026-11-06): [source, verified] / [follows from source
   numbers in the Disorder section (A = 0.505, old bonds) are in NO current cache.  And disorder.py builds its
   parameters from ldos.PP, which is now the a = 10 / W 150 / L 500 sandbox: running disorder.py today computes a
   DIFFERENT junction (clean A gives kappa 0.140, the cache 0.413).  Pin its parameters before reusing it.]
+  [2026-11-25: disorder.py DELETED; the two scharf_disorder_* caches remain, no code reads them.]
 
 ## SCHARF model (`computations/ldos.py`; Scharf et al., PRB 99, 214503)
 * MATCH TO THE PAPER (checked line by line against Eq. 1 / App. B Eq. B6, 2026-10-13): basis, kinetic
@@ -1427,7 +1428,55 @@ ep_mixed_tauL<t>[_tauR0.5].png, ep_fine_mixed_tauL<t>.png; caches scharf_absSpec
       of 2 at W 1 and at W 4 (a trivial zero-bias look-alike; local Andreev can exceed 2 here: two spin channels).
   LDOS (seed 0, E_Z fixed): sep keeps its end weight and zero-energy peak up to W 4, at W 8 the end weight collapses;
   res: end peaks shrink with W; triv: no zero-energy end state.  OPEN: per-seed E_Z sweeps (does every seed still reach
-  kappa = 1/2 somewhere?), the Gaussian-correlated disorder (lambda 10 / 30 / 100 / 300 nm, agreed 2026-11-25).
+  kappa = 1/2 somewhere?).
+* CORRELATED DISORDER, THESIS JUNCTION (2026-11-25, `study_tuning.py` [cdis], plots/cdis_field_mixed.png,
+  cdis_points_mixed.png, cdis_ldos_mixed.png, logs/study_tuning_cdis*.log).  Gaussian random field
+  <V V'> = sigma^2 exp(-r^2 / 2 lambda^2) (junction.disorder_potential, dist='gauss'; field statistics checked over
+  100 seeds, box path bit-identical to [dis]); rms sigma 0.29 / 0.58 / 1.15 meV (= box W 1 / 2 / 4), lambda 0 / 10 /
+  30 / 100 / 300 nm, 16 seeds, sep / res / triv points as [dis], 0 failed solves.  lambda 0 reproduces box at equal rms.
+    sep: Q = -1 (tau 1) and Andreev ~2 in all seeds only while sigma * lambda is small: lost at sigma 0.58 for
+      lambda >= 30 (Q=-1 1/16, 2/16, 6/16 at 30 / 100 / 300) and at sigma 1.15 already for lambda 10 (1/16); box keeps it
+      to rms 2.3.  Mechanism from the poles: the low pair's probe coupling sqrt(G_L G_R) drops ~100x (2.9 -> 0.01-0.06 ueV)
+      while its splitting rises only 0.04 -> 1-2.7 ueV (E_next 4-14 ueV): the zero modes leave the ends.  NOT a global
+      mu_C offset: at lambda 30 the junction-averaged V has std 0.06 meV; only at lambda >= 100 the surviving seeds are
+      those with a mu-raising average shift (-0.2 to -1.5 meV vs +0.1 for the lost ones).  LDOS (sigma 1.15, seed 0):
+      white keeps the E = 0 end peaks, lambda 10 / 30 lose them, lambda 100 shows an INTERIOR E = 0 peak near 1.05 um
+      (consistent with a domain wall; one seed only).
+    Estimate (not computed in the model): Born backscattering ~ S(2 k_F) = 2 pi sigma^2 lambda^2 exp(-2 k_F^2 lambda^2);
+      k_F a ~ sqrt(mu_C / t) = 0.26 (lambda_F ~ 240 nm) gives S / S_white ~ 5 (lambda 10), ~17 (lambda 30), then
+      exponentially small (lambda >= 100), where the damage is the smooth local-mu landscape instead.  Equal rms is
+      therefore NOT equal disorder; compare at equal mean free path (pending mfp calibration).
+    res: per-seed max kappa still 0.497-0.499 up to sigma 0.58 at every lambda, median 0.47 -> 0.18-0.25 (lambda >= 30);
+      at sigma 1.15, lambda >= 30 the coupling collapses as at sep and kappa -> 0.  One seed (sigma 1.15, lambda 300,
+      seed 11) has kappa 0.70 > 1/2 with |G|/kappa ~ 0.5: two low pairs (0.46, 3.3 ueV), multi-level, NOT checked further.
+    triv: kappa 0 and Q = +1 for every sigma, lambda and seed: no false topological signal; tau-1 Andreev scatters 0-3
+      (trivial Andreev states at a transparent contact; Andreev ~2 is no discriminator at tau 1, det r is).
+  Rendered concisely by [disfig] (plots/disfig_box_strips.png, disfig_corr_strips.png, disfig_end_weight.png; seed 0 only).
+* GAP DESIGN (2026-11-26, `study_tuning.py` [gapdesign], plots/gapdesign_mixed.png, logs/study_tuning_gapdesign.log):
+  bulk Delta_top at phi = pi (tc 1, Delta 0.25, a 10) over W 50-200 x SOC x mu_C 0.1/0.3/0.7 x E_Z 0.05-2.
+  Max over ALL E_Z: W barely matters for 50-100 nm (falls beyond); Rashba 32 at mu_C 0.1 141 ueV (W 80), mixed 16 51
+  (W 100, mu_C 0.1) vs 37.5 at the thesis point; Dresselhaus admixture ~halves the gap, doubling Rashba ~doubles it.
+  BUT those maxima sit at E_Z 1-1.8 meV (B = 3.45 E_Z[meV] T at g 10, i.e. 3.5-6 T) beyond a thin Al film's in-plane
+  critical field (~2-3 T; NOT modelled: Delta is field-independent here).  Capped at E_Z <= 0.6 (2.1 T): mixed 16 best
+  37.5 (mu_C 0.7, W 100) / 40.4 (mu_C 0.3, W 150); mu_C 0.1 at W 100 only 16 -- DEPLETING THE CENTRE DOES NOT HELP at
+  realistic fields; Rashba 32 108 (mu_C 0.3, W 100).  Cap 0.8 (2.8 T): mixed 16 42.9 (mu_C 0.3, W 100), Rashba 32 122.
+  W 50 maxima sit at the E_Z grid edge (topological beyond E_Z 2): underestimated, but unreachable fields anyway.
+* DEPLETED CENTRE (2026-11-26, [depl], plots/depl_transport_mixed.png, depl_spectrum_mixed.png; field cap shaded at
+  E_Z 0.6 / 0.8): thesis junction at mu_C 0.1 / 0.3 / 0.7, phi = pi, E_Z 0.05-2, tau 0.5 (+ tau 1), 0 failed solves.
+  Q = -1 (tau 1) from E_Z 0.40 / 0.25 / 0.05.  Depletion gives a clean strong-probe Andreev = 2 over E_Z ~0.45-1.1
+  (mu_C 0.1) / 0.35-1.0 (0.3) and a ~3x smaller median splitting eps (0.6 / 0.45 vs 1.75 ueV), but kappa(tau 0.5) has
+  NO clean 1/2 plateau at any mu_C: depleted kappa only reaches ~0.45-0.5 at E_Z 1.1-1.5 (> 3.8 T); the thesis point
+  touches 0.49 at E_Z 0.75.  Gamma(tau 0.5) ~3.7 ueV at all mu_C (probe-set).  Why kappa stays low while Andreev = 2:
+  NOT checked.
+* FINE CORRELATED DISORDER (2026-11-26, [dfine], plots/dfine_map_mixed.png, dfine_collapse_mixed.png): sep point,
+  sigma 0.1-1.2 meV x lambda white/10/20/30/50/100/200 nm x 16 seeds, 0 failed solves.  P(Q = -1, tau 1) = 1/2 at Born
+  l_tr ~ 250 (lambda 10), 220 (20, 30), 280 nm (50): short-range disorder COLLAPSES onto l_tr ~ 200-300 nm (~ xi_M).
+  White noise never fails (l_tr >= 740 nm on the grid).  lambda 100 fails at l_tr ~ 750 nm, lambda 200 at ~1200 nm and
+  P creeps down (0.2-0.4 even at l_tr 200-500): smooth landscapes (lambda >~ lambda_F / 2) are not Born scattering, they
+  act as a seed-dependent local mu_C -> l_tr is the wrong yardstick there.  Andreev_tau0.5 ~ 2 fails at ~ 1.5x smaller
+  sigma than Q.  sigma scale at the sep point: survives sigma <= 0.3 meV for any lambda; lost by 0.5-0.6 for 20-100 nm.
+  Advisor versions (one message each, same cache): plots/dfine_adv1_strength.png, dfine_adv2_meanfreepath.png,
+  dfine_adv3_map.png.
 
 ## Numerics — measured on the GRESTA point unless stated
 (eta-as-absorption is general; the xi-tracking solver limit is about xi_ribbon,
@@ -1465,8 +1514,9 @@ so it applies to GRESTA, where the ribbons are topological.)
   eta=1e-5 -- so the two eta disagree wildly and both are suspect.  Still UNRESOLVED.
 
 ## Disorder (onsite, normal region only; `PhysParams.disorder` in meV, `.disorder_seed`)
-[2026-10-08/12, OLD bonds, a 20, alpha 14.3 / beta 7.3; disorder.py now inherits the ldos.PP sandbox -- see the
-AUDIT note under STALE DATA in INTERFACE BONDS before rerunning anything.]
+[HISTORICAL: 2026-10-08/12, OLD bonds, a 20, alpha 14.3 / beta 7.3, made with disorder.py (deleted 2026-11-25).  The
+thesis-junction disorder study is study_tuning [dis] (box) and [cdis] (Gaussian-correlated); see "UNCORRELATED
+DISORDER, THESIS JUNCTION" under [regimes].]
 Scharf point, soc_axis='100', tc_barr_transport=0.2, 32 seeds per cell.  A = (E_Z 0.505, phi=pi)
 topological on resonance; B = (0.505, phi=0) and C = (0, pi) trivial.  "LDOS candidate" = Scharf's
 own criterion curv_end<0 plus end/mid>3.
@@ -1527,11 +1577,8 @@ own criterion curv_end<0 plus end/mid>3.
   are narrower than the grid; their heights are not resolved at any W.
 * So for realistic (weak) disorder, the two-pronged test is untouched; disorder only matters
   above ~6 Delta, and fakes only above ~19 Delta.
-* Code: `computations/disorder.py` -- `measure(W, seed, E_Z, phi)`, `sweep(...)`,
-  `load_or_run(name, ...)`; results in `plot_npz/scharf_disorder_<name>.npz`, arrays (W, seed, E_Z, phi).
-* POINT A MOVED: disorder.py now has A = (E_Z 0.98 meV, phi = pi).  Every number in this
-  Disorder section was measured at A = (0.505, pi).  At 0.98 the clean (old-bond) sweep has a narrow
-  kappa peak 0.502 with |G|/kappa up to ~0.27 nearby (high-field, partly charged) -- check G there.
+* Code: was `computations/disorder.py` (deleted 2026-11-25); its det r lives on as tools.det_r.  Every number in this
+  section was measured at A = (0.505, pi) with the old bonds.
 
 ## Measurability — can an experimentalist see this?  (conversion: 1 ueV = 11.6 mK)
 ### SCHARF: no (2026-10-08) -- SUPERSEDED IN PART: read to the end of this subsection.

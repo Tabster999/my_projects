@@ -30,6 +30,11 @@ PARTS (one per former script; the cells of each part are tagged [part]):
   gamma        (2026-11-24)  REDO: Gamma = pole width (Capecelatro et al.) per field along phi = pi; the constant-Gamma collapse
   classes      (2026-11-24)  PLOTS ONLY: regime criteria (topology, L/xi_M, eps/Gamma, Gamma/E_next) tested on the phi = pi line
   dis          (2026-11-25)  STUDY: uncorrelated onsite disorder (seeded) at four regime points: conductances, spectrum, LDOS
+  cdis         (2026-11-25)  STUDY: Gaussian-correlated disorder, lambda 0-300 nm, at three regime points (vs [dis] at equal rms)
+  disfig       (2026-11-26)  PLOTS ONLY: the [dis] / [cdis] LDOS as three small one-message figures (caches only)
+  dfine        (2026-11-26)  STUDY: survival of the end Majoranas on a fine (sigma, lambda) grid, sep point, vs the Born mean free path
+  depl         (2026-11-26)  STUDY: depleted centre (mu_C 0.1 / 0.3 vs 0.7): conductances and spectrum along E_Z at phi = pi
+  gapdesign    (2026-11-25)  STUDY: which width W, SOC (strength, Rashba vs mixed) and mu_C give the largest Delta_top at phi = pi?
 
 Run one part:   python study_tuning.py topology      (several: list them; no argument: every part, in order)
 In the interactive window the cells run as usual.  run_part(part) replaces the old `if __name__ == "__main__":`
@@ -47,7 +52,7 @@ from study_oscillation import slowest_mode
 
 PARTS = ('topology', 'coupling', 'tuning', 'maps', 'leads', 'spectrum', 'ep', 'ep2', 'ep3', 'ep4', 'ep5', 'ep6', 'ep7', 'ep8',
          'ep9', 'nh', 'trans', 'barr', 'chern', 'clean', 'dark', 'detphi', 'epfield', 'regimes', 'gamma', 'classes',
-         'dis')
+         'dis', 'cdis', 'gapdesign', 'disfig', 'dfine', 'depl')
 _SELECTED = {a for a in sys.argv[1:] if a in PARTS}
 
 
@@ -5761,3 +5766,642 @@ if run_part('dis'):
         st.save_fig(fig, 'dis_ldos_mixed', dpi=140)
         plt.close(fig)
     print("figures: plots/dis_points_mixed.png, plots/dis_ldos_mixed.png", flush=True)
+
+
+
+# ====================================================================================================================
+# PART 'cdis'  (2026-11-25)  GAUSSIAN-CORRELATED onsite disorder: correlation length lambda vs [dis] (box, uncorrelated)
+# ====================================================================================================================
+# Model (my_functions.junction.disorder_potential, 'gauss'): a Gaussian random field on the strip sites with rms sigma and
+# <V(r) V(r')> = sigma^2 exp(-|r - r'|^2 / 2 lambda^2); white noise convolved with a Gaussian kernel normalised so the
+# variance is exactly sigma^2 (no per-realisation rescaling), noise grid padded by 4 lambda.  lambda = 0: independent
+# Gaussian sites.  Checked 2026-11-25 (200 seeds): rms 0.98-1.01, C(d) = exp(-d^2 / 2 lambda^2) within 0.015-0.04 along
+# and across for lambda = 1, 3, 10, 30 sites; the default 'box' path reproduces the [dis] cache bit for bit.
+# Scale: strip 100 nm wide x 2 um long (a 10 nm), lambda_F ~ 240 nm at mu_C 0.7, xi_M ~ 0.3-1 um.  lambda 300 nm >>
+# the width: V is ~uniform across and smooth along -- a landscape of wells and barriers along the junction.
+# Points: [dis] sep (0.30, pi), res (0.72, pi), triv (0.30, 0).  sigma = 0.29 / 0.58 / 1.15 meV = the rms of the [dis]
+# box W 1 / 2 / 4 meV -> direct comparison.  Same quantities as [dis] (transport tau 0.5 and 1, poles, LDOS).
+# Figures plots/cdis_field_mixed.png, cdis_points_mixed.png, cdis_ldos_mixed.png.
+CDIS_LAM = (0.0, 10.0, 30.0, 100.0, 300.0)                         # nm
+CDIS_RMS = tuple(np.round(np.array((1.0, 2.0, 4.0)) / np.sqrt(12.0), 6))   # meV = rms of the [dis] box W 1 / 2 / 4
+CDIS_PTS = (0, 1, 3)                                               # indices into DIS_PTS: sep, res, triv
+CDIS_SEEDS = np.arange(16)
+CDIS_LRMS = CDIS_RMS[-1]                                           # LDOS at the strongest disorder, seed 0
+
+
+def cdis_q(rms, lam, seed, tau=DIS_TAU):
+    return st.disordered(junction('mixed', 0.7, tau), rms, seed, corr=lam, dist='gauss')
+
+
+def cdis_point(i, rms, lam, seed):
+    """As dis_point, for Gaussian-correlated disorder: [transport tau 0.5, transport tau 1, poles of DIS_CFG]."""
+    _, E_Z, phi = DIS_PTS[CDIS_PTS[int(i)]]
+    q = cdis_q(rms, lam, seed)
+    tr = st.transport_point(q, E_Z, phi)
+    trs = st.transport_point(st.replace(q, tc_barr_transport=1.0), E_Z, phi)
+    P = [st.nh_spectrum(q, E_Z, [phi], tl, tr_, k=DIS_K)[0][0] for tl, tr_ in DIS_CFG]
+    return np.r_[tr, trs, np.concatenate([np.r_[p.real, p.imag] for p in P])]
+
+
+def cdis_ldos(i, lam):
+    """As dis_ldos at sigma = CDIS_LRMS, seed 0."""
+    _, E_Z, phi = DIS_PTS[CDIS_PTS[int(i)]]
+    q = cdis_q(CDIS_LRMS, lam, 0)
+    J = st.myf.FourTerminalJunction(q.params_transport(E_Z=E_Z))
+    e0, h0 = st.myf.LocalGreen(J, np.array([0.0]), cols=list(range(J.p.nx))).ldos(phi)
+    eE, hE = st.myf.LocalGreen(J, DIS_E / (q.t * 1e3), cols=list(DIS_LCOLS)).ldos(phi)
+    return np.r_[((e0 + h0)[0] / q.t).ravel(), ((eE + hE).sum(axis=2) / q.t).ravel()]
+
+
+# %% [cdis] --- 1. SCANS ---
+if run_part('cdis'):
+    CDV = st.run_scan(cdis_point, {'i': np.arange(len(CDIS_PTS)), 'rms': np.array(CDIS_RMS), 'lam': np.array(CDIS_LAM),
+                                   'seed': CDIS_SEEDS}, 'scharf_absCDIS_points_mixed_tau0.5', n_workers=12, chunksize=1)
+    print("cdis: points done", flush=True)
+    CDL = st.run_scan(cdis_ldos, {'i': np.arange(len(CDIS_PTS)), 'lam': np.array(CDIS_LAM)},
+                      'scharf_absCDIS_ldos_mixed_tau0.5', n_workers=4, chunksize=1)
+    print("cdis: LDOS done", flush=True)
+
+
+# %% [cdis] --- 2. numbers and figures ---
+if run_part('cdis'):
+    from my_functions.junction import disorder_potential
+    nP, nR, nL, nS = len(CDIS_PTS), len(CDIS_RMS), len(CDIS_LAM), len(CDIS_SEEDS)
+    tr, trs = CDV[..., :5], CDV[..., 5:10]
+    lam_ = CDV[..., 10:].reshape(nP, nR, nL, nS, len(DIS_CFG), 2, DIS_K)
+    lam_ = lam_[..., 0, :] + 1j * lam_[..., 1, :]
+    eps = np.abs(lam_[..., 0, :2].real).mean(axis=-1)
+    E_next = np.abs(lam_[..., 0, 2].real)
+    eta0 = -lam_[..., 0, :2].imag.sum(axis=-1) / 2
+    gL = -lam_[..., 1, :2].imag.sum(axis=-1) - eta0
+    gR = -lam_[..., 2, :2].imag.sum(axis=-1) - eta0
+    k, G, det_s, AND_s = tr[..., 0], tr[..., 1], trs[..., 3], trs[..., 2]
+    # [dis] box at the same rms, for reference
+    DB = np.load(st.DATA / 'scharf_absDIS_points_mixed_tau0.5.npz')['values']
+    wbox = [list(DIS_W).index(w) for w in (1.0, 2.0, 4.0)]
+    print(f"\n  [cdis] Gaussian-correlated disorder, tau {DIS_TAU} (+ tau 1), {nS} seeds; failed lead solves "
+          f"{int(np.nansum(tr[..., 4]) + np.nansum(trs[..., 4]))}", flush=True)
+    for p_, ip in enumerate(CDIS_PTS):
+        name, E_Z, phi = DIS_PTS[ip]
+        print(f"    {name} (E_Z {E_Z}, phi {phi / np.pi:g} pi):  rms  lambda   kappa med [min-max]      neutral  Q=-1(tau1)  "
+              f"Andreev~2  eps med   E_next med  Gamma med   | box same rms: kappa med, Andreev~2", flush=True)
+        for r_, rms in enumerate(CDIS_RMS):
+            kb = DB[ip, wbox[r_], :, 0]
+            ab = DB[ip, wbox[r_], :, 7]
+            for l_, lam in enumerate(CDIS_LAM):
+                kk, gg = k[p_, r_, l_], G[p_, r_, l_]
+                hot = kk > 0.02
+                neu = np.mean(np.abs(gg[hot]) < 0.1 * kk[hot]) if hot.any() else np.nan
+                print(f"      {rms:5.2f} {lam:6.0f}   {np.median(kk):.3f} [{kk.min():.3f}-{kk.max():.3f}]   {neu:5.2f}    "
+                      f"{np.mean(det_s[p_, r_, l_] < 0):5.2f}      {np.mean(np.abs(AND_s[p_, r_, l_] - 2) < 0.05):5.2f}    "
+                      f"{np.median(eps[p_, r_, l_]):7.3f}   {np.median(E_next[p_, r_, l_]):7.2f}    "
+                      f"{np.median(np.sqrt(gL[p_, r_, l_] * gR[p_, r_, l_])):6.2f}"
+                      + (f"   | {np.median(kb):.3f}, {np.mean(np.abs(ab - 2) < 0.05):.2f}" if l_ == 0 else ''), flush=True)
+    p0 = junction('mixed', 0.7).params_transport(E_Z=0.3)
+    nx, ny, a = p0.nx, p0.ny, junction('mixed', 0.7).a
+    xs = (np.arange(nx) + 0.5) * a / 1000.0
+    LCOL = ('#1b1b1b', '#2a78d6', '#1baf7a', '#eb6834', '#c0392b')
+    with plt.rc_context(CL_RC):
+        # --- the field itself: landscapes and the correlation check
+        fig, axs = plt.subplots(1, 2, figsize=(15.0, 4.6), layout='constrained', gridspec_kw=dict(width_ratios=(2.2, 1)))
+        a_, b_ = axs
+        for l_, lam in enumerate(CDIS_LAM):
+            pp = cdis_q(CDIS_LRMS, lam, 0).params_transport(E_Z=0.3)
+            V = disorder_potential(pp) * cdis_q(CDIS_LRMS, lam, 0).t           # meV
+            a_.plot(xs, V.mean(axis=1), color=LCOL[l_], lw=1.3, label=rf'$\lambda$ = {lam:g} nm')
+            Vs = np.array([disorder_potential(st.replace(pp, disorder_seed=s)) for s in range(100)]) * cdis_q(CDIS_LRMS, lam, 0).t
+            d = np.arange(0, 61)
+            C = np.array([np.mean(Vs[:, :nx - j, :] * Vs[:, j:, :]) for j in d]) / CDIS_LRMS ** 2
+            b_.plot(d * a, C, 'o', ms=3, color=LCOL[l_])
+            if lam > 0:
+                b_.plot(d * a, np.exp(-(d * a) ** 2 / (2 * lam ** 2)), color=LCOL[l_], lw=1.2)
+        a_.axhline(0.7, color=CL_MUT, lw=0.8, ls=':')
+        a_.text(0.02, 0.72, r'$\mu_C$ = 0.7 meV', color=CL_MUT, fontsize=9)
+        a_.set_xlabel(r'position along the junction ($\mu$m)')
+        a_.set_ylabel('disorder potential, averaged across (meV)')
+        a_.set_title(rf'(a) one realisation (seed 0) at rms $\sigma$ = {CDIS_LRMS:.2f} meV; averaging across 10 sites '
+                     r'shrinks the short-$\lambda$ curves', loc='left', fontsize=10, color=CL_MUT)
+        a_.legend(frameon=False, fontsize=9.5, ncol=5, loc='lower center')
+        b_.set_xlabel('distance along the junction (nm)')
+        b_.set_ylabel(r'$\langle V(x)V(x+d)\rangle / \sigma^2$')
+        b_.set_title('(b) correlation, 100 seeds (dots) vs target (lines)', loc='left', fontsize=10, color=CL_MUT)
+        b_.set_xlim(0, 600)
+        fig.suptitle('Gaussian-correlated disorder: what the strip sees', x=0.01, ha='left', fontsize=13, fontweight='semibold')
+        st.save_fig(fig, 'cdis_field_mixed', dpi=140)
+        plt.close(fig)
+        # --- transport and spectrum vs lambda
+        RCOL = ('#2a78d6', '#eb6834', '#c0392b')
+        xpos = np.arange(nL)
+        fig, axs = plt.subplots(4, nP, figsize=(4.4 * nP + 1.0, 12.5), sharex=True, layout='constrained')
+        jit = (CDIS_SEEDS - CDIS_SEEDS.mean()) / nS * 0.18
+        for p_, ip in enumerate(CDIS_PTS):
+            name, E_Z, phi = DIS_PTS[ip]
+            for r_, rms in enumerate(CDIS_RMS):
+                off = (r_ - 1) * 0.25
+                for l_ in range(nL):
+                    x0 = xpos[l_] + off + jit
+                    axs[0, p_].plot(x0, k[p_, r_, l_], 'o', ms=3, color=RCOL[r_], alpha=0.75)
+                    hot = k[p_, r_, l_] > 0.02
+                    axs[1, p_].semilogy(x0[hot], np.maximum(np.abs(G[p_, r_, l_, hot]) / k[p_, r_, l_, hot], 1e-5), 'o',
+                                        ms=3, color=RCOL[r_], alpha=0.75)
+                    axs[2, p_].plot(x0, AND_s[p_, r_, l_], 'o', ms=3, color=RCOL[r_], alpha=0.75)
+                    axs[3, p_].semilogy(x0, np.maximum(eps[p_, r_, l_], 1e-4), 'o', ms=3, color=RCOL[r_], alpha=0.75)
+                    axs[3, p_].semilogy(x0, E_next[p_, r_, l_], 'D', ms=3, mfc='none', mec=RCOL[r_], alpha=0.75)
+                axs[0, p_].plot(xpos + off, np.median(k[p_, r_], axis=1), '-', color=RCOL[r_], lw=1.6)
+            axs[0, p_].axhline(0.5, color=CL_MUT, lw=0.8, ls='--')
+            axs[0, p_].set_ylim(-0.02, 0.8)
+            axs[0, p_].set_title(f'{name}: $E_Z$ {E_Z} meV, $\\phi$ = {phi / np.pi:g}$\\pi$', loc='left', fontsize=11)
+            axs[1, p_].axhline(0.1, color=CL_IN, lw=1.0, ls='--')
+            axs[1, p_].set_ylim(1e-5, 3)
+            axs[2, p_].axhline(2.0, color=CL_MUT, lw=0.8, ls='--')
+            axs[2, p_].set_ylim(-0.05, 3.2)
+            axs[3, p_].set_ylim(1e-4, 3e2)
+            axs[3, p_].set_xticks(xpos)
+            axs[3, p_].set_xticklabels(['white' if l == 0 else f'{l:g}' for l in CDIS_LAM])
+            axs[3, p_].set_xlabel(r'correlation length $\lambda$ (nm)')
+        axs[0, 0].set_ylabel(r'$\kappa/\kappa_0$ ($\tau$ 0.5)')
+        axs[1, 0].set_ylabel(r'$|G|/\kappa$ ($\kappa$ > 0.02)')
+        axs[2, 0].set_ylabel(r'local Andreev ($\tau$ 1), $e^2/h$')
+        axs[3, 0].set_ylabel(r'$\varepsilon$ (dots), $E_{next}$ (diamonds) ($\mu$eV)')
+        for r_, rms in enumerate(CDIS_RMS):
+            axs[0, -1].plot([], [], 'o-', color=RCOL[r_], ms=4, label=rf'$\sigma$ = {rms:.2f} meV')
+        axs[0, -1].legend(frameon=False, fontsize=9, loc='upper right', title='rms (line: median)')
+        fig.suptitle('Gaussian-correlated disorder (16 seeds each): conductances and spectrum vs correlation length',
+                     x=0.01, ha='left', fontsize=13, fontweight='semibold')
+        st.save_fig(fig, 'cdis_points_mixed', dpi=140)
+        plt.close(fig)
+        # --- LDOS
+        nE, nC = len(DIS_E), len(DIS_LCOLS)
+        Lmap = CDL[..., :nx * ny].reshape(nP, nL, nx, ny)
+        LE = CDL[..., nx * ny:].reshape(nP, nL, nE, nC)
+        fig, axs = plt.subplots(nP, 2, figsize=(14.5, 3.1 * nP + 1.0), layout='constrained',
+                                gridspec_kw=dict(width_ratios=(1.6, 1)))
+        for p_, ip in enumerate(CDIS_PTS):
+            name, E_Z, phi = DIS_PTS[ip]
+            a_, b_ = axs[p_]
+            for l_, lam in enumerate(CDIS_LAM):
+                a_.semilogy(xs, np.maximum(Lmap[p_, l_].sum(axis=1), 1e-6), color=LCOL[l_], lw=1.3,
+                            label='white' if lam == 0 else f'{lam:g} nm')
+                b_.semilogy(DIS_E, np.maximum(LE[p_, l_, :, :10].sum(axis=1), 1e-6), color=LCOL[l_], lw=1.6)
+            a_.set_title(f'{name}: $E_Z$ {E_Z} meV, $\\phi$ = {phi / np.pi:g}$\\pi$ -- LDOS at E = 0 along the junction '
+                         rf'($\sigma$ {CDIS_LRMS:.2f} meV, seed 0)', loc='left', fontsize=10)
+            b_.set_title('LDOS(E), first 10 columns', loc='left', fontsize=10)
+            a_.set_ylabel('LDOS (1/meV per column)')
+            a_.set_xlim(0, 2)
+        axs[0, 0].legend(frameon=False, fontsize=9, ncol=5, loc='upper center', title=r'correlation length $\lambda$')
+        axs[-1, 0].set_xlabel(r'position along the junction ($\mu$m)')
+        axs[-1, 1].set_xlabel(r'energy $E$ ($\mu$eV)')
+        fig.suptitle('LDOS with Gaussian-correlated disorder', x=0.01, ha='left', fontsize=13, fontweight='semibold')
+        st.save_fig(fig, 'cdis_ldos_mixed', dpi=140)
+        plt.close(fig)
+    print("figures: plots/cdis_field_mixed.png, plots/cdis_points_mixed.png, plots/cdis_ldos_mixed.png", flush=True)
+
+
+# =============================================================================
+# PART 'gapdesign'  (2026-11-25)  WHERE IS THE TOPOLOGICAL GAP LARGE?
+# Motivation: [cdis] loses the end Majoranas once the Born transport rate hbar/tau_tr reaches ~0.1-0.3 meV (mean free
+# path ~200-550 nm at mu_C 0.7), while real near-surface InAs/Al wafers sit at hbar/tau ~ 0.4-1 meV.  Disorder
+# tolerance should grow with Delta_top (l > xi_M, xi_M ~ hbar v / Delta_top), so: where is Delta_top largest?
+# Bulk (translation-invariant ribbon) Q and refined Delta_top at phi = pi (topo_point), S/N bond tc = 1, Delta 0.25,
+# a = 10, over W x SOC x mu_C x E_Z.  ASSUMPTION: the parent gap, the SOC angle convention and the field direction
+# (perpendicular to the SOC field, tools.case) are those of the thesis junction; W 50 is only 5 sites wide (coarse).
+# Figure plots/gapdesign_mixed.png.
+# =============================================================================
+
+GD_W = (50.0, 80.0, 100.0, 150.0, 200.0)                                  # nm
+GD_SOC = {'mixed 16': st.mixed_soc(16.0, 0.15 * np.pi), 'mixed 32': st.mixed_soc(32.0, 0.15 * np.pi),
+          'Rashba 16': (16.0, 0.0), 'Rashba 32': (32.0, 0.0)}
+GD_MU = (0.1, 0.3, 0.7)
+GD_EZ = np.round(np.arange(0.05, 2.0001, 0.05), 3)
+
+
+def gd_point(W, s, mu_C, E_Z):
+    al, be = list(GD_SOC.values())[int(s)]
+    q = st.replace(st.case(float(W), alpha=al, beta=be, a=A), tc=1.0, mu_C=float(mu_C))
+    return topo_point(q, E_Z)
+
+
+# %% [gapdesign] --- 1. SCAN ---
+if run_part('gapdesign'):
+    GDV = st.run_scan(gd_point, {'W': np.array(GD_W), 's': np.arange(len(GD_SOC)), 'mu_C': np.array(GD_MU),
+                                 'E_Z': GD_EZ}, 'scharf_absGD_topo_a10', n_workers=12, chunksize=4)
+    print("gapdesign: scan done", flush=True)
+
+
+# %% [gapdesign] --- 2. NUMBERS ---
+if run_part('gapdesign'):
+    G = np.where(GDV[..., 0] < 0, GDV[..., 1] * 1e3, np.nan)                     # ueV, NaN where trivial
+    print("\n  [gapdesign] max Delta_top (ueV) over E_Z at phi = pi [E_Z of the max; topological E_Z range]")
+    for si, sn in enumerate(GD_SOC):
+        print(f"    {sn}")
+        for mi, mu in enumerate(GD_MU):
+            cells = []
+            for wi, W in enumerate(GD_W):
+                g = G[wi, si, mi]
+                if not np.isfinite(g).any():
+                    cells.append(f"W {W:3.0f}: trivial          "); continue
+                j = int(np.nanargmax(g)); ez = GD_EZ[np.isfinite(g)]
+                cells.append(f"W {W:3.0f}: {g[j]:5.1f} @{GD_EZ[j]:.2f} [{ez.min():.2f}-{ez.max():.2f}]")
+            print(f"      mu_C {mu}: " + " | ".join(cells))
+
+
+# %% [gapdesign] --- FIGURE ---
+if run_part('gapdesign'):
+    with plt.rc_context(CL_RC):
+        cols = dict(zip(GD_SOC, ('#1baf7a', '#0f6b4a', '#2a78d6', '#173f7a')))
+        fig, axs = plt.subplots(1, len(GD_MU), figsize=(13.5, 4.3), sharey=True, layout='constrained')
+        for mi, mu in enumerate(GD_MU):
+            ax = axs[mi]
+            for si, sn in enumerate(GD_SOC):
+                gmax = np.array([np.nanmax(G[wi, si, mi]) if np.isfinite(G[wi, si, mi]).any() else np.nan
+                                 for wi in range(len(GD_W))])
+                ax.plot(GD_W, gmax, marker='o', color=cols[sn], lw=2, ms=6, label=sn, ls='-' if 'Rashba' in sn else '--')
+            ax.axhline(37.5, color=CL_MUT, lw=0.8, ls=':')
+            ax.axhspan(20, 60, color=CL_GRID, alpha=0.6, lw=0)
+            ax.set_title(rf'$\mu_C$ = {mu} meV', loc='left')
+            ax.set_xlabel('junction width W (nm)')
+            ax.set_ylim(0, None)
+        axs[0].set_ylabel(r'max$_{E_Z}$ $\Delta_{top}$ ($\mu$eV), $\phi = \pi$')
+        axs[0].text(52, 39.5, 'thesis point 37.5', color=CL_MUT, fontsize=9)
+        axs[0].text(52, 22, 'measured TGP gaps 20-60', color=CL_MUT, fontsize=9)
+        axs[-1].legend(frameon=False, fontsize=10, title='SOC (meV nm)')
+        fig.suptitle(r'Largest topological gap over $E_Z$ vs junction width (bulk ribbon, $\Delta$ = 0.25 meV, tc = 1, a = 10 nm)',
+                     x=0.01, ha='left', fontsize=13, fontweight='semibold')
+        st.save_fig(fig, 'gapdesign_mixed', dpi=140)
+        plt.close(fig)
+    print("figure: plots/gapdesign_mixed.png", flush=True)
+
+
+# =============================================================================
+# PART 'disfig'  (2026-11-26)  PLOTS ONLY: the disorder LDOS ([dis] box, [cdis] Gaussian) from the caches, as four
+# small figures with one message each (replaces reading dis_ldos_mixed.png / cdis_ldos_mixed.png):
+#   disfig_box_strips.png    E = 0 LDOS seen from above (x along, y across), sep point, box strength rows
+#   disfig_corr_strips.png   the same for Gaussian disorder, sigma 1.15 meV, lambda rows
+#   disfig_end_weight.png    absolute E = 0 LDOS at the ends vs disorder for every regime point (box | Gaussian)
+# Seed 0 only (one realisation per row): a picture of a typical case, not a statistic.
+# =============================================================================
+
+def _disfig_data():
+    nx, ny, nE, nC = int(round(L_NM / A)), 10, len(DIS_E), len(DIS_LCOLS)
+    B = np.load(st.DATA / 'scharf_absDIS_ldos_mixed_tau0.5.npz')['values'][:, :, 0]         # (4 points, 5 W, 2630)
+    C = np.load(st.DATA / 'scharf_absCDIS_ldos_mixed_tau0.5.npz')['values']                 # (3 points, 5 lam, 2630)
+
+    def split(V):
+        return (V[..., :nx * ny].reshape(V.shape[:-1] + (nx, ny)),
+                V[..., nx * ny:].reshape(V.shape[:-1] + (nE, nC)))
+    return nx, ny, split(B), split(C)
+
+
+# %% [disfig] --- FIGURES ---
+if run_part('disfig'):
+    from matplotlib.colors import LogNorm
+    nx, ny, (BM, BE), (CM, CE) = _disfig_data()
+    SEQ = ('#9cc3ee', '#5f9ee0', '#2a78d6', '#1d559b', '#11335e')        # one hue, light -> dark = weaker -> stronger
+    PCOL = {'sep': '#2a78d6', 'res': '#1baf7a', 'merged': '#8a7ee0', 'triv': '#eb6834'}
+
+    def ends(M):
+        return (M[..., :10, :].sum(axis=(-1, -2)) + M[..., -10:, :].sum(axis=(-1, -2))) / 2
+
+    def mid(M):
+        return M[..., nx // 2 - 5:nx // 2 + 5, :].sum(axis=(-1, -2))
+
+    def strips(M, labels, title, sub, name):
+        norm = LogNorm(vmin=1e-4, vmax=max(M.max(), 1e-3))
+        with plt.rc_context(CL_RC):
+            fig, axs = plt.subplots(len(M), 1, figsize=(11, 0.75 * len(M) + 1.8), sharex=True, layout='constrained')
+            for ax, m, lab in zip(axs, M, labels):
+                im = ax.imshow(np.maximum(m.T, 1e-6), origin='lower', aspect='auto', norm=norm, cmap='magma',
+                               extent=(0, nx * A / 1e3, 0, ny * A))
+                ax.set_yticks([])
+                ax.set_ylabel(lab, rotation=0, ha='right', va='center', fontsize=11)
+            axs[-1].set_xlabel(r'position along the junction ($\mu$m); probes at both ends')
+            fig.colorbar(im, ax=axs, label='LDOS at E = 0 (1/meV per site)', shrink=0.9, pad=0.01)
+            fig.suptitle(title, x=0.01, ha='left', fontsize=13, fontweight='semibold')
+            axs[0].set_title(sub, loc='left', fontsize=10, color=CL_MUT)
+            st.save_fig(fig, name, dpi=140)
+            plt.close(fig)
+
+    # 1. box strips, sep point
+    strips(BM[0], [f'W {w:g} (rms {w / np.sqrt(12):.2f})' if w else 'clean' for w in DIS_LW],
+           'Box disorder: end peaks persist to W 4 meV, while the middle fills in from W 4',
+           r'sep point ($E_Z$ 0.30 meV, $\phi = \pi$), seed 0, viewed from above (y: across the 100 nm strip)',
+           'disfig_box_strips')
+    # 2. Gaussian strips, sep point
+    strips(CM[0], ['white' if l == 0 else rf'$\lambda$ {l:g} nm' for l in CDIS_LAM],
+           'Smooth disorder of the same rms removes the zero-energy end peaks',
+           rf'sep point, Gaussian disorder $\sigma$ = {CDIS_LRMS:.2f} meV (= box W 4), seed 0',
+           'disfig_corr_strips')
+
+    # 3. absolute E = 0 LDOS at the ends (a ratio to the middle misleads: a gapped trivial middle makes it huge)
+    with plt.rc_context(CL_RC):
+        fig, (a1, a2) = plt.subplots(1, 2, figsize=(11.5, 4.2), sharey=True, layout='constrained')
+        for i, (nm, _, _) in enumerate(DIS_PTS):
+            a1.semilogy(DIS_LW, ends(BM[i]), marker='o', ms=7, lw=2, color=PCOL[nm], label=nm)
+        for k, i in enumerate(CDIS_PTS):
+            nm = DIS_PTS[i][0]
+            a2.semilogy(range(len(CDIS_LAM)), ends(CM[k]), marker='o', ms=7, lw=2, color=PCOL[nm], label=nm)
+        for a in (a1, a2):
+            a.grid(axis='y', color=CL_GRID, lw=0.6)
+        a1.set_xlabel('box disorder W (meV)')
+        a1.set_title('box (uncorrelated), rms = W / sqrt 12', loc='left')
+        a2.set_xticks(range(len(CDIS_LAM)), ['white'] + [f'{l:g}' for l in CDIS_LAM[1:]])
+        a2.set_xlabel(r'correlation length $\lambda$ (nm)')
+        a2.set_title(rf'Gaussian, $\sigma$ = {CDIS_LRMS:.2f} meV', loc='left')
+        a1.set_ylabel('LDOS at E = 0, end 10 columns (1/meV)')
+        a1.legend(frameon=False, fontsize=10, title='regime point')
+        fig.suptitle('Zero-energy LDOS at the junction ends (seed 0, averaged over both ends)', x=0.01, ha='left',
+                     fontsize=13, fontweight='semibold')
+        st.save_fig(fig, 'disfig_end_weight', dpi=140)
+        plt.close(fig)
+    print("figures: plots/disfig_box_strips.png, disfig_corr_strips.png, disfig_end_weight.png", flush=True)
+
+
+# =============================================================================
+# PART 'dfine'  (2026-11-26)  WHEN DO THE END MAJORANAS SURVIVE?  Fine (sigma, lambda) grid at the sep point.
+# [dis]/[cdis] had 3 strengths x 5 lambdas: the loss happens between sigma 0.29 and 0.58 meV, unresolved.  Here
+# sigma 0.1-1.2 meV x lambda 0-200 nm x 16 seeds (same seeds and fields as [cdis]: the realisation of a seed only
+# scales with sigma), transport only: tau 0.5 (kappa, G, Andreev, det r) and tau 1 (its det r sign = the junction's
+# invariant as the probes see it).  TEST: does P(Q = -1) collapse onto one curve vs the Born transport mean free path
+# l_tr (dfine_born) for lambda <~ 1/k_F?  ESTIMATE, NOT MODEL OUTPUT: l_tr uses the clean 2DEG k_F at mu_C (no SOC,
+# no Zeeman, no SC), Born approximation (valid for hbar/tau << mu_C).
+# Figures plots/dfine_map_mixed.png, dfine_collapse_mixed.png.
+# =============================================================================
+
+DF_SIG = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2)                     # rms (meV)
+DF_LAM = (0.0, 10.0, 20.0, 30.0, 50.0, 100.0, 200.0)                        # nm
+DF_SEEDS = np.arange(16)
+
+
+def dfine_born(sig, lam, mu=0.7):
+    """Born transport rate hbar/tau_tr (meV) and l_tr (nm) of <V V'> = sig^2 exp(-r^2 / 2 lam^2) in the clean 2DEG
+    of the thesis lattice (t = hbar^2 / 2 m a^2, k_F a = sqrt(mu / t)); lam = 0: lattice white noise, S = sig^2 a^2."""
+    q = junction('mixed', mu)
+    t, a = q.t, q.a
+    kF = np.sqrt(mu / t) / a
+    th = np.linspace(0, 2 * np.pi, 2001)[:-1]
+    qq = 2 * kF * np.abs(np.sin(th / 2))
+    S = sig ** 2 * a ** 2 * np.ones_like(qq) if lam == 0 else sig ** 2 * 2 * np.pi * lam ** 2 * np.exp(-(qq * lam) ** 2 / 2)
+    rate = np.mean(S * (1 - np.cos(th))) / (2 * t * a ** 2)
+    return rate, 2 * t * a ** 2 * kF / rate
+
+
+def dfine_point(sig, lam, seed):
+    _, E_Z, phi = DIS_PTS[0]
+    q = cdis_q(sig, lam, seed)
+    return np.r_[st.transport_point(q, E_Z, phi), st.transport_point(st.replace(q, tc_barr_transport=1.0), E_Z, phi)]
+
+
+# %% [dfine] --- 1. SCAN ---
+if run_part('dfine'):
+    DFV = st.run_scan(dfine_point, {'sig': np.array(DF_SIG), 'lam': np.array(DF_LAM), 'seed': DF_SEEDS},
+                      'scharf_absDFINE_sep_mixed_tau0.5', n_workers=12, chunksize=2)
+    print("dfine: scan done", flush=True)
+
+
+# %% [dfine] --- 2. NUMBERS ---
+if run_part('dfine'):
+    PQ = (DFV[..., 8] < 0).mean(axis=-1)                                     # P(Q = -1), tau 1 det r
+    PA = (np.abs(DFV[..., 2] - 2) < 0.1).mean(axis=-1)                       # P(Andreev_tau0.5 within 0.1 of 2)
+    LTR = np.array([[dfine_born(s, l)[1] for l in DF_LAM] for s in DF_SIG])
+    print(f"\n  [dfine] sep point, {len(DF_SEEDS)} seeds, failed lead solves {int(DFV[..., [4, 9]].sum())}")
+    print("    P(Q = -1, tau 1) [Born l_tr, nm]   rows sigma (meV), columns lambda (nm)")
+    print("    sigma " + "".join(f"{('white' if l == 0 else f'{l:g}'):>16s}" for l in DF_LAM))
+    for i, s in enumerate(DF_SIG):
+        print(f"    {s:5.2f} " + "".join(f"{PQ[i, j]:8.2f} [{LTR[i, j]:5.0f}]" for j in range(len(DF_LAM))))
+    print("    P(Andreev_tau0.5 ~ 2): same layout")
+    for i, s in enumerate(DF_SIG):
+        print(f"    {s:5.2f} " + "".join(f"{PA[i, j]:16.2f}" for j in range(len(DF_LAM))))
+
+
+# %% [dfine] --- FIGURES ---
+if run_part('dfine'):
+    with plt.rc_context(CL_RC):
+        # 1. survival map
+        fig, ax = plt.subplots(figsize=(8.2, 5.2), layout='constrained')
+        xi = np.arange(len(DF_LAM))
+        pm = ax.pcolormesh(np.r_[xi - 0.5, xi[-1] + 0.5], np.r_[0.05, (np.array(DF_SIG[:-1]) + DF_SIG[1:]) / 2, 1.3],
+                           PQ, cmap='Blues', vmin=0, vmax=1, shading='flat')
+        for i, s in enumerate(DF_SIG):
+            for j in xi:
+                ax.text(j, s, f'{PQ[i, j]:.2f}', ha='center', va='center', fontsize=8.5,
+                        color='white' if PQ[i, j] > 0.6 else CL_INK)
+        cs = ax.contour(xi, DF_SIG, LTR, levels=(200, 500), colors=('#eb6834',), linewidths=1.6,
+                        linestyles=('-', '--'))
+        ax.clabel(cs, fmt=lambda v: f'Born $l_{{tr}}$ {v:.0f} nm', fontsize=9)
+        ax.set_xticks(xi, ['white'] + [f'{l:g}' for l in DF_LAM[1:]])
+        ax.set_xlabel(r'correlation length $\lambda$ (nm)')
+        ax.set_ylabel(r'disorder rms $\sigma$ (meV)')
+        fig.colorbar(pm, ax=ax, label='P(topological as seen from the probes)  [Q = -1 at tau 1]')
+        ax.set_title(rf'sep point ($E_Z$ 0.30, $\phi = \pi$, $\mu_C$ 0.7), {len(DF_SEEDS)} seeds per cell', loc='left',
+                     fontsize=10, color=CL_MUT)
+        fig.suptitle('Which disorder do the end Majoranas survive?', x=0.01, ha='left', fontsize=13,
+                     fontweight='semibold')
+        st.save_fig(fig, 'dfine_map_mixed', dpi=140)
+        plt.close(fig)
+        # 2. collapse vs Born mean free path
+        fig, ax = plt.subplots(figsize=(8.2, 4.6), layout='constrained')
+        seq = ('#1b1b1b', '#bcd6f3', '#8cb8ea', '#5a98df', '#2a78d6', '#1d559b', '#11335e')
+        for j, l in enumerate(DF_LAM):
+            o = np.argsort(LTR[:, j])
+            ax.semilogx(LTR[o, j], PQ[o, j], marker='o', ms=6, lw=1.8, color=seq[j],
+                        label='white' if l == 0 else f'{l:g} nm')
+        ax.set_xlabel(r'Born transport mean free path $l_{tr}$ (nm)  [estimate, clean 2DEG at $\mu_C$]')
+        ax.set_ylabel('P(Q = -1)')
+        ax.set_ylim(-0.03, 1.03)
+        ax.grid(color=CL_GRID, lw=0.6)
+        ax.legend(frameon=False, fontsize=9.5, title=r'$\lambda$', loc='lower right')
+        fig.suptitle('Same mean free path, same survival?  (curves on top of each other = yes)', x=0.01, ha='left',
+                     fontsize=13, fontweight='semibold')
+        st.save_fig(fig, 'dfine_collapse_mixed', dpi=140)
+        plt.close(fig)
+    print("figures: plots/dfine_map_mixed.png, plots/dfine_collapse_mixed.png", flush=True)
+
+
+# %% [dfine] --- ADVISOR FIGURES (three standalone panels, one message each) ---
+if run_part('dfine'):
+    SETUP = (r'Thesis junction at the topological point ($E_Z$ = 0.30 meV, $\phi = \pi$, $\mu_C$ = 0.7 meV).  '
+             f'{len(DF_SEEDS)} random disorder samples per point.\n'
+             r'"Survives" = the junction is still topological as measured through the probes ($\det r < 0$, $Q = -1$).')
+    C_UNC, C_SHORT, C_SMOOTH = '#6b6b6b', '#2a78d6', '#eb6834'
+    ADV_LAM = {0.0: ('uncorrelated (per 10 nm site)', C_UNC, '-'), 20.0: (r'$\lambda$ = 20 nm', C_SHORT, '-'),
+               50.0: (r'$\lambda$ = 50 nm', C_SHORT, '--'), 100.0: (r'$\lambda$ = 100 nm', C_SMOOTH, '--'),
+               200.0: (r'$\lambda$ = 200 nm', C_SMOOTH, '-')}
+
+    def adv_frame(fig, ax, title):
+        ax.grid(color=CL_GRID, lw=0.6)
+        ax.set_ylim(-3, 103)
+        ax.set_ylabel('disorder samples that survive (%)')
+        fig.suptitle(title, x=0.01, ha='left', fontsize=13.5, fontweight='semibold')
+        fig.text(0.01, 0.005, SETUP, ha='left', va='bottom', fontsize=8.5, color=CL_MUT)
+
+    with plt.rc_context(CL_RC):
+        # 1. survival vs disorder strength
+        fig, ax = plt.subplots(figsize=(8.6, 5.4), layout='constrained')
+        fig.get_layout_engine().set(rect=(0, 0.09, 1, 0.91))
+        for l, (lab, c, ls) in ADV_LAM.items():
+            j = DF_LAM.index(l)
+            ax.plot(DF_SIG, 100 * PQ[:, j], color=c, ls=ls, lw=2.2, marker='o', ms=6, label=lab)
+        ax.axvspan(0.0, 0.3, color=C_SHORT, alpha=0.07, lw=0)
+        ax.text(0.03, 8, 'safe for every\ncorrelation length', fontsize=10, color=C_SHORT)
+        ax.set_xlim(0, 1.25)
+        ax.set_xlabel(r'disorder strength $\sigma$ (rms potential, meV)')
+        ax.legend(frameon=False, fontsize=10, loc='upper right', bbox_to_anchor=(1.0, 0.94), title='disorder type',
+                  title_fontsize=10)
+        adv_frame(fig, ax, r'The Majoranas survive any disorder up to $\sigma \approx$ 0.3 meV')
+        st.save_fig(fig, 'dfine_adv1_strength', dpi=150)
+        plt.close(fig)
+
+        # 2. survival vs mean free path
+        fig, ax = plt.subplots(figsize=(8.6, 5.4), layout='constrained')
+        fig.get_layout_engine().set(rect=(0, 0.09, 1, 0.91))
+        ax.axvspan(300, 400, color=CL_MUT, alpha=0.15, lw=0)
+        ax.text(350, 105, r'Majorana length $\xi_M$', ha='center', va='bottom', fontsize=9.5, color=CL_INK, clip_on=False)
+        groups = ((0.0,), (10.0, 20.0, 30.0, 50.0), (100.0, 200.0))
+        glab = ('uncorrelated', r'short-range, $\lambda$ = 10-50 nm', r'smooth, $\lambda$ = 100-200 nm')
+        for g, lab, c in zip(groups, glab, (C_UNC, C_SHORT, C_SMOOTH)):
+            for k, l in enumerate(g):
+                j = DF_LAM.index(l)
+                o = np.argsort(LTR[:, j])
+                ax.semilogx(LTR[o, j], 100 * PQ[o, j], color=c, lw=1.8, marker='o', ms=5, alpha=0.9,
+                            label=lab if k == 0 else None)
+        ax.set_xlim(25, 2e4)
+        ax.set_xlabel(r'electron mean free path $l$ (nm, Born estimate)')
+        ax.legend(frameon=False, fontsize=10, loc='center right', bbox_to_anchor=(1.0, 0.55))
+        ax.annotate('short-range curves fall on top of each other:\nlost once $l$ drops below ~250 nm',
+                    xy=(230, 50), xytext=(32, 72), fontsize=10, color=C_SHORT,
+                    arrowprops=dict(arrowstyle='->', color=C_SHORT, lw=1.2))
+        ax.annotate('smooth disorder fails earlier:\nthe mean free path is not the right measure',
+                    xy=(1250, 50), xytext=(1500, 8), fontsize=10, color=C_SMOOTH,
+                    arrowprops=dict(arrowstyle='->', color=C_SMOOTH, lw=1.2))
+        adv_frame(fig, ax, r'Short-range disorder: the Majoranas need a mean free path above ~250 nm')
+        st.save_fig(fig, 'dfine_adv2_meanfreepath', dpi=150)
+        plt.close(fig)
+
+        # 3. the full grid as a map
+        fig, ax = plt.subplots(figsize=(8.6, 5.6), layout='constrained')
+        fig.get_layout_engine().set(rect=(0, 0.09, 1, 0.91))
+        xi = np.arange(len(DF_LAM))
+        pm = ax.pcolormesh(np.r_[xi - 0.5, xi[-1] + 0.5], np.r_[0.05, (np.array(DF_SIG[:-1]) + DF_SIG[1:]) / 2, 1.3],
+                           100 * PQ, cmap='Blues', vmin=0, vmax=100, shading='flat')
+        for i, s in enumerate(DF_SIG):
+            for j in xi:
+                ax.text(j, s, f'{100 * PQ[i, j]:.0f}', ha='center', va='center', fontsize=9,
+                        color='white' if PQ[i, j] > 0.6 else CL_INK)
+        ax.set_xticks(xi, ['uncorr.'] + [f'{l:g}' for l in DF_LAM[1:]])
+        ax.set_xlabel(r'disorder correlation length $\lambda$ (nm)')
+        ax.set_ylabel(r'disorder strength $\sigma$ (meV)')
+        fig.colorbar(pm, ax=ax, label='disorder samples that survive (%)')
+        fig.suptitle('All disorder samples: dark = Majoranas survive, white = lost', x=0.01, ha='left',
+                     fontsize=13.5, fontweight='semibold')
+        fig.text(0.01, 0.005, SETUP, ha='left', va='bottom', fontsize=8.5, color=CL_MUT)
+        st.save_fig(fig, 'dfine_adv3_map', dpi=150)
+        plt.close(fig)
+    print("advisor figures: plots/dfine_adv1_strength.png, dfine_adv2_meanfreepath.png, dfine_adv3_map.png",
+          flush=True)
+
+
+# =============================================================================
+# PART 'depl'  (2026-11-26)  DEPLETED CENTRE: conductances and spectrum along E_Z at phi = pi for mu_C 0.1 / 0.3
+# (larger bulk gap: 51 / 49 ueV vs 37.5 at 0.7, [gapdesign]) against the working point 0.7.  Thesis junction
+# otherwise (mixed SOC 16, L 2 um, W 100, a 10, tc 1), probes tau 0.5 (+ tau 1 for the invariant).  Poles: closed
+# junction (eps = lowest, E_next = next) and probes (tau, tau) (Gamma = -Im of the low pair); DEPL_K poles each.
+# Figures plots/depl_transport_mixed.png, depl_spectrum_mixed.png.
+# =============================================================================
+
+DEPL_MU = (0.1, 0.3, 0.7)
+DEPL_EZ = np.round(np.arange(0.05, 2.0001, 0.05), 3)
+DEPL_TAU, DEPL_K = 0.5, 4
+
+
+def depl_point(mu, E_Z):
+    q = junction('mixed', float(mu), tau=DEPL_TAU)
+    P = [st.nh_spectrum(q, float(E_Z), [np.pi], tl, tr_, k=DEPL_K)[0][0] for tl, tr_ in ((0.0, 0.0), (DEPL_TAU, DEPL_TAU))]
+    return np.r_[st.transport_point(q, E_Z, np.pi), st.transport_point(st.replace(q, tc_barr_transport=1.0), E_Z, np.pi),
+                 np.concatenate([np.r_[p.real, p.imag] for p in P])]
+
+
+# %% [depl] --- 1. SCAN ---
+if run_part('depl'):
+    DPV = st.run_scan(depl_point, {'mu': np.array(DEPL_MU), 'E_Z': DEPL_EZ}, 'scharf_absDEPL_mixed_tau0.5',
+                      n_workers=12, chunksize=1)
+    print("depl: scan done", flush=True)
+
+
+# %% [depl] --- 2. NUMBERS ---
+if run_part('depl'):
+    K = DEPL_K
+    reC, reO, imO = DPV[..., 10:10 + K], DPV[..., 10 + 2 * K:10 + 3 * K], DPV[..., 10 + 3 * K:10 + 4 * K]
+    aC = np.sort(np.abs(reC), axis=-1)
+    EPS, ENX = aC[..., 0], aC[..., 2]                                         # PHS pairs: [0] = [1], next pair [2]
+    GAM = np.sort(np.abs(imO), axis=-1)[..., -1]                              # widest of the low pair (ueV)
+    _g = np.load(st.DATA / 'scharf_absGD_topo_a10.npz')
+    _gi = (list(_g['axis_W']).index(100.0), 0)
+    GBULK = {mu: np.interp(DEPL_EZ, _g['axis_E_Z'], np.where(_g['values'][_gi[0], _gi[1], list(_g['axis_mu_C']).index(mu), :, 0] < 0,
+                                                            _g['values'][_gi[0], _gi[1], list(_g['axis_mu_C']).index(mu), :, 1] * 1e3, 0.0))
+             for mu in DEPL_MU}
+    print(f"\n  [depl] phi = pi, tau {DEPL_TAU}; failed lead solves {int(DPV[..., [4, 9]].sum())}")
+    print("    mu_C  Q=-1 (tau 1) at E_Z      kappa > 0.4 at E_Z         max bulk gap   median eps / E_next / Gamma in Q=-1 (ueV)")
+    for m, mu in enumerate(DEPL_MU):
+        top = DPV[m, :, 8] < 0
+        k4 = DPV[m, :, 0] > 0.4
+        f = lambda b: (f"{DEPL_EZ[b].min():.2f}-{DEPL_EZ[b].max():.2f} ({b.sum()})" if b.any() else "none")
+        print(f"    {mu:3.1f}   {f(top):22s}   {f(k4):24s}   {GBULK[mu].max():5.1f}        "
+              + (f"{np.median(EPS[m, top]):.3f} / {np.median(ENX[m, top]):.1f} / {np.median(GAM[m, top]):.2f}" if top.any() else "--"))
+
+
+# %% [depl] --- FIGURES ---
+if run_part('depl'):
+    MC = {0.1: '#11335e', 0.3: '#2a78d6', 0.7: '#9cc3ee'}
+    B_PER_EZ = 3.45                                                           # T per meV of E_Z at g = 10
+
+    def field_cap(a, label=False):
+        """Grey out E_Z beyond what thin Al survives in plane (~2.1 T light, ~2.8 T dark); Delta(B) is not in the model."""
+        a.axvspan(0.6, 0.8, color=CL_MUT, alpha=0.10, lw=0)
+        a.axvspan(0.8, DEPL_EZ[-1] + 0.05, color=CL_MUT, alpha=0.22, lw=0)
+        if label:
+            a.text(0.82, 0.97, f'B > {0.8 * B_PER_EZ:.1f} T (g 10): beyond thin-Al critical field', transform=a.get_xaxis_transform(),
+                   va='top', ha='left', fontsize=9, color=CL_MUT)
+
+    with plt.rc_context(CL_RC):
+        # 1. transport
+        fig, axs = plt.subplots(3, 1, figsize=(9.5, 8.2), sharex=True, layout='constrained')
+        for m, mu in enumerate(DEPL_MU):
+            kw = dict(color=MC[mu], lw=2, label=rf'$\mu_C$ {mu}')
+            axs[0].plot(DEPL_EZ, DPV[m, :, 0], **kw)
+            axs[1].plot(DEPL_EZ, DPV[m, :, 2], **kw)
+            axs[2].plot(DEPL_EZ, DPV[m, :, 8], **kw)
+            axs[2].plot(DEPL_EZ, DPV[m, :, 3], color=MC[mu], lw=1.2, ls='--')
+        axs[0].axhline(0.5, color=CL_MUT, lw=0.8, ls=':')
+        axs[0].set_ylabel(r'$\kappa/\kappa_0$ ($\tau$ 0.5)')
+        axs[1].axhline(2, color=CL_MUT, lw=0.8, ls=':')
+        axs[1].set_ylabel(r'local Andreev ($e^2/h$, $\tau$ 0.5)')
+        axs[2].axhline(0, color=CL_MUT, lw=0.8)
+        axs[2].set_ylabel(r'det r: $\tau$ 1 (solid), 0.5 (dashed)')
+        axs[2].set_xlabel(r'Zeeman energy $E_Z$ (meV)')
+        axs[0].legend(frameon=False, fontsize=10, ncol=3, loc='upper left')
+        for i, a in enumerate(axs):
+            a.grid(color=CL_GRID, lw=0.6)
+            field_cap(a, label=(i == 0))
+        fig.suptitle(r'Depleting the centre: conductances along $E_Z$ at $\phi = \pi$', x=0.01, ha='left', fontsize=13,
+                     fontweight='semibold')
+        st.save_fig(fig, 'depl_transport_mixed', dpi=140)
+        plt.close(fig)
+        # 2. spectrum
+        fig, axs = plt.subplots(1, len(DEPL_MU), figsize=(13.5, 4.4), sharey=True, layout='constrained')
+        for m, mu in enumerate(DEPL_MU):
+            a = axs[m]
+            a.semilogy(DEPL_EZ, np.maximum(GBULK[mu], 1e-3), color=CL_INK, lw=2, label='bulk gap')
+            a.semilogy(DEPL_EZ, np.maximum(ENX[m], 1e-3), color='#2a78d6', lw=1.6, ls='--', label=r'$E_{next}$ (junction)')
+            a.semilogy(DEPL_EZ, np.maximum(EPS[m], 1e-3), color='#2a78d6', lw=2, label=r'$\varepsilon$ (lowest)')
+            a.semilogy(DEPL_EZ, np.maximum(GAM[m], 1e-3), color='#eb6834', lw=2, label=rf'$\Gamma$ ($\tau$ {DEPL_TAU})')
+            a.set_title(rf'$\mu_C$ = {mu} meV', loc='left')
+            a.set_xlabel(r'$E_Z$ (meV)')
+            a.grid(color=CL_GRID, lw=0.6)
+            field_cap(a)
+        axs[0].set_ylabel(r'energy ($\mu$eV)')
+        axs[0].legend(frameon=False, fontsize=9.5)
+        fig.suptitle(r'Depleting the centre: the energy scales along $E_Z$ ($\phi = \pi$)', x=0.01, ha='left', fontsize=13,
+                     fontweight='semibold')
+        st.save_fig(fig, 'depl_spectrum_mixed', dpi=140)
+        plt.close(fig)
+    print("figures: plots/depl_transport_mixed.png, plots/depl_spectrum_mixed.png", flush=True)

@@ -55,6 +55,8 @@ class Params:
     Bxy_s: float = None     # in-plane Zeeman in the SC ribbons     (default: Bxy)
     disorder_W: float = 0.0   # onsite disorder in the CENTRE, uniform in [-W/2, W/2] (units of t)
     disorder_seed: int = 0    # RNG seed for that disorder realisation
+    disorder_dist: str = 'box'    # 'box': uniform in [-W/2, W/2]; 'gauss': Gaussian with the SAME rms W / sqrt(12)
+    disorder_corr: float = 0.0    # 'gauss' only: correlation length in units of a (0 = independent sites)
     # tunnel barrier at each normal-probe contact: barrier_n cells of the lead material (same t,
     # alpha, beta) with an extra potential +barrier_V tau_z (units of t).  Use with tc_barr = 1.
     barrier_V: float = 0.0
